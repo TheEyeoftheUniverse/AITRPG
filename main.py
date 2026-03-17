@@ -11,7 +11,7 @@ from .ai_layers.narrative_ai import NarrativeAI
 import json
 
 
-@register("aitrpg", "TheEyeoftheUniverse", "AI驱动TRPG跑团系统", "1.0.0")
+@register("aitrpg", "TheEyeoftheUniverse", "AI驱动TRPG跑团系统", "1.0.1")
 class AITRPGPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
