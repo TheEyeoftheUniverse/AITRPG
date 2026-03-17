@@ -82,7 +82,7 @@ class AITRPGPlugin(Star):
         status_text = self._format_status(state)
         yield event.plain_result(status_text)
 
-    @filter.on_message()
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=100)
     async def on_message(self, event: AstrMessageEvent):
         """处理玩家输入"""
         session_id = event.session_id
