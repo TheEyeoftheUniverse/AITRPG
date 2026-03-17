@@ -82,20 +82,25 @@ class AITRPGPlugin(Star):
         status_text = self._format_status(state)
         yield event.plain_result(status_text)
 
-    @filter.platform_adapter_type(filter.PlatformAdapterType.ALL)
+    @filter.on_message()
     async def on_message(self, event: AstrMessageEvent):
         """处理玩家输入"""
         session_id = event.session_id
 
+        logger.info(f"[AITRPG] on_message被调用: {event.message_str}")
+
         # 检查是否有游戏进行中
         if not self.session_manager.has_session(session_id):
+            logger.info(f"[AITRPG] 会话{session_id}不存在，跳过")
             return
 
         # 检查是否是命令（命令由其他handler处理）
         if event.message_str.startswith("/"):
+            logger.info(f"[AITRPG] 是命令消息，跳过")
             return
 
         player_input = event.message_str
+        logger.info(f"[AITRPG] 开始处理玩家输入: {player_input}")
 
         try:
             # 显示处理中提示
