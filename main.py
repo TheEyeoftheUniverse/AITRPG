@@ -139,9 +139,6 @@ class AITRPGPlugin(Star):
         )
         logger.info(f"[AITRPG] 节奏AI结果: {rhythm_result}")
 
-        # 更新游戏状态
-        self.session_manager.update_state(session_id, rhythm_result)
-
         # === 第三步：规则AI - 执行判定 ===
         logger.info("[AITRPG] 调用规则AI进行规则判定...")
         rule_result = await self.rule_ai.judge(
@@ -149,6 +146,26 @@ class AITRPGPlugin(Star):
             player_state=state["player"]
         )
         logger.info(f"[AITRPG] 规则判定结果: {rule_result}")
+
+        # 根据判定结果应用对应的outcome
+        outcome = rhythm_result.get("success_outcome" if rule_result.get("success", True) else "failure_outcome", {})
+
+        # 更新进度
+        if outcome.get("progress_gain"):
+            rhythm_result["current_progress"] = state.get("progress", 0) + outcome["progress_gain"]
+
+        # 更新玩家状态（从success_outcome中提取）
+        if rule_result.get("success") and "success_outcome" in rhythm_result:
+            # 从模组数据中获取物品的SAN损失
+            clue_name = rhythm_result["success_outcome"].get("clue")
+            if clue_name and self.session_manager.module_data:
+                module_obj = self.session_manager.module_data.get("objects", {}).get(clue_name, {})
+                san_cost = module_obj.get("san_cost", 0)
+                rhythm_result["player_changes"] = {"san": san_cost, "hp": 0}
+                rhythm_result["world_changes"] = {"clues": [clue_name] if clue_name else []}
+
+        # 更新游戏状态
+        self.session_manager.update_state(session_id, rhythm_result)
 
         # === 第四步：文案AI - 生成叙述 ===
         logger.info("[AITRPG] 调用文案AI生成叙述...")
