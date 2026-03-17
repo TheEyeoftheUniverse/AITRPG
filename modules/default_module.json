@@ -8,75 +8,206 @@
   "locations": {
     "bedroom": {
       "name": "卧室",
-      "description": "昏暗的房间，空气中弥漫着霉味。窗外传来诡异的声响。",
-      "objects": ["日记", "床", "衣柜"],
+      "description": "昏暗的房间，空气中弥漫着霉味。窗外传来诡异的声响。床铺凌乱，似乎有人刚刚离开。",
+      "objects": ["日记", "床", "衣柜", "窗户", "床头柜"],
       "exits": ["走廊"],
-      "danger_level": 1
+      "danger_level": 1,
+      "first_visit_hint": "这里是你醒来的地方，你不记得自己是如何来到这里的。"
     },
     "hallway": {
       "name": "走廊",
-      "description": "狭长的走廊，墙上挂着破旧的画像。画中人的眼睛似乎在注视着你。",
-      "objects": ["画像", "门"],
-      "exits": ["卧室", "客厅", "地下室"],
-      "danger_level": 2
+      "description": "狭长的走廊，墙上挂着破旧的画像。画中人的眼睛似乎在注视着你。地板发出令人不安的吱呀声。",
+      "objects": ["画像", "门", "地毯", "蜡烛台"],
+      "exits": ["卧室", "客厅", "地下室", "书房"],
+      "danger_level": 2,
+      "first_visit_hint": "走廊两侧有多扇门，你需要决定先探索哪里。"
     },
     "living_room": {
       "name": "客厅",
-      "description": "宽敞的客厅，家具上积满了灰尘。壁炉里还残留着灰烬。",
-      "objects": ["壁炉", "沙发", "书架"],
+      "description": "宽敞的客厅，家具上积满了灰尘。壁炉里还残留着灰烬，似乎不久前有人生过火。",
+      "objects": ["壁炉", "沙发", "书架", "茶几", "留声机"],
       "exits": ["走廊", "厨房"],
-      "danger_level": 2
+      "danger_level": 2,
+      "first_visit_hint": "这里曾是宅邸主人接待客人的地方，也许能找到一些线索。"
+    },
+    "kitchen": {
+      "name": "厨房",
+      "description": "阴暗的厨房，水槽里堆满了发霉的餐具。空气中弥漫着腐烂的气味。",
+      "objects": ["水槽", "橱柜", "餐桌", "刀具", "后门"],
+      "exits": ["客厅"],
+      "danger_level": 2,
+      "first_visit_hint": "后门被锁住了，需要找到密码或钥匙才能离开。"
+    },
+    "study": {
+      "name": "书房",
+      "description": "堆满书籍的房间，书桌上散落着各种文件和笔记。墙上挂着一幅巨大的星图。",
+      "objects": ["书桌", "书柜", "星图", "保险箱", "羊皮卷"],
+      "exits": ["走廊"],
+      "danger_level": 3,
+      "first_visit_hint": "这里是宅邸主人研究神秘学的地方，充满了危险的知识。"
     },
     "basement": {
       "name": "地下室",
-      "description": "阴冷潮湿的地下室，空气中弥漫着血腥味。墙上刻满了诡异的符文。",
-      "objects": ["祭坛", "铁笼", "符文"],
+      "description": "阴冷潮湿的地下室，空气中弥漫着血腥味。墙上刻满了诡异的符文，地面上有干涸的血迹。",
+      "objects": ["祭坛", "铁笼", "符文", "骸骨", "仪式刀"],
       "exits": ["走廊"],
-      "danger_level": 4
+      "danger_level": 4,
+      "first_visit_hint": "这里是一切邪恶的源头，真相就在这里，但代价可能是你的理智。"
     }
   },
   "objects": {
     "日记": {
       "type": "clue",
+      "location": "bedroom",
       "check_required": "侦查",
       "difficulty": "普通",
       "clue_value": 0.2,
       "san_cost": -2,
-      "success_result": "发现日记，揭示了宅邸主人进行邪教仪式的记录",
-      "failure_result": "没找到有用的东西，只是一些普通的日常记录"
+      "success_result": "发现日记，揭示了宅邸主人进行邪教仪式的记录。日记中提到'地下室的祭坛'和'星之眷族'。",
+      "failure_result": "没找到有用的东西，只是一些普通的日常记录",
+      "can_take": true,
+      "used_for": "了解宅邸历史"
     },
     "画像": {
       "type": "clue",
+      "location": "hallway",
       "check_required": "侦查",
       "difficulty": "困难",
       "clue_value": 0.15,
       "san_cost": -3,
-      "success_result": "画像背后藏着一把钥匙，画中人的表情扭曲而诡异",
-      "failure_result": "只是一幅普通的画像"
+      "success_result": "画像背后藏着一把生锈的钥匙。画中人的表情扭曲而诡异，眼睛似乎在流血。",
+      "failure_result": "只是一幅普通的画像，虽然画风有些阴郁",
+      "can_take": false,
+      "reward_item": "钥匙"
+    },
+    "书架": {
+      "type": "clue",
+      "location": "living_room",
+      "check_required": "图书馆",
+      "difficulty": "普通",
+      "clue_value": 0.1,
+      "san_cost": -1,
+      "success_result": "你在书架上找到一本《克苏鲁神话》，书中夹着一张纸条：'不要在午夜打开地下室的门'。",
+      "failure_result": "都是些普通的文学作品，没什么特别的",
+      "can_take": false
+    },
+    "壁炉": {
+      "type": "clue",
+      "location": "living_room",
+      "check_required": "侦查",
+      "difficulty": "普通",
+      "clue_value": 0.05,
+      "san_cost": 0,
+      "success_result": "壁炉的灰烬中有烧焦的纸片，依稀能看到'仪式'、'献祭'等字眼。",
+      "failure_result": "只是普通的灰烬",
+      "can_take": false
+    },
+    "后门": {
+      "type": "exit",
+      "location": "kitchen",
+      "check_required": null,
+      "difficulty": null,
+      "clue_value": 0,
+      "san_cost": 0,
+      "success_result": "这是离开宅邸的出口，但需要四位数密码",
+      "failure_result": null,
+      "can_take": false,
+      "requires": ["密码"]
+    },
+    "书桌": {
+      "type": "clue",
+      "location": "study",
+      "check_required": "侦查",
+      "difficulty": "普通",
+      "clue_value": 0.15,
+      "san_cost": -1,
+      "success_result": "书桌抽屉里有一份研究笔记，记录着召唤仪式的步骤。最后一页写着：'1924'。",
+      "failure_result": "抽屉里只有些普通的文具",
+      "can_take": false,
+      "hint": "密码"
+    },
+    "星图": {
+      "type": "clue",
+      "location": "study",
+      "check_required": "图书馆",
+      "difficulty": "困难",
+      "clue_value": 0.2,
+      "san_cost": -4,
+      "success_result": "这不是普通的星图，而是通往异界的星门图。你理解了仪式的真正目的——打开通往外神的门。",
+      "failure_result": "只是一幅复杂的天文图，你看不懂",
+      "can_take": false
     },
     "祭坛": {
       "type": "danger",
+      "location": "basement",
       "check_required": "意志",
       "difficulty": "极难",
       "clue_value": 0.3,
       "san_cost": -5,
-      "success_result": "你强忍着恐惧，发现了仪式的真相和逃离的方法",
-      "failure_result": "你的理智受到严重冲击，陷入短暂的疯狂"
+      "success_result": "你强忍着恐惧，发现了仪式的真相。祭坛上刻着破解仪式的方法，你知道如何阻止这一切了。",
+      "failure_result": "你的理智受到严重冲击，脑海中充满了疯狂的低语。你陷入短暂的恍惚。",
+      "can_take": false
+    },
+    "符文": {
+      "type": "clue",
+      "location": "basement",
+      "check_required": "图书馆",
+      "difficulty": "极难",
+      "clue_value": 0.25,
+      "san_cost": -3,
+      "success_result": "你认出了这些符文——古老的召唤咒文。通过解读，你了解了宅邸主人的疯狂计划。",
+      "failure_result": "这些符文太过晦涩，你完全看不懂",
+      "can_take": false
+    },
+    "铁笼": {
+      "type": "clue",
+      "location": "basement",
+      "check_required": "侦查",
+      "difficulty": "普通",
+      "clue_value": 0.1,
+      "san_cost": -2,
+      "success_result": "铁笼里有人类的骸骨和撕裂的衣物。这些都是献祭的牺牲品。",
+      "failure_result": "铁笼空空如也，只有些锈迹",
+      "can_take": false
+    },
+    "保险箱": {
+      "type": "container",
+      "location": "study",
+      "check_required": "机械修理",
+      "difficulty": "困难",
+      "clue_value": 0.1,
+      "san_cost": 0,
+      "success_result": "你成功打开了保险箱，里面有一封信和一张照片。信中提到管家知道后门密码。",
+      "failure_result": "保险箱纹丝不动，你打不开它",
+      "can_take": false,
+      "reward_item": "信件"
     }
   },
   "npcs": {
     "管家": {
       "name": "老管家",
+      "location": "hallway",
       "initial_attitude": "中立",
       "can_escape_together": true,
-      "key_info": "知道后门密码",
+      "key_info": "知道后门密码：1924",
       "trust_threshold": 0.6,
-      "description": "一位年迈的管家，似乎知道这座宅邸的秘密"
+      "description": "一位年迈的管家，似乎知道这座宅邸的秘密。他的眼神闪烁不定，似乎在隐瞒什么。",
+      "dialogue": {
+        "first_meet": "你...你是谁？为什么会在这里？这里很危险，你应该尽快离开。",
+        "low_trust": "我不能告诉你太多，有些事情知道了反而更危险。",
+        "medium_trust": "这座宅邸的主人...他研究了不该研究的东西。现在一切都失控了。",
+        "high_trust": "后门的密码是1924，那是主人开始仪式的年份。带上我一起走吧，我不想再待在这里了。"
+      },
+      "trust_actions": {
+        "show_diary": 0.2,
+        "show_letter": 0.3,
+        "reveal_truth": 0.4
+      }
     }
   },
   "escape_conditions": {
     "minimum_progress": 0.6,
-    "required_items": ["钥匙"],
+    "required_items": ["密码"],
     "optional": ["NPC同行", "真相揭露"]
   },
   "endings": {
@@ -84,35 +215,45 @@
       "conditions": {
         "progress": 0.8,
         "truth_revealed": true,
-        "npc_together": true
+        "npc_together": true,
+        "san_min": 40
       },
-      "description": "你揭开了真相，带着管家一起逃离了诡宅"
+      "description": "你揭开了真相，破坏了地下室的祭坛，阻止了仪式的完成。带着管家一起逃离了诡宅，虽然理智受损，但你们都活了下来。警方后来封锁了这座宅邸。"
     },
     "good": {
       "conditions": {
-        "progress": 0.6,
-        "truth_revealed": true
+        "progress": 0.7,
+        "truth_revealed": true,
+        "san_min": 30
       },
-      "description": "你发现了真相并成功逃离，但管家留在了宅邸中"
+      "description": "你发现了真相并成功逃离，但管家拒绝离开，他说自己必须守在这里。你不知道他的选择是对是错，但至少你活着出来了。"
     },
     "normal": {
       "conditions": {
-        "progress": 0.6
+        "progress": 0.6,
+        "san_min": 20
       },
-      "description": "你找到了出口并逃离，但真相依然是个谜"
+      "description": "你找到了后门密码并逃离，但真相依然是个谜。你不知道宅邸里到底发生了什么，只知道那里有些东西不该被打扰。"
     },
     "bad": {
       "conditions": {
-        "progress": 0.3
+        "progress": 0.4,
+        "san_min": 10
       },
-      "description": "你勉强逃离了宅邸，但理智已经濒临崩溃"
+      "description": "你勉强逃离了宅邸，但理智已经濒临崩溃。那些疯狂的低语依然在你脑海中回响，你不确定自己还能保持清醒多久。"
+    },
+    "insane": {
+      "conditions": {
+        "san_max": 20
+      },
+      "description": "你的理智彻底崩溃了。当警方找到你时，你正在宅邸外喃喃自语，说着一些关于'星之眷族'和'门'的胡话。你被送进了精神病院。"
     },
     "death": {
       "conditions": {
         "san": 0,
         "hp": 0
       },
-      "description": "你永远留在了这座诡宅中..."
+      "description": "你永远留在了这座诡宅中...在黑暗中，你听到了那些东西的脚步声越来越近。"
     }
   }
 }
