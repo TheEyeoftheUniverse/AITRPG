@@ -1,259 +1,443 @@
 {
   "module_info": {
-    "name": "逃离诡宅",
-    "theme": "克苏鲁恐怖",
+    "name": "门缝",
+    "theme": "心理恐怖+克苏鲁恐怖",
     "target_rounds": 30,
-    "description": "你是一名私家侦探，接到委托调查一座废弃的宅邸。当你推开吱呀作响的大门，一股霉味扑面而来..."
+    "description": "你是一个想要购买低价房产的人。卖家似乎很着急想把这座'闹鬼'的房子脱手，你觉得这是个好机会。当晚，你就住了进去。然而，当你在陌生的卧室中醒来时，你发现有些事情不太对劲——门开了一条缝，而空气中弥漫的沉默，不断地从四面八方压迫着你的思考...",
+    "atmosphere_guide": {
+      "0.0-0.29": "calm：平静克制，客观叙述，偶尔埋下伏笔",
+      "0.3-0.49": "uneasy：隐约不安，细微异常，说不清哪里不对",
+      "0.5-0.69": "tense：紧张感上升，描述简洁有力，危险临近",
+      "0.7-0.89": "horror：主动渲染恐怖，感官细节，异常现象强化",
+      "0.9-1.0": "dread：克苏鲁式宇宙恐惧，着重于人类视野的渺小感，语言可破碎跳跃"
+    },
+    "atmosphere_note": "事件和地点的atmosphere值(0.0~1.0)表示该内容的基础氛围强度。文案AI应以此为基础，结合当前游戏进度(progress)适当叠加渲染强度：最终氛围 = min(1.0, atmosphere + progress * 0.3)"
   },
   "locations": {
-    "bedroom": {
-      "name": "卧室",
-      "description": "昏暗的房间，空气中弥漫着霉味。窗外传来诡异的声响。床铺凌乱，似乎有人刚刚离开。",
-      "objects": ["日记", "床", "衣柜", "窗户", "床头柜"],
-      "exits": ["走廊"],
+    "master_bedroom": {
+      "name": "主卧",
+      "description": "玩家初次醒来的地方。房间昏暗，空气中有股陈旧的味道。床铺凌乱，卧室门开了一条缝，透出走廊微弱的光。",
+      "atmosphere": 0.1,
+      "objects": [
+        "房产广告",
+        "窗户",
+        "床",
+        "门缝",
+        "破碎的镜子"
+      ],
+      "exits": [
+        "二楼走廊"
+      ],
+      "danger_level": 0,
+      "floor": 2
+    },
+    "second_floor_hallway": {
+      "name": "二楼走廊",
+      "description": "狭长的走廊，木地板发出轻微的吱呀声。墙上的壁纸已经泛黄，走廊两侧有几扇门。楼梯通向一楼，下面没有光。",
+      "atmosphere": 0.3,
+      "objects": [
+        "楼梯",
+        "窗户"
+      ],
+      "exits": [
+        "主卧",
+        "次卧",
+        "书房",
+        "一楼走廊"
+      ],
       "danger_level": 1,
-      "first_visit_hint": "这里是你醒来的地方，你不记得自己是如何来到这里的。"
+      "floor": 2
     },
-    "hallway": {
-      "name": "走廊",
-      "description": "狭长的走廊，墙上挂着破旧的画像。画中人的眼睛似乎在注视着你。地板发出令人不安的吱呀声。",
-      "objects": ["画像", "门", "地毯", "蜡烛台"],
-      "exits": ["卧室", "客厅", "地下室", "书房"],
-      "danger_level": 2,
-      "first_visit_hint": "走廊两侧有多扇门，你需要决定先探索哪里。"
-    },
-    "living_room": {
-      "name": "客厅",
-      "description": "宽敞的客厅，家具上积满了灰尘。壁炉里还残留着灰烬，似乎不久前有人生过火。",
-      "objects": ["壁炉", "沙发", "书架", "茶几", "留声机"],
-      "exits": ["走廊", "厨房"],
-      "danger_level": 2,
-      "first_visit_hint": "这里曾是宅邸主人接待客人的地方，也许能找到一些线索。"
-    },
-    "kitchen": {
-      "name": "厨房",
-      "description": "阴暗的厨房，水槽里堆满了发霉的餐具。空气中弥漫着腐烂的气味。",
-      "objects": ["水槽", "橱柜", "餐桌", "刀具", "后门"],
-      "exits": ["客厅"],
-      "danger_level": 2,
-      "first_visit_hint": "后门被锁住了，需要找到密码或钥匙才能离开。"
+    "guest_bedroom": {
+      "name": "次卧",
+      "description": "门紧紧关着，从门缝里透出微弱的光。当玩家靠近时，里面会传来冰冷的女声：'谁？'",
+      "objects": [
+        "紧锁的门"
+      ],
+      "exits": [
+        "二楼走廊"
+      ],
+      "danger_level": 0,
+      "floor": 2,
+      "npc_location": true,
+      "atmosphere": 0.35
     },
     "study": {
       "name": "书房",
-      "description": "堆满书籍的房间，书桌上散落着各种文件和笔记。墙上挂着一幅巨大的星图。",
-      "objects": ["书桌", "书柜", "星图", "保险箱", "羊皮卷"],
-      "exits": ["走廊"],
-      "danger_level": 3,
-      "first_visit_hint": "这里是宅邸主人研究神秘学的地方，充满了危险的知识。"
+      "description": "堆满书籍和文件的房间。书桌上散落着各种笔记和手稿，空气中弥漫着纸张和墨水的气味，还有一丝...焦灼的味道。",
+      "objects": [
+        "书桌",
+        "仪式笔记"
+      ],
+      "exits": [
+        "二楼走廊"
+      ],
+      "danger_level": 1,
+      "floor": 2,
+      "atmosphere": 0.4
+    },
+    "first_floor_hallway": {
+      "name": "一楼走廊",
+      "description": "一楼的走廊比二楼更加宽敞，同样安静得有点奇怪。大门就在眼前，左右通向客厅和厨房。",
+      "objects": [
+        "大门",
+        "楼梯"
+      ],
+      "exits": [
+        "二楼走廊",
+        "客厅",
+        "厨房"
+      ],
+      "danger_level": 2,
+      "floor": 1,
+      "atmosphere": 0.55
+    },
+    "living_room": {
+      "name": "客厅",
+      "description": "宽敞的客厅，家具上积满了灰尘。客厅入口不远处，有一个站得笔直的，类似于人的身影。它会一直背对着玩家，一动不动地凝视着茶几上的老式电话。",
+      "objects": [
+        "老式电话",
+        "改造蓝图",
+        "沙发",
+        "茶几"
+      ],
+      "exits": [
+        "一楼走廊"
+      ],
+      "danger_level": 5,
+      "floor": 1,
+      "has_butler": true,
+      "atmosphere": 0.75
+    },
+    "kitchen": {
+      "name": "厨房",
+      "description": "老旧的厨房，橱柜里的餐具蒙着厚厚的灰尘。墙上挂着一张泛黄的日历，日期停留在几十年前。角落里有一扇通向地下的门。",
+      "objects": [
+        "刀具",
+        "火源",
+        "日历",
+        "地下室入口"
+      ],
+      "exits": [
+        "一楼走廊"
+      ],
+      "danger_level": 1,
+      "floor": 1,
+      "atmosphere": 0.5
     },
     "basement": {
       "name": "地下室",
-      "description": "阴冷潮湿的地下室，空气中弥漫着血腥味。墙上刻满了诡异的符文，地面上有干涸的血迹。",
-      "objects": ["祭坛", "铁笼", "符文", "骸骨", "仪式刀"],
-      "exits": ["走廊"],
+      "description": "阴冷潮湿的地下室，堆满了旧家具和杂物。空气中有股霉味。玩家看过了蓝图之后，才会知道触发暗门的机关在哪。",
+      "objects": [
+        "杂物",
+        "暗门机关"
+      ],
+      "exits": [
+        "厨房",
+        "仪式现场"
+      ],
+      "danger_level": 3,
+      "floor": -1,
+      "atmosphere": 0.7
+    },
+    "ritual_chamber": {
+      "name": "仪式现场",
+      "description": "暗门后的密室。地面上画着复杂的召唤阵，粗绳从四个方向延伸，束缚着中央的符咒地毯。空气中弥漫着令人作呕的气息，不知道是来源于地面上的暗红色，还是别的什么。",
+      "objects": [
+        "召唤阵",
+        "粗绳",
+        "符咒地毯"
+      ],
+      "exits": [
+        "地下室"
+      ],
       "danger_level": 4,
-      "first_visit_hint": "这里是一切邪恶的源头，真相就在这里，但代价可能是你的理智。"
+      "floor": -1,
+      "is_final_location": true,
+      "atmosphere": 0.85
     }
   },
   "objects": {
-    "日记": {
+    "房产广告": {
       "type": "clue",
-      "location": "bedroom",
+      "location": "master_bedroom",
       "check_required": "侦查",
-      "difficulty": "普通",
-      "clue_value": 0.2,
-      "san_cost": -2,
-      "success_result": "发现日记，揭示了宅邸主人进行邪教仪式的记录。日记中提到'地下室的祭坛'和'星之眷族'。",
-      "failure_result": "没找到有用的东西，只是一些普通的日常记录",
-      "can_take": true,
-      "used_for": "了解宅邸历史"
-    },
-    "画像": {
-      "type": "clue",
-      "location": "hallway",
-      "check_required": "侦查",
-      "difficulty": "困难",
-      "clue_value": 0.15,
-      "san_cost": -3,
-      "success_result": "画像背后藏着一把生锈的钥匙。画中人的表情扭曲而诡异，眼睛似乎在流血。",
-      "failure_result": "只是一幅普通的画像，虽然画风有些阴郁",
-      "can_take": false,
-      "reward_item": "钥匙"
-    },
-    "书架": {
-      "type": "clue",
-      "location": "living_room",
-      "check_required": "图书馆",
-      "difficulty": "普通",
-      "clue_value": 0.1,
-      "san_cost": -1,
-      "success_result": "你在书架上找到一本《克苏鲁神话》，书中夹着一张纸条：'不要在午夜打开地下室的门'。",
-      "failure_result": "都是些普通的文学作品，没什么特别的",
-      "can_take": false
-    },
-    "壁炉": {
-      "type": "clue",
-      "location": "living_room",
-      "check_required": "侦查",
-      "difficulty": "普通",
+      "difficulty": "无需判定，直接成功",
       "clue_value": 0.05,
       "san_cost": 0,
-      "success_result": "壁炉的灰烬中有烧焦的纸片，依稀能看到'仪式'、'献祭'等字眼。",
-      "failure_result": "只是普通的灰烬",
-      "can_take": false
+      "success_result": "你找到了自己带进来的购房广告。'急售！价格面议！'玩家想起来，电话议价的时候卖家的语气也透着焦急。广告上的照片显示这是一座老房子，建于1950年代。",
+      "can_take": true,
+      "used_for": "了解房子背景",
+      "atmosphere": 0.05
     },
-    "后门": {
-      "type": "exit",
+    "门缝": {
+      "type": "clue",
+      "location": "master_bedroom",
+      "check_required": "侦查",
+      "difficulty": "无需判定，直接成功",
+      "clue_value": 0.05,
+      "san_cost": -1,
+      "success_result": "门开了一条缝，绝对不是玩家打开的。玩家在入睡前是关了门的。",
+      "can_take": false,
+      "atmosphere": 0.3
+    },
+    "窗户": {
+      "type": "clue",
+      "location": "master_bedroom",
+      "check_required": "侦查",
+      "difficulty": "无需判定，直接成功",
+      "clue_value": 0.1,
+      "san_cost": -1,
+      "success_result": "无论玩家看向哪扇窗户，都只能看见灰蒙蒙的、无尽的平原。这里不是房子原本所在的街道。",
+      "can_take": false,
+      "atmosphere": 0.35
+    },
+    "仪式笔记": {
+      "type": "clue",
+      "location": "study",
+      "check_required": "图书馆",
+      "difficulty": "普通",
+      "clue_value": 0.2,
+      "san_cost": -1,
+      "success_result": "能够找到一份潦草的研究笔记。笔记的主人在地下室进行了某种召唤仪式，试图'复活爱人'。笔记的最后写着：'若要终止仪式，需隔断束缚之绳，焚毁符咒之布。'举行仪式后，我确实见到了我的爱人，可是除了她以外，还有……",
+      "failure_result": "只找到了一些古旧的小说集或学术书本。",
+      "can_take": true,
+      "used_for": "了解破坏仪式的方法",
+      "atmosphere": 0.7
+    },
+    "老式电话": {
+      "type": "clue",
+      "location": "living_room",
+      "check_required": "教育",
+      "difficulty": "自动成功",
+      "clue_value": 0.1,
+      "san_cost": -2,
+      "success_result": "管家曾经凝视着的1950年代的旋转拨号电话，就算拨号也只有让人窒息的等待接听音。",
+      "can_take": false,
+      "requires_butler_gone": true,
+      "atmosphere": 0.55
+    },
+    "改造蓝图": {
+      "type": "clue",
+      "location": "living_room",
+      "check_required": "侦查",
+      "difficulty": "普通",
+      "clue_value": 0.25,
+      "san_cost": 0,
+      "success_result": "地下室的改造蓝图，画着前住户在原有的仓库地下室中增建的密室，入口是一扇暗门。蓝图上标注了暗门的位置：地下室西侧墙壁，按下第三块砖即可打开。",
+      "failure_result": "玩家只发现客厅里都是些老旧的东西。",
+      "can_take": true,
+      "used_for": "找到仪式现场",
+      "requires_butler_gone": true,
+      "atmosphere": 0.5
+    },
+    "刀具": {
+      "type": "tool",
       "location": "kitchen",
       "check_required": null,
       "difficulty": null,
-      "clue_value": 0,
+      "clue_value": 0.05,
       "san_cost": 0,
-      "success_result": "这是离开宅邸的出口，但需要四位数密码",
+      "success_result": "一把锋利的厨刀。",
+      "failure_result": null,
+      "can_take": true,
+      "used_for": "隔断仪式绳索",
+      "atmosphere": 0.1
+    },
+    "火源": {
+      "type": "tool",
+      "location": "kitchen",
+      "check_required": null,
+      "difficulty": null,
+      "clue_value": 0.05,
+      "san_cost": 0,
+      "success_result": "打火机和一些易燃物。",
+      "failure_result": null,
+      "can_take": true,
+      "used_for": "焚毁符咒地毯",
+      "atmosphere": 0.1
+    },
+    "日历": {
+      "type": "clue",
+      "location": "kitchen",
+      "check_required": "侦查",
+      "difficulty": "容易",
+      "clue_value": 0.05,
+      "san_cost": -1,
+      "success_result": "墙上的日历停留在1957年3月。",
+      "failure_result": "只是一张旧日历。",
+      "can_take": false,
+      "atmosphere": 0.35
+    },
+    "地下室入口": {
+      "type": "passage",
+      "location": "kitchen",
+      "check_required": null,
+      "difficulty": null,
+      "clue_value": 0.05,
+      "san_cost": 0,
+      "success_result": "通向地下室的门。门没有锁，可以直接下去。",
       "failure_result": null,
       "can_take": false,
-      "requires": ["密码"]
+      "leads_to": "basement",
+      "atmosphere": 0.55
     },
-    "书桌": {
-      "type": "clue",
-      "location": "study",
-      "check_required": "侦查",
-      "difficulty": "普通",
-      "clue_value": 0.15,
-      "san_cost": -1,
-      "success_result": "书桌抽屉里有一份研究笔记，记录着召唤仪式的步骤。最后一页写着：'1924'。",
-      "failure_result": "抽屉里只有些普通的文具",
-      "can_take": false,
-      "hint": "密码"
-    },
-    "星图": {
-      "type": "clue",
-      "location": "study",
-      "check_required": "图书馆",
-      "difficulty": "困难",
-      "clue_value": 0.2,
-      "san_cost": -4,
-      "success_result": "这不是普通的星图，而是通往异界的星门图。你理解了仪式的真正目的——打开通往外神的门。",
-      "failure_result": "只是一幅复杂的天文图，你看不懂",
-      "can_take": false
-    },
-    "祭坛": {
-      "type": "danger",
+    "暗门机关": {
+      "type": "puzzle",
       "location": "basement",
-      "check_required": "意志",
-      "difficulty": "极难",
-      "clue_value": 0.3,
-      "san_cost": -5,
-      "success_result": "你强忍着恐惧，发现了仪式的真相。祭坛上刻着破解仪式的方法，你知道如何阻止这一切了。",
-      "failure_result": "你的理智受到严重冲击，脑海中充满了疯狂的低语。你陷入短暂的恍惚。",
-      "can_take": false
-    },
-    "符文": {
-      "type": "clue",
-      "location": "basement",
-      "check_required": "图书馆",
-      "difficulty": "极难",
-      "clue_value": 0.25,
-      "san_cost": -3,
-      "success_result": "你认出了这些符文——古老的召唤咒文。通过解读，你了解了宅邸主人的疯狂计划。",
-      "failure_result": "这些符文太过晦涩，你完全看不懂",
-      "can_take": false
-    },
-    "铁笼": {
-      "type": "clue",
-      "location": "basement",
-      "check_required": "侦查",
-      "difficulty": "普通",
-      "clue_value": 0.1,
-      "san_cost": -2,
-      "success_result": "铁笼里有人类的骸骨和撕裂的衣物。这些都是献祭的牺牲品。",
-      "failure_result": "铁笼空空如也，只有些锈迹",
-      "can_take": false
-    },
-    "保险箱": {
-      "type": "container",
-      "location": "study",
-      "check_required": "机械修理",
-      "difficulty": "困难",
+      "check_required": null,
+      "difficulty": null,
       "clue_value": 0.1,
       "san_cost": 0,
-      "success_result": "你成功打开了保险箱，里面有一封信和一张照片。信中提到管家知道后门密码。",
-      "failure_result": "保险箱纹丝不动，你打不开它",
+      "success_result": "根据蓝图的指示才能找到西侧墙壁的第三块砖，按下去后，墙壁会发出沉闷的响声，一扇暗门缓缓打开，露出后面黑暗的通道。",
       "can_take": false,
-      "reward_item": "信件"
+      "requires": [
+        "改造蓝图"
+      ],
+      "leads_to": "ritual_chamber",
+      "atmosphere": 0.6
+    },
+    "粗绳": {
+      "type": "ritual_object",
+      "location": "ritual_chamber",
+      "check_required": null,
+      "difficulty": null,
+      "clue_value": 0.15,
+      "san_cost": -2,
+      "success_result": "四根粗绳从召唤阵的四个方向延伸，束缚着中央的符咒地毯。这是仪式的'束缚'部分。被切断时，流出了神秘的暗色液体——这东西到底是什么做的？玩家可能不会想知道。",
+      "failure_result": null,
+      "can_take": false,
+      "requires": [
+        "刀具"
+      ],
+      "destroyable": true,
+      "atmosphere": 0.75
+    },
+    "符咒地毯": {
+      "type": "ritual_object",
+      "location": "ritual_chamber",
+      "check_required": null,
+      "difficulty": null,
+      "clue_value": 0.2,
+      "san_cost": -2,
+      "success_result": "地毯上画满了扭曲的符文，散发着不祥的气息。这是召唤仪式的核心。被点燃后，发出浓烈的奇特臭气，以及在狭小空间内，扑面而来的热气，让玩家感到不适。",
+      "failure_result": null,
+      "can_take": false,
+      "requires": [
+        "火源",
+        "粗绳已切断"
+      ],
+      "destroyable": true,
+      "atmosphere": 0.95
     }
   },
   "npcs": {
-    "管家": {
-      "name": "老管家",
-      "location": "hallway",
-      "initial_attitude": "中立",
+    "艾米莉": {
+      "name": "艾米莉",
+      "location": "guest_bedroom",
+      "initial_attitude": "冷淡",
       "can_escape_together": true,
-      "key_info": "知道后门密码：1924",
-      "trust_threshold": 0.6,
-      "description": "一位年迈的管家，似乎知道这座宅邸的秘密。他的眼神闪烁不定，似乎在隐瞒什么。",
-      "dialogue": {
-        "first_meet": "你...你是谁？为什么会在这里？这里很危险，你应该尽快离开。",
-        "low_trust": "我不能告诉你太多，有些事情知道了反而更危险。",
-        "medium_trust": "这座宅邸的主人...他研究了不该研究的东西。现在一切都失控了。",
-        "high_trust": "后门的密码是1924，那是主人开始仪式的年份。带上我一起走吧，我不想再待在这里了。"
-      },
+      "trust_threshold": 0.5,
+      "appearance": "看起来二十多岁的年轻女性，穿着款式非常旧的连衣裙，已经有些皱褶。眼神锐利，带着明显的疲惫，但没有丧失神采。",
+      "personality": "独立、理性、有主见，行动力强。个性偏英气，说话直接，偶尔毒舌，但这掩盖不了她骨子里的坚强。在极端困境下依然能保持冷静，不轻易崩溃。",
+      "background": "1957年的独居女性，同样是被低价房产广告吸引而住进这里，随后被卷入中间带。她已经在次卧里困了很久，久到那本反复翻阅的书都能倒背如流。她总结出了关于管家的基本规律，但无法独自行动。",
+      "current_state": "把自己锁在次卧里，反复翻阅同一本书（已能背诵）。当听到门外有动静时会高度警惕。",
+      "first_appearance": "当玩家靠近次卧时，会听到冰冷的女声。她不会立刻开门，需要玩家通过对话建立信任。",
       "trust_actions": {
-        "show_diary": 0.2,
-        "show_letter": 0.3,
-        "reveal_truth": 0.4
-      }
+        "分享自己的经历（她会询问玩家是谁，为什么在这里）": 0.2,
+        "把房产广告从门下方滑进去（听了玩家的经历和动机之后，会要求玩家给出证据）": 0.15,
+        "提到窗外异象": 0.15,
+        "询问她的故事（她也是来这里购买低价房产的）": 0.1,
+        "承诺协助她找寻离开这里的线索": 0.2
+      },
+      "dialogue_guide": {
+        "low_trust": "警惕、简短，不愿透露太多。会用反问来试探对方。",
+        "medium_trust": "开始分享她观察到的管家规律，语气直接，偶有讽刺（比如嘲讽前住户居然会做这种蠢事）。",
+        "high_trust": "提出合作引开管家，以便探索，寻找离开方法的计划。",
+        "cooperation": "行动时冷静、果断，会主动提出自己来引开管家。偶尔会说一些轻描淡写的狠话，掩盖内心的恐惧。"
+      },
+      "key_info": {
+        "管家规律": "它只有视觉，听不到声音。不要进入它的视野，绝对不能跟它对视，我见过一个人被管家看了一眼，除了惨叫以外就没剩下别的……关门可以暂时挡住它，它不会主动开门的。但它会在门外等很久，你无法判断它会什么时候离开……绝对，绝对，绝对不能随便开门。",
+        "提出由自己（玩家）来引开管家": "由玩家吸引管家注意力的话，将管家暂时吸引在主卧门口的话，她可以完美地在房子里完成所有线索调查并最终来解救玩家，跟玩家分享正确离开的线索。"
+      },
+      "atmosphere": 0.35
+    },
+    "管家": {
+      "name": "管家",
+      "location": "living_room",
+      "initial_attitude": "中立",
+      "can_escape_together": false,
+      "is_hostile": true,
+      "appearance": "人形存在，穿着一套老式执事服，剪裁考究但属于某个不确定的年代。它有呼吸——你能看到它的背部随着呼吸轻微起伏，这让它看起来像是活着的。",
+      "appearance_warning": "【绝对禁止描写管家的脸部或正面】玩家永远只能看管家的背影或侧影或头部以下的位置。与管家对视意味着即时疯狂结局，因此其脸部在整个游戏中必须保持未知。",
+      "nature": "神话生物目光的具现化。它不是真正的存在，而是某个超越理解的存在投射在这个空间里的注视，被中间带具现化成人形。它没有恶意，只是本能地凝视空间内的活物。",
+      "behavior": {
+        "default": "在客厅背对入口，凝视老式电话。呼吸缓慢而均匀。",
+        "triggered": "当活物进入视野时，会缓缓动身，试图靠近并凝视对方。动作不自然，像是不熟悉人形的身体。",
+        "pursuing": "一旦锁定目标，会缓慢但持续地朝目标移动。无法被声音吸引，只跟随视觉。",
+        "blocked": "当门关上阻挡视线时，会在门外静止等待，呼吸声隐约可闻。等待时间不定，玩家无法判断它是否离开。"
+      },
+      "gaze_consequence": "与管家对视会导致疯狂结局。玩家看到了不该被人类所见的东西。",
+      "distraction_method": "当有其他活物进入视野时，管家会转向新目标。可以利用此特性与NPC合作，让管家离开凝视的物品，或让管家离开卧室门前。",
+      "atmosphere": 0.75
     }
   },
   "escape_conditions": {
-    "minimum_progress": 0.6,
-    "required_items": ["密码"],
-    "optional": ["NPC同行", "真相揭露"]
+    "minimum_progress": 0.8,
+    "required_items": [
+      "已破坏仪式"
+    ]
   },
   "endings": {
-    "perfect": {
-      "conditions": {
-        "progress": 0.8,
-        "truth_revealed": true,
-        "npc_together": true,
-        "san_min": 40
-      },
-      "description": "你揭开了真相，破坏了地下室的祭坛，阻止了仪式的完成。带着管家一起逃离了诡宅，虽然理智受损，但你们都活了下来。警方后来封锁了这座宅邸。"
+    "influence_dimensions": {
+      "description": "以下维度将传递给文案AI，由AI生成开放式后日谈结局",
+      "dimensions": {
+        "escape_success": {
+          "description": "是否成功逃离中间带",
+          "affects": "是否回到现实世界"
+        },
+        "ritual_destroyed": {
+          "description": "是否完全破坏了仪式",
+          "affects": "神话生物是否永久失去兴趣，房子是否恢复正常"
+        },
+        "npc_together": {
+          "description": "艾米莉是否与玩家一同逃离",
+          "affects": "艾米莉的命运（由于艾米莉来自过去，回到现实后的玩家联系到艾米莉，会发现她已经老了，而且她找了主角很久，也没能找到有这么个人，直到主角如今找上她）"
+        },
+        "truth_revealed": {
+          "description": "玩家是否理解了中间带的完整真相",
+          "affects": "玩家对这段经历的理解和心理状态"
+        },
+        "san_remaining": {
+          "description": "逃离时的理智值(0-65)",
+          "affects": "玩家的心理创伤程度"
+        },
+        "butler_gaze": {
+          "description": "是否与管家对视",
+          "affects": "玩家精神彻底崩溃"
+        },
+        "rounds_used": {
+          "description": "使用了多少轮次",
+          "affects": "在中间带停留的时间对心理的影响"
+        }
+      }
     },
-    "good": {
-      "conditions": {
-        "progress": 0.7,
-        "truth_revealed": true,
-        "san_min": 30
+    "ending_conditions": {
+      "insane": {
+        "trigger": "butler_gaze===true OR san_remaining<=0",
+        "priority": 1,
+        "description": "疯狂结局：玩家永久疯狂了，彻底迷失在了这个世界，再也无人知晓玩家的下落。达成此结局的情况应该会是玩家在吸引管家注意力时，与管家对视了。例子：玩家吸引管家到主卧房门前停留，但打开了门缝，通过门缝试着查看管家是否离去时，会跟管家对上视线————管家会以一种极度扭曲身形的姿势把头移动到玩家的目光前，如果玩家是因此疯狂，这个场景需要详细描写，以给玩家留下深刻的印象。需要注意的是，除了主动打开门缝的情况，其他情况不主动看管家的脸就不会触发对视。而打开门缝这个行为会让管家的视线覆盖整个门缝，因此才会造成这样的结果。"
       },
-      "description": "你发现了真相并成功逃离，但管家拒绝离开，他说自己必须守在这里。你不知道他的选择是对是错，但至少你活着出来了。"
-    },
-    "normal": {
-      "conditions": {
-        "progress": 0.6,
-        "san_min": 20
+      "amnesia": {
+        "trigger": "amnesia===true AND escape_success===true",
+        "priority": 2,
+        "description": "失忆结局：使用刀具自我了结时，会活着从现实的主卧床上醒来，但失去一切记忆。"
       },
-      "description": "你找到了后门密码并逃离，但真相依然是个谜。你不知道宅邸里到底发生了什么，只知道那里有些东西不该被打扰。"
-    },
-    "bad": {
-      "conditions": {
-        "progress": 0.4,
-        "san_min": 10
-      },
-      "description": "你勉强逃离了宅邸，但理智已经濒临崩溃。那些疯狂的低语依然在你脑海中回响，你不确定自己还能保持清醒多久。"
-    },
-    "insane": {
-      "conditions": {
-        "san_max": 20
-      },
-      "description": "你的理智彻底崩溃了。当警方找到你时，你正在宅邸外喃喃自语，说着一些关于'星之眷族'和'门'的胡话。你被送进了精神病院。"
-    },
-    "death": {
-      "conditions": {
-        "san": 0,
-        "hp": 0
-      },
-      "description": "你永远留在了这座诡宅中...在黑暗中，你听到了那些东西的脚步声越来越近。"
+      "escaped": {
+        "trigger": "escape_success===true AND amnesia===false",
+        "priority": 3,
+        "description": "逃脱结局：根据各维度细化，最终输出类似于后日谈的结局"
+      }
+      }
     }
   }
-}
