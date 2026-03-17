@@ -75,14 +75,17 @@ class RuleAI:
 
         try:
             # 调用LLM
-            response = await provider.text_chat(prompt, [])
+            llm_response = await provider.text_chat(prompt, [])
+
+            # 提取文本内容
+            response_text = llm_response.completion_text if hasattr(llm_response, 'completion_text') else str(llm_response)
 
             # 解析JSON
-            result = json.loads(response)
+            result = json.loads(response_text)
             return result
 
         except json.JSONDecodeError:
-            logger.warning(f"[RuleAI] JSON解析失败，使用默认值。响应: {response}")
+            logger.warning(f"[RuleAI] JSON解析失败，使用默认值。响应: {response_text}")
             return {
                 "intent": "unknown",
                 "target": player_input,

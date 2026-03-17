@@ -41,19 +41,22 @@ class NarrativeAI:
 
         try:
             # 调用LLM
-            response = await provider.text_chat(prompt, [])
+            llm_response = await provider.text_chat(prompt, [])
+
+            # 提取文本内容
+            response_text = llm_response.completion_text if hasattr(llm_response, 'completion_text') else str(llm_response)
 
             # 解析JSON
-            result = json.loads(response)
+            result = json.loads(response_text)
 
             logger.info(f"[NarrativeAI] 文案生成完成，长度: {len(result.get('narrative', ''))}")
             return result
 
         except json.JSONDecodeError:
-            logger.warning(f"[NarrativeAI] JSON解析失败。响应: {response}")
+            logger.warning(f"[NarrativeAI] JSON解析失败。响应: {response_text}")
             # 如果JSON解析失败，尝试直接使用响应作为叙述
             return {
-                "narrative": response,
+                "narrative": response_text,
                 "summary": "玩家进行了探索"
             }
         except Exception as e:
