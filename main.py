@@ -26,12 +26,12 @@ class AITRPGPlugin(Star):
 
         # 读取配置
         config = self.context.get_config()
-        module_name = config.get("module_name", "default_module")
-        rule_ai_provider = config.get("rule_ai_provider", "gpt")
-        rhythm_ai_provider = config.get("rhythm_ai_provider", "deepseek")
-        narrative_ai_provider = config.get("narrative_ai_provider", "claude")
+        module_name = config.get("module_name", "default_module") or "default_module"
+        rule_ai_provider = config.get("rule_ai_provider", "") or None
+        rhythm_ai_provider = config.get("rhythm_ai_provider", "") or None
+        narrative_ai_provider = config.get("narrative_ai_provider", "") or None
 
-        logger.info(f"[AITRPG] 配置: 模组={module_name}, 规则AI={rule_ai_provider}, 节奏AI={rhythm_ai_provider}, 文案AI={narrative_ai_provider}")
+        logger.info(f"[AITRPG] 配置: 模组={module_name}, 规则AI={rule_ai_provider or '默认'}, 节奏AI={rhythm_ai_provider or '默认'}, 文案AI={narrative_ai_provider or '默认'}")
 
         # 初始化会话管理器（传入模组名称）
         self.session_manager = SessionManager()

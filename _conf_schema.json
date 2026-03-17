@@ -1,0 +1,29 @@
+{
+    "rule_ai_provider": {
+        "description": "规则AI使用的LLM提供商",
+        "type": "string",
+        "default": "",
+        "hint": "用于意图解析和规则判定。留空则使用当前会话的模型。推荐使用GPT-5。",
+        "_special": "select_provider"
+    },
+    "rhythm_ai_provider": {
+        "description": "节奏AI使用的LLM提供商",
+        "type": "string",
+        "default": "",
+        "hint": "用于剧情控制和节奏把握。留空则使用当前会话的模型。推荐使用DeepSeek v3。",
+        "_special": "select_provider"
+    },
+    "narrative_ai_provider": {
+        "description": "文案AI使用的LLM提供商",
+        "type": "string",
+        "default": "",
+        "hint": "用于生成沉浸式叙述文本。留空则使用当前会话的模型。推荐使用Claude 4.6 Sonnet。",
+        "_special": "select_provider"
+    },
+    "module_name": {
+        "description": "使用的模组名称",
+        "type": "string",
+        "default": "default_module",
+        "hint": "对应modules目录下的JSON文件名（不含.json后缀）。默认使用default_module。"
+    }
+}
