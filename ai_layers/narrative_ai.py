@@ -6,8 +6,9 @@ import json
 class NarrativeAI:
     """文案AI - 负责生成沉浸式叙述文本"""
 
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, provider_name: str = "claude"):
         self.context = context
+        self.provider_name = provider_name
 
     async def generate(self, rule_result: dict, rhythm_result: dict, narrative_history: list) -> dict:
         """
@@ -21,8 +22,12 @@ class NarrativeAI:
         Returns:
             {"narrative": "叙述文本", "summary": "本轮总结"}
         """
-        # 获取LLM提供商（使用Claude）
-        provider = self.context.get_using_provider()
+        # 获取指定的LLM提供商
+        provider = self.context.get_provider(self.provider_name)
+        if not provider:
+            logger.warning(f"[NarrativeAI] 未找到提供商 {self.provider_name}，使用默认提供商")
+            provider = self.context.get_using_provider()
+
         if not provider:
             logger.error("[NarrativeAI] 未找到LLM提供商")
             return self._get_default_narrative(rule_result, rhythm_result)

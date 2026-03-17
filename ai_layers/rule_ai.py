@@ -7,8 +7,9 @@ import random
 class RuleAI:
     """规则AI - 负责意图解析和规则判定"""
 
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, provider_name: str = "gpt"):
         self.context = context
+        self.provider_name = provider_name
         self.rules = self._load_rules()
 
     def _load_rules(self):
@@ -45,8 +46,12 @@ class RuleAI:
         Returns:
             意图JSON: {"intent": "search", "target": "书架", "category": "调查"}
         """
-        # 获取LLM提供商
-        provider = self.context.get_using_provider()
+        # 获取指定的LLM提供商
+        provider = self.context.get_provider(self.provider_name)
+        if not provider:
+            logger.warning(f"[RuleAI] 未找到提供商 {self.provider_name}，使用默认提供商")
+            provider = self.context.get_using_provider()
+
         if not provider:
             logger.error("[RuleAI] 未找到LLM提供商")
             return {"intent": "unknown", "target": None, "category": "其他"}

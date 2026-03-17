@@ -24,13 +24,23 @@ class AITRPGPlugin(Star):
         """插件初始化"""
         logger.info("[AITRPG] 正在初始化插件...")
 
-        # 初始化会话管理器
-        self.session_manager = SessionManager()
+        # 读取配置
+        config = self.context.get_config()
+        module_name = config.get("module_name", "default_module")
+        rule_ai_provider = config.get("rule_ai_provider", "gpt")
+        rhythm_ai_provider = config.get("rhythm_ai_provider", "deepseek")
+        narrative_ai_provider = config.get("narrative_ai_provider", "claude")
 
-        # 初始化三层AI
-        self.rule_ai = RuleAI(self.context)
-        self.rhythm_ai = RhythmAI(self.context)
-        self.narrative_ai = NarrativeAI(self.context)
+        logger.info(f"[AITRPG] 配置: 模组={module_name}, 规则AI={rule_ai_provider}, 节奏AI={rhythm_ai_provider}, 文案AI={narrative_ai_provider}")
+
+        # 初始化会话管理器（传入模组名称）
+        self.session_manager = SessionManager()
+        self.session_manager.module_data = self.session_manager._load_module(module_name)
+
+        # 初始化三层AI（传入提供商名称）
+        self.rule_ai = RuleAI(self.context, rule_ai_provider)
+        self.rhythm_ai = RhythmAI(self.context, rhythm_ai_provider)
+        self.narrative_ai = NarrativeAI(self.context, narrative_ai_provider)
 
         logger.info("[AITRPG] 插件初始化完成！")
 

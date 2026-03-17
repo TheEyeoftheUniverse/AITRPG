@@ -6,8 +6,9 @@ import json
 class RhythmAI:
     """节奏AI - 负责对比模组和控制剧情节奏"""
 
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, provider_name: str = "deepseek"):
         self.context = context
+        self.provider_name = provider_name
 
     async def process(self, intent: dict, player_input: str, game_state: dict) -> dict:
         """
@@ -21,8 +22,12 @@ class RhythmAI:
         Returns:
             节奏AI输出JSON
         """
-        # 获取LLM提供商（使用DeepSeek）
-        provider = self.context.get_using_provider()
+        # 获取指定的LLM提供商
+        provider = self.context.get_provider(self.provider_name)
+        if not provider:
+            logger.warning(f"[RhythmAI] 未找到提供商 {self.provider_name}，使用默认提供商")
+            provider = self.context.get_using_provider()
+
         if not provider:
             logger.error("[RhythmAI] 未找到LLM提供商")
             return self._get_default_result()

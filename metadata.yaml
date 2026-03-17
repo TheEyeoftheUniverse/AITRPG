@@ -4,3 +4,25 @@ desc: 基于三层AI架构的COC跑团系统，支持开放探索和动态剧情
 version: v1.0.0
 author: TheEyeoftheUniverse
 repo: https://github.com/TheEyeoftheUniverse/AITRPG
+
+# 插件配置项
+configs:
+  - name: rule_ai_provider
+    desc: 规则AI使用的LLM提供商（用于意图解析和规则判定）
+    type: str
+    default: "gpt"
+
+  - name: rhythm_ai_provider
+    desc: 节奏AI使用的LLM提供商（用于剧情控制和节奏把握）
+    type: str
+    default: "deepseek"
+
+  - name: narrative_ai_provider
+    desc: 文案AI使用的LLM提供商（用于生成沉浸式叙述文本）
+    type: str
+    default: "claude"
+
+  - name: module_name
+    desc: 使用的模组名称（对应modules目录下的JSON文件名，不含.json后缀）
+    type: str
+    default: "default_module"

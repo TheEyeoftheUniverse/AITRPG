@@ -11,55 +11,34 @@ class SessionManager:
         self.sessions: Dict[str, Dict[str, Any]] = {}
         self.module_data = self._load_module()
 
-    def _load_module(self):
+    def _load_module(self, module_name: str = "default_module"):
         """加载模组数据"""
-        # 暂时返回硬编码的简易模组，后续从JSON文件加载
-        return {
-            "module_info": {
-                "name": "逃离诡宅",
-                "theme": "克苏鲁恐怖",
-                "target_rounds": 30
-            },
-            "locations": {
-                "bedroom": {
-                    "name": "卧室",
-                    "description": "昏暗的房间，空气中弥漫着霉味",
-                    "objects": ["日记", "床", "衣柜"],
-                    "exits": ["走廊"],
-                    "danger_level": 1
+        # 从JSON文件加载模组
+        module_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "modules",
+            f"{module_name}.json"
+        )
+
+        try:
+            with open(module_path, "r", encoding="utf-8") as f:
+                module_data = json.load(f)
+            return module_data
+        except FileNotFoundError:
+            # 如果文件不存在，返回一个最小化的默认模组
+            return {
+                "module_info": {
+                    "name": "默认模组",
+                    "theme": "克苏鲁恐怖",
+                    "target_rounds": 30
                 },
-                "hallway": {
-                    "name": "走廊",
-                    "description": "狭长的走廊，墙上挂着破旧的画像",
-                    "objects": ["画像", "门"],
-                    "exits": ["卧室", "客厅", "地下室"],
-                    "danger_level": 2
-                }
-            },
-            "objects": {
-                "日记": {
-                    "type": "clue",
-                    "check_required": "侦查",
-                    "difficulty": "普通",
-                    "clue_value": 0.2,
-                    "san_cost": -2,
-                    "success_result": "发现日记，揭示了宅邸的黑暗秘密",
-                    "failure_result": "没找到有用的东西"
-                }
-            },
-            "npcs": {
-                "管家": {
-                    "initial_attitude": "中立",
-                    "can_escape_together": True,
-                    "key_info": "知道后门密码"
-                }
-            },
-            "escape_conditions": {
-                "minimum_progress": 0.6,
-                "required_items": ["钥匙"],
-                "optional": ["NPC同行", "真相揭露"]
+                "locations": {},
+                "objects": {},
+                "npcs": {},
+                "escape_conditions": {}
             }
-        }
+        except json.JSONDecodeError as e:
+            raise ValueError(f"模组JSON格式错误: {e}")
 
     def create_session(self, session_id: str):
         """创建新游戏会话"""

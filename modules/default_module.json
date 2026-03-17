@@ -1,0 +1,118 @@
+{
+  "module_info": {
+    "name": "逃离诡宅",
+    "theme": "克苏鲁恐怖",
+    "target_rounds": 30,
+    "description": "你是一名私家侦探，接到委托调查一座废弃的宅邸。当你推开吱呀作响的大门，一股霉味扑面而来..."
+  },
+  "locations": {
+    "bedroom": {
+      "name": "卧室",
+      "description": "昏暗的房间，空气中弥漫着霉味。窗外传来诡异的声响。",
+      "objects": ["日记", "床", "衣柜"],
+      "exits": ["走廊"],
+      "danger_level": 1
+    },
+    "hallway": {
+      "name": "走廊",
+      "description": "狭长的走廊，墙上挂着破旧的画像。画中人的眼睛似乎在注视着你。",
+      "objects": ["画像", "门"],
+      "exits": ["卧室", "客厅", "地下室"],
+      "danger_level": 2
+    },
+    "living_room": {
+      "name": "客厅",
+      "description": "宽敞的客厅，家具上积满了灰尘。壁炉里还残留着灰烬。",
+      "objects": ["壁炉", "沙发", "书架"],
+      "exits": ["走廊", "厨房"],
+      "danger_level": 2
+    },
+    "basement": {
+      "name": "地下室",
+      "description": "阴冷潮湿的地下室，空气中弥漫着血腥味。墙上刻满了诡异的符文。",
+      "objects": ["祭坛", "铁笼", "符文"],
+      "exits": ["走廊"],
+      "danger_level": 4
+    }
+  },
+  "objects": {
+    "日记": {
+      "type": "clue",
+      "check_required": "侦查",
+      "difficulty": "普通",
+      "clue_value": 0.2,
+      "san_cost": -2,
+      "success_result": "发现日记，揭示了宅邸主人进行邪教仪式的记录",
+      "failure_result": "没找到有用的东西，只是一些普通的日常记录"
+    },
+    "画像": {
+      "type": "clue",
+      "check_required": "侦查",
+      "difficulty": "困难",
+      "clue_value": 0.15,
+      "san_cost": -3,
+      "success_result": "画像背后藏着一把钥匙，画中人的表情扭曲而诡异",
+      "failure_result": "只是一幅普通的画像"
+    },
+    "祭坛": {
+      "type": "danger",
+      "check_required": "意志",
+      "difficulty": "极难",
+      "clue_value": 0.3,
+      "san_cost": -5,
+      "success_result": "你强忍着恐惧，发现了仪式的真相和逃离的方法",
+      "failure_result": "你的理智受到严重冲击，陷入短暂的疯狂"
+    }
+  },
+  "npcs": {
+    "管家": {
+      "name": "老管家",
+      "initial_attitude": "中立",
+      "can_escape_together": true,
+      "key_info": "知道后门密码",
+      "trust_threshold": 0.6,
+      "description": "一位年迈的管家，似乎知道这座宅邸的秘密"
+    }
+  },
+  "escape_conditions": {
+    "minimum_progress": 0.6,
+    "required_items": ["钥匙"],
+    "optional": ["NPC同行", "真相揭露"]
+  },
+  "endings": {
+    "perfect": {
+      "conditions": {
+        "progress": 0.8,
+        "truth_revealed": true,
+        "npc_together": true
+      },
+      "description": "你揭开了真相，带着管家一起逃离了诡宅"
+    },
+    "good": {
+      "conditions": {
+        "progress": 0.6,
+        "truth_revealed": true
+      },
+      "description": "你发现了真相并成功逃离，但管家留在了宅邸中"
+    },
+    "normal": {
+      "conditions": {
+        "progress": 0.6
+      },
+      "description": "你找到了出口并逃离，但真相依然是个谜"
+    },
+    "bad": {
+      "conditions": {
+        "progress": 0.3
+      },
+      "description": "你勉强逃离了宅邸，但理智已经濒临崩溃"
+    },
+    "death": {
+      "conditions": {
+        "san": 0,
+        "hp": 0
+      },
+      "description": "你永远留在了这座诡宅中..."
+    }
+  }
+}

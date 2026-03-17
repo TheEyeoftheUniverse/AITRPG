@@ -32,7 +32,16 @@ astrbot init
 - DeepSeek v3（节奏AI）
 - Claude 4.6 Sonnet（文案AI）
 
-### 4. 启动游戏
+### 4. 配置插件
+
+在AstrBot的WebUI中，找到AITRPG插件的配置页面，可以设置：
+
+- **rule_ai_provider**: 规则AI使用的LLM提供商（默认：gpt）
+- **rhythm_ai_provider**: 节奏AI使用的LLM提供商（默认：deepseek）
+- **narrative_ai_provider**: 文案AI使用的LLM提供商（默认：claude）
+- **module_name**: 使用的模组名称（默认：default_module）
+
+### 5. 启动游戏
 
 在聊天中发送：
 ```
@@ -73,14 +82,16 @@ astrbot init
 ```
 AITRPG/
 ├── main.py                    # 插件主入口
-├── metadata.yaml              # 插件元数据
+├── metadata.yaml              # 插件元数据和配置项
 ├── ai_layers/                 # 三层AI
 │   ├── rule_ai.py            # 规则AI（意图解析+判定）
 │   ├── rhythm_ai.py          # 节奏AI（剧情控制）
 │   └── narrative_ai.py       # 文案AI（叙述生成）
 ├── game_state/                # 游戏状态管理
 │   └── session_manager.py    # 会话管理器
-├── modules/                   # 模组数据（待添加）
+├── modules/                   # 模组数据
+│   ├── default_module.json   # 默认模组
+│   └── README.md             # 模组编辑说明
 └── rules/                     # 规则数据（待添加）
 ```
 
@@ -111,9 +122,20 @@ AITRPG/
 ## 开发计划
 
 - [x] Day 1: 插件框架 + 三层AI集成
-- [ ] Day 2: 模组数据 + 游戏状态优化
+- [x] Day 1.5: 模组JSON化 + 模型配置
+- [ ] Day 2: 模组数据完善 + 游戏状态优化
 - [ ] Day 3: 规则完善 + 测试
 - [ ] Day 4: 前端可视化 + 部署
+
+## 自定义模组
+
+你可以创建自己的模组文件：
+
+1. 复制 `modules/default_module.json`
+2. 修改地点、物品、NPC等内容
+3. 在插件配置中设置 `module_name` 为你的模组文件名（不含.json）
+
+详细说明请查看 `modules/README.md`
 
 ## 作者
 
