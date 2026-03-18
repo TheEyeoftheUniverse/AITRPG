@@ -118,12 +118,6 @@ class NarrativeAI:
 
     def _build_prompt(self, rule_result: dict, rhythm_result: dict, narrative_history: list):
         """构建文案AI的提示词"""
-        # 获取模组开场白
-        opening = self.module_data.get("module_info", {}).get("opening", "")
-
-        # 历史文本（近10轮完整文案，更早的用小总结）
-        history_text = self._build_history_text(narrative_history)
-
         # 规则判定信息
         rule_info = ""
         if rule_result.get("check_type"):
@@ -163,9 +157,7 @@ class NarrativeAI:
             return ""
 
         # 替换占位符
-        prompt = prompt_template.replace("{opening}", opening)
-        prompt = prompt.replace("{history_text}", history_text)
-        prompt = prompt.replace("{rule_info}", rule_info)
+        prompt = prompt_template.replace("{rule_info}", rule_info)
         prompt = prompt.replace("{rhythm_info}", rhythm_info)
         prompt = prompt.replace("{location}", location)
 

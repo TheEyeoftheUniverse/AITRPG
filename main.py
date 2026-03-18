@@ -186,12 +186,28 @@ class AITRPGPlugin(Star):
         )
         logger.info(f"[AITRPG] 文案生成完成")
 
-        # 更新文案历史
+        # 将用户输入和完整文案写入AstrBot对话历史
+        await conv_mgr.add_message_pair(
+            cid=conv_id,
+            user_message={"role": "user", "content": player_input},
+            assistant_message={"role": "assistant", "content": narrative_result["narrative"]}
+        )
+
+        # 超过10轮后，将最老的一轮assistant内容替换为对应的小总结
+        await self._compress_history_if_needed(
+            conv_mgr=conv_mgr,
+            session_id=session_id,
+            conv_id=conv_id
+        )
+
+        # 同步更新session_manager的文案历史记录
         self.session_manager.add_narrative_summary(
             session_id,
             narrative_result["narrative"],
             narrative_result["summary"]
         )
+
+        logger.info(f"[AITRPG] 已更新对话历史")
 
         # 格式化输出
         output = self._format_output(
@@ -201,15 +217,42 @@ class AITRPGPlugin(Star):
             state=state
         )
 
-        # 将用户输入和小总结添加到对话历史
-        await conv_mgr.add_message_pair(
-            cid=conv_id,
-            user_message={"role": "user", "content": player_input},
-            assistant_message={"role": "assistant", "content": narrative_result["summary"]}
-        )
-        logger.info(f"[AITRPG] 已更新对话历史")
-
         return output
+
+    async def _compress_history_if_needed(self, conv_mgr, session_id: str, conv_id: str):
+        """超过10轮后，将最老的一轮assistant内容替换为对应的小总结"""
+        conversation = await conv_mgr.get_conversation(session_id, conv_id)
+        if not conversation or not conversation.history:
+            return
+
+        history = json.loads(conversation.history)
+
+        # 统计assistant消息索引
+        assistant_idxs = [i for i, m in enumerate(history) if m.get("role") == "assistant"]
+        if len(assistant_idxs) <= 10:
+            return
+
+        # 找到最老的尚未压缩的轮次
+        oldest_idx = assistant_idxs[0]
+        current_content = history[oldest_idx].get("content", "")
+        if current_content.startswith("[摘要]"):
+            return
+
+        # 从session_manager的narrative_history中取对应轮次的summary
+        state = self.session_manager.get_session(session_id)
+        narrative_history = list(state.get("narrative_history", []))
+        # assistant_idxs[0]对应第1轮，narrative_history[0]对应第1轮
+        round_index = 0  # 第一条未压缩的assistant消息对应第0个记录
+        if round_index < len(narrative_history):
+            entry = narrative_history[round_index]
+            summary = entry.get("summary", "") if isinstance(entry, dict) else str(entry)
+        else:
+            summary = current_content[:30]
+
+        history[oldest_idx]["content"] = f"[摘要] {summary}"
+        conversation.history = json.dumps(history, ensure_ascii=False)
+        await conv_mgr.update_conversation(conv_id, conversation)
+        logger.info(f"[AITRPG] 已压缩第{oldest_idx}条历史记录为摘要")
 
     def _format_output(self, narrative, rule_result, rhythm_result, state):
         """格式化输出（包含AI工作流展示）"""
