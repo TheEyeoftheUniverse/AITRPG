@@ -111,20 +111,25 @@ class NarrativeAI:
 - 投骰: {rule_result.get('roll')}/{rule_result.get('threshold')}
 - 结果: {rule_result.get('result_description')}"""
 
-        # 节奏AI信息
-        rhythm_info = ""
-        if rhythm_result.get("feasible"):
-            outcome = rhythm_result.get("success_outcome" if rule_result.get("success", True) else "failure_outcome", {})
-            rhythm_info = f"""剧情进展：
-- 可行性: {rhythm_result.get('reason')}
-- 结果: {outcome.get('description', '继续探索')}
-- 进度: {int(rhythm_result.get('current_progress', 0) * 100)}%"""
+        # 节奏AI信息（完整传递场景/物品字段和氛围指南）
+        location_context = rhythm_result.get("location_context", {})
+        object_context = rhythm_result.get("object_context", None)
+        atmosphere_guide = rhythm_result.get("atmosphere_guide", {})
+        feasible = rhythm_result.get("feasible", True)
+        hint = rhythm_result.get("hint", None)
+        stage_assessment = rhythm_result.get("stage_assessment", "")
 
-        # 风格上下文（从节奏AI获取）
-        style_context = rhythm_result.get("style_context", {})
-        theme = style_context.get("theme", "克苏鲁恐怖")
-        location = style_context.get("location", "未知场景")
-        atmosphere = style_context.get("atmosphere", 0.5)
+        rhythm_info = f"""剧情信息：
+- 行动可行: {feasible}
+- 阶段判断: {stage_assessment}
+- 当前场景字段: {json.dumps(location_context, ensure_ascii=False)}
+- 涉及物品字段: {json.dumps(object_context, ensure_ascii=False) if object_context else '无'}
+- 氛围指南: {json.dumps(atmosphere_guide, ensure_ascii=False)}"""
+
+        if not feasible and hint:
+            rhythm_info += f"\n- 不可行原因（供参考，请自然融入叙述）: {hint}"
+
+        location = location_context.get("name", "未知场景")
 
         # 使用配置中的提示词模板
         prompt_template = self.config.get("narrative_ai_prompt", "").strip()
@@ -140,9 +145,7 @@ class NarrativeAI:
         prompt = prompt.replace("{history_text}", history_text)
         prompt = prompt.replace("{rule_info}", rule_info)
         prompt = prompt.replace("{rhythm_info}", rhythm_info)
-        prompt = prompt.replace("{theme}", theme)
         prompt = prompt.replace("{location}", location)
-        prompt = prompt.replace("{atmosphere}", str(atmosphere))
 
         return prompt
 

@@ -160,22 +160,18 @@ class AITRPGPlugin(Star):
         )
         logger.info(f"[AITRPG] 规则判定结果: {rule_result}")
 
-        # 根据判定结果应用对应的outcome
-        outcome = rhythm_result.get("success_outcome" if rule_result.get("success", True) else "failure_outcome", {}) or {}
-
-        # 更新进度
-        if outcome.get("progress_gain"):
-            rhythm_result["current_progress"] = state.get("progress", 0) + outcome["progress_gain"]
-
-        # 更新玩家状态（从success_outcome中提取）
-        if rule_result.get("success") and "success_outcome" in rhythm_result:
-            # 从模组数据中获取物品的SAN损失
-            clue_name = rhythm_result["success_outcome"].get("clue")
-            if clue_name and self.session_manager.module_data:
-                module_obj = self.session_manager.module_data.get("objects", {}).get(clue_name, {})
-                san_cost = module_obj.get("san_cost", 0)
-                rhythm_result["player_changes"] = {"san": san_cost, "hp": 0}
-                rhythm_result["world_changes"] = {"clues": [clue_name] if clue_name else []}
+        # 根据判定结果从物品字段中提取SAN损失并更新状态
+        if rule_result.get("success"):
+            object_context = rhythm_result.get("object_context") or {}
+            san_cost = object_context.get("san_cost", 0)
+            if san_cost:
+                state["player"]["san"] += san_cost
+            clue_name = object_context.get("name") or (list(object_context.keys())[0] if object_context else None)
+            if clue_name:
+                rhythm_result["world_changes"] = rhythm_result.get("world_changes") or {}
+                rhythm_result["world_changes"].setdefault("clues", [])
+                if clue_name not in rhythm_result["world_changes"]["clues"]:
+                    rhythm_result["world_changes"]["clues"].append(clue_name)
 
         # 更新游戏状态
         self.session_manager.update_state(session_id, rhythm_result)
@@ -238,10 +234,10 @@ class AITRPGPlugin(Star):
 
         # 节奏AI进展
         output.append(f"🎬 剧情进展:")
-        output.append(f"  进度: {int(rhythm_result.get('current_progress', 0) * 100)}%")
+        output.append(f"  阶段: {rhythm_result.get('stage_assessment', 'N/A')}")
         output.append(f"  场景: {state.get('current_location', 'N/A')}")
-        if rhythm_result.get('hint'):
-            output.append(f"  💡 提示: {rhythm_result['hint']}")
+        if not rhythm_result.get('feasible') and rhythm_result.get('hint'):
+            output.append(f"  ⚠️ 限制: {rhythm_result['hint']}")
         output.append("")
 
         # 玩家状态
@@ -265,7 +261,6 @@ class AITRPGPlugin(Star):
         lines.append(f"  生命: {player.get('hp', 0)}")
         lines.append("")
         lines.append(f"📍 当前位置: {state.get('current_location', 'N/A')}")
-        lines.append(f"📈 进度: {int(state.get('progress', 0) * 100)}%")
         lines.append("")
         lines.append(f"🔍 已发现线索: {len(world.get('clues_found', []))}")
         if world.get('clues_found'):

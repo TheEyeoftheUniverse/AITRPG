@@ -45,7 +45,6 @@ class SessionManager:
         self.sessions[session_id] = {
             "session_id": session_id,
             "current_location": "master_bedroom",
-            "progress": 0.0,
             "round_count": 0,
 
             "player": {
@@ -105,20 +104,8 @@ class SessionManager:
 
         state = self.sessions[session_id]
 
-        # 更新进度
-        if "current_progress" in rhythm_result:
-            state["progress"] = rhythm_result["current_progress"]
-
         # 更新轮次
         state["round_count"] += 1
-
-        # 更新玩家状态
-        if "player_changes" in rhythm_result:
-            changes = rhythm_result["player_changes"]
-            if "san" in changes:
-                state["player"]["san"] += changes["san"]
-            if "hp" in changes:
-                state["player"]["hp"] += changes["hp"]
 
         # 更新世界状态
         if "world_changes" in rhythm_result:
@@ -128,11 +115,11 @@ class SessionManager:
                     if clue not in state["world_state"]["clues_found"]:
                         state["world_state"]["clues_found"].append(clue)
 
-        # 保存节奏AI上下文
+        # 保存节奏AI上下文（阶段判断+世界变化）
         state["rhythm_context"].append({
             "round": state["round_count"],
-            "progress": state["progress"],
-            "changes": rhythm_result
+            "stage_assessment": rhythm_result.get("stage_assessment", ""),
+            "world_changes": rhythm_result.get("world_changes", {})
         })
 
     def add_narrative_summary(self, session_id: str, summary: str):

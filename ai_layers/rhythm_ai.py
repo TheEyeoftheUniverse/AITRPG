@@ -90,50 +90,43 @@ class RhythmAI:
             return self._get_default_result()
 
     def _build_module_context(self, game_state: dict) -> str:
-        """从模组数据动态生成当前场景的上下文"""
-        current_location = game_state.get("current_location", "bedroom")
+        """从模组数据动态生成当前场景的上下文（传递完整原始JSON字段）"""
+        current_location = game_state.get("current_location", "master_bedroom")
 
-        # 获取当前场景信息
         locations = self.module_data.get("locations", {})
         location_data = locations.get(current_location, {})
 
         if not location_data:
             return "当前场景信息不可用"
 
-        # 构建场景描述
+        # 当前场景完整字段
         context_parts = []
-        context_parts.append(f"当前场景：{location_data.get('name', current_location)}")
-        context_parts.append(f"- 描述: {location_data.get('description', '无描述')}")
-        context_parts.append(f"- 可交互物品：{', '.join(location_data.get('objects', []))}")
-        context_parts.append(f"- 出口：{', '.join(location_data.get('exits', []))}")
+        context_parts.append("当前场景完整字段（原文）：")
+        context_parts.append(json.dumps({current_location: location_data}, ensure_ascii=False, indent=2))
 
-        # 添加物品详细信息
+        # 当前场景内所有物品的完整字段
         objects = self.module_data.get("objects", {})
+        scene_objects = {}
         for obj_name in location_data.get("objects", []):
             obj_data = objects.get(obj_name, {})
             if obj_data:
-                context_parts.append(f"\n物品\"{obj_name}\"：")
-                if obj_data.get("check_required"):
-                    context_parts.append(f"- 需要{obj_data.get('check_required')}检定（{obj_data.get('difficulty', '普通')}难度）")
-                if obj_data.get("success_result"):
-                    context_parts.append(f"- 成功：{obj_data.get('success_result')}")
-                if obj_data.get("failure_result"):
-                    context_parts.append(f"- 失败：{obj_data.get('failure_result')}")
+                scene_objects[obj_name] = obj_data
+
+        if scene_objects:
+            context_parts.append("\n场景内物品完整字段（原文）：")
+            context_parts.append(json.dumps(scene_objects, ensure_ascii=False, indent=2))
 
         return "\n".join(context_parts)
 
     def _build_prompt(self, intent: dict, player_input: str, game_state: dict):
         """构建节奏AI的提示词"""
-        current_location = game_state.get("current_location", "bedroom")
-        progress = game_state.get("progress", 0.0)
+        current_location = game_state.get("current_location", "master_bedroom")
         round_count = game_state.get("round_count", 0)
         clues_found = game_state.get("world_state", {}).get("clues_found", [])
 
-        # 获取剧情阶段描述（直接从模组读取字符串）
         stages = self.module_data.get("module_info", {}).get("stages", "")
-        stage_desc = ""
 
-        # 生成模组上下文
+        # 生成模组上下文（完整原始字段）
         module_context = self._build_module_context(game_state)
 
         # 使用配置中的提示词模板
@@ -147,15 +140,12 @@ class RhythmAI:
 
         # 替换占位符
         prompt = prompt_template.replace("{current_location}", current_location)
-        prompt = prompt.replace("{progress}", str(int(progress * 100)))
         prompt = prompt.replace("{round_count}", str(round_count))
         prompt = prompt.replace("{clues_found}", str(clues_found))
         prompt = prompt.replace("{player_input}", player_input)
         prompt = prompt.replace("{intent}", json.dumps(intent, ensure_ascii=False))
         prompt = prompt.replace("{module_context}", module_context)
-        prompt = prompt.replace("{current_progress}", str(progress + 0.1))
         prompt = prompt.replace("{stages}", stages)
-        prompt = prompt.replace("{stage_desc}", stage_desc)
 
         return prompt
 
@@ -163,19 +153,10 @@ class RhythmAI:
         """获取默认结果（当AI调用失败时）"""
         return {
             "feasible": True,
-            "reason": "继续探索",
-            "check_required": None,
-            "difficulty": "普通",
-            "success_outcome": {
-                "description": "你继续探索",
-                "progress_gain": 0.05
-            },
-            "failure_outcome": {
-                "description": "没有发现",
-                "consequence": "无"
-            },
-            "current_progress": 0.05,
-            "player_changes": {},
-            "world_changes": {},
-            "hint": None
+            "hint": None,
+            "location_context": {},
+            "object_context": None,
+            "atmosphere_guide": {},
+            "stage_assessment": "无法判断当前剧情阶段",
+            "world_changes": {}
         }
