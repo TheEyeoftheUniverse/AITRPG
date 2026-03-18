@@ -84,7 +84,7 @@ class RhythmAI:
         for obj_name in location_data.get("objects", []):
             obj_data = objects.get(obj_name, {})
             if obj_data:
-                context_parts.append(f"\n物品"{obj_name}"：")
+                context_parts.append(f"\n物品\"{obj_name}\"：")
                 if obj_data.get("check_required"):
                     context_parts.append(f"- 需要{obj_data.get('check_required')}检定（{obj_data.get('difficulty', '普通')}难度）")
                 if obj_data.get("success_result"):
