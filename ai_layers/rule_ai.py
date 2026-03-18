@@ -2,6 +2,7 @@ from astrbot.api import logger
 from astrbot.api.star import Context
 import json
 import random
+import os
 
 
 class RuleAI:
@@ -12,6 +13,7 @@ class RuleAI:
         self.provider_name = provider_name
         self.config = config or {}
         self.rules = self._load_rules()
+        self.prompts = self._load_prompts()
 
     def _load_rules(self):
         """加载COC规则"""
@@ -36,6 +38,19 @@ class RuleAI:
 - 图书馆：查阅资料
 - 聆听：听到声音
 """
+
+    def _load_prompts(self):
+        """加载AI提示词配置"""
+        prompts_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ai_prompts.json")
+        try:
+            with open(prompts_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            logger.error(f"[RuleAI] 未找到提示词配置文件: {prompts_path}")
+            return {}
+        except json.JSONDecodeError as e:
+            logger.error(f"[RuleAI] 提示词配置文件JSON格式错误: {e}")
+            return {}
 
     async def parse_intent(self, player_input: str) -> dict:
         """
@@ -64,18 +79,11 @@ class RuleAI:
         # 使用配置中的提示词模板，如果没有则使用默认
         prompt_template = self.config.get("rule_ai_intent_prompt", "").strip()
         if not prompt_template:
-            prompt_template = """你是一个TRPG规则AI，负责解析玩家的行动意图。
+            prompt_template = self.prompts.get("rule_ai_intent_prompt", "")
 
-玩家输入：{player_input}
-
-请分析玩家想做什么，并以JSON格式输出：
-{{
-    "intent": "行动类型（search/talk/move/use等）",
-    "target": "行动目标（物品/NPC/地点）",
-    "category": "行动分类（调查/对话/移动/战斗/其他）"
-}}
-
-只输出JSON，不要其他内容。"""
+        if not prompt_template:
+            logger.error("[RuleAI] 未找到意图解析提示词")
+            return {"intent": "unknown", "target": None, "category": "其他"}
 
         prompt = prompt_template.replace("{player_input}", player_input)
 

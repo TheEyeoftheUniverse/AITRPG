@@ -1,6 +1,7 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
 import json
+import os
 
 
 class NarrativeAI:
@@ -10,6 +11,20 @@ class NarrativeAI:
         self.context = context
         self.provider_name = provider_name
         self.config = config or {}
+        self.prompts = self._load_prompts()
+
+    def _load_prompts(self):
+        """加载AI提示词配置"""
+        prompts_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ai_prompts.json")
+        try:
+            with open(prompts_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            logger.error(f"[NarrativeAI] 未找到提示词配置文件: {prompts_path}")
+            return {}
+        except json.JSONDecodeError as e:
+            logger.error(f"[NarrativeAI] 提示词配置文件JSON格式错误: {e}")
+            return {}
 
     async def generate(self, rule_result: dict, rhythm_result: dict, narrative_history: list) -> dict:
         """
@@ -107,39 +122,11 @@ class NarrativeAI:
         # 使用配置中的提示词模板
         prompt_template = self.config.get("narrative_ai_prompt", "").strip()
         if not prompt_template:
-            prompt_template = """你是一个TRPG文案AI，负责生成沉浸式的叙述文本。
+            prompt_template = self.prompts.get("narrative_ai_prompt", "")
 
-# 模组风格
-- 主题: {theme}
-- 当前场景: {location}
-- 氛围强度: {atmosphere}（0.0=平静，1.0=极度恐怖）
-
-# 历史总结
-{history_text}
-
-# 本轮信息
-{rule_info}
-{rhythm_info}
-
-# 你的任务
-1. 根据规则判定结果和剧情进展，生成一段沉浸式的叙述文本（100-200字）
-2. 严格遵循模组主题和氛围强度
-3. 细节描写丰富，但不剧透后续剧情
-4. 同时生成一个简短的总结（20字内），用于保存到历史
-
-# 风格要求
-- 使用第二人称"你"
-- 描写环境细节和玩家感受
-- 根据氛围强度调整恐怖程度
-- 不要过度夸张
-
-# 输出格式（JSON）
-{{
-    "narrative": "你走近布满灰尘的书架，小心翼翼地翻找着。突然，你的手指触碰到一本与众不同的书——封面上沾着暗红色的血迹，散发着令人不安的气息。你的心跳加速，理智值微微下降...",
-    "summary": "玩家搜查书架成功，发现血日记，SAN-2"
-}}
-
-只输出JSON，不要其他内容。"""
+        if not prompt_template:
+            logger.error("[NarrativeAI] 未找到文案AI提示词")
+            return ""
 
         # 替换占位符
         prompt = prompt_template.replace("{history_text}", history_text)

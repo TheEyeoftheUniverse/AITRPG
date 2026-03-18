@@ -1,6 +1,7 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
 import json
+import os
 
 
 class RhythmAI:
@@ -11,6 +12,20 @@ class RhythmAI:
         self.provider_name = provider_name
         self.config = config or {}
         self.module_data = module_data or {}
+        self.prompts = self._load_prompts()
+
+    def _load_prompts(self):
+        """加载AI提示词配置"""
+        prompts_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ai_prompts.json")
+        try:
+            with open(prompts_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            logger.error(f"[RhythmAI] 未找到提示词配置文件: {prompts_path}")
+            return {}
+        except json.JSONDecodeError as e:
+            logger.error(f"[RhythmAI] 提示词配置文件JSON格式错误: {e}")
+            return {}
 
     async def process(self, intent: dict, player_input: str, game_state: dict) -> dict:
         """
@@ -117,67 +132,11 @@ class RhythmAI:
         # 使用配置中的提示词模板
         prompt_template = self.config.get("rhythm_ai_prompt", "").strip()
         if not prompt_template:
-            prompt_template = """你是一个TRPG节奏AI，负责根据模组内容控制剧情节奏。
+            prompt_template = self.prompts.get("rhythm_ai_prompt", "")
 
-# 当前游戏状态
-- 位置: {current_location}
-- 进度: {progress}%
-- 轮次: {round_count}
-- 已发现线索: {clues_found}
-
-# 玩家行动
-- 原始输入: {player_input}
-- 意图解析: {intent}
-
-# 模组信息
-{module_context}
-
-# 你的任务
-1. 判断玩家行动是否可行（是否在当前场景）
-2. 找到模组中最匹配的物品/场景
-3. **直接复制**模组中的success_result和failure_result作为description，一字不改
-4. 决定是否需要检定（根据模组中的check_required字段）
-5. 判断当前剧情阶段（探索/解谜/逃离/结局）
-6. 更新游戏进度
-
-# 核心规则
-- description字段必须是模组原文的**完全复制**，不要改写、不要总结、不要添加内容
-- 如果模组中没有完全匹配的物品，选择最接近的物品，使用其原文
-- 如果完全没有相关内容，description设为null
-
-# 输出格式（JSON）
-{{
-    "feasible": true/false,
-    "reason": "可行性说明",
-    "stage": "探索/解谜/逃离/结局",
-    "check_required": "侦查/图书馆/聆听/null",
-    "difficulty": "普通/困难/极难",
-    "success_outcome": {{
-        "description": "模组中的success_result原文",
-        "clue": "线索名称",
-        "progress_gain": 0.2
-    }},
-    "failure_outcome": {{
-        "description": "模组中的failure_result原文",
-        "consequence": "后果"
-    }},
-    "current_progress": {current_progress},
-    "player_changes": {{
-        "san": -2,
-        "hp": 0
-    }},
-    "world_changes": {{
-        "clues": ["线索名"]
-    }},
-    "hint": "提示内容（如果需要）",
-    "style_context": {{
-        "theme": "模组主题",
-        "location": "当前场景名称",
-        "atmosphere": 0.5
-    }}
-}}
-
-只输出JSON，不要其他内容。"""
+        if not prompt_template:
+            logger.error("[RhythmAI] 未找到节奏AI提示词")
+            return ""
 
         # 替换占位符
         prompt = prompt_template.replace("{current_location}", current_location)
