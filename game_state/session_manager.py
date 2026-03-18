@@ -145,11 +145,23 @@ class SessionManager:
 
     def get_opening(self) -> str:
         """获取游戏开场白"""
-        return """你是一名私家侦探，接到委托调查一座废弃的宅邸。
+        # 从模组数据中读取开场白
+        opening_text = self.module_data.get("module_info", {}).get("opening", "")
+
+        if not opening_text:
+            # 如果模组没有开场白，使用默认的
+            opening_text = """你是一名私家侦探，接到委托调查一座废弃的宅邸。
 
 当你推开吱呀作响的大门，一股霉味扑面而来。你发现自己身处一间昏暗的卧室中，窗外传来诡异的声响...
 
-你的目标是找到真相，并活着离开这里。
+你的目标是找到真相，并活着离开这里。"""
+
+        # 获取模组名称
+        module_name = self.module_data.get("module_info", {}).get("name", "AI驱动TRPG")
+
+        return f"""🎲 {module_name}
+
+{opening_text}
 
 ━━━━━━━━━━━━━━━━
 👤 调查员
