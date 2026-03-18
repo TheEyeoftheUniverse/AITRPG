@@ -37,10 +37,10 @@ class AITRPGPlugin(Star):
         self.session_manager = SessionManager()
         self.session_manager.module_data = self.session_manager._load_module(module_name)
 
-        # 初始化三层AI（传入提供商名称）
-        self.rule_ai = RuleAI(self.context, rule_ai_provider)
-        self.rhythm_ai = RhythmAI(self.context, rhythm_ai_provider)
-        self.narrative_ai = NarrativeAI(self.context, narrative_ai_provider)
+        # 初始化三层AI（传入提供商名称、配置和模组数据）
+        self.rule_ai = RuleAI(self.context, rule_ai_provider, config)
+        self.rhythm_ai = RhythmAI(self.context, rhythm_ai_provider, config, self.session_manager.module_data)
+        self.narrative_ai = NarrativeAI(self.context, narrative_ai_provider, config)
 
         logger.info("[AITRPG] 插件初始化完成！")
 

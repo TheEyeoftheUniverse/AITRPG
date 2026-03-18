@@ -6,9 +6,10 @@ import json
 class NarrativeAI:
     """文案AI - 负责生成沉浸式叙述文本"""
 
-    def __init__(self, context: Context, provider_name: str = None):
+    def __init__(self, context: Context, provider_name: str = None, config: dict = None):
         self.context = context
         self.provider_name = provider_name
+        self.config = config or {}
 
     async def generate(self, rule_result: dict, rhythm_result: dict, narrative_history: list) -> dict:
         """
@@ -71,26 +72,25 @@ class NarrativeAI:
         # 规则判定信息
         rule_info = ""
         if rule_result.get("check_type"):
-            rule_info = f"""
-规则判定：
+            rule_info = f"""规则判定：
 - 技能: {rule_result.get('skill')}
 - 难度: {rule_result.get('difficulty')}
 - 投骰: {rule_result.get('roll')}/{rule_result.get('threshold')}
-- 结果: {rule_result.get('result_description')}
-"""
+- 结果: {rule_result.get('result_description')}"""
 
         # 节奏AI信息
         rhythm_info = ""
         if rhythm_result.get("feasible"):
             outcome = rhythm_result.get("success_outcome" if rule_result.get("success", True) else "failure_outcome", {})
-            rhythm_info = f"""
-剧情进展：
+            rhythm_info = f"""剧情进展：
 - 可行性: {rhythm_result.get('reason')}
 - 结果: {outcome.get('description', '继续探索')}
-- 进度: {int(rhythm_result.get('current_progress', 0) * 100)}%
-"""
+- 进度: {int(rhythm_result.get('current_progress', 0) * 100)}%"""
 
-        prompt = f"""你是一个TRPG文案AI，负责生成沉浸式的克苏鲁风格叙述文本。
+        # 使用配置中的提示词模板
+        prompt_template = self.config.get("narrative_ai_prompt", "").strip()
+        if not prompt_template:
+            prompt_template = """你是一个TRPG文案AI，负责生成沉浸式的克苏鲁风格叙述文本。
 
 # 历史总结
 {history_text}
@@ -118,6 +118,11 @@ class NarrativeAI:
 }}
 
 只输出JSON，不要其他内容。"""
+
+        # 替换占位符
+        prompt = prompt_template.replace("{history_text}", history_text)
+        prompt = prompt.replace("{rule_info}", rule_info)
+        prompt = prompt.replace("{rhythm_info}", rhythm_info)
 
         return prompt
 

@@ -7,9 +7,10 @@ import random
 class RuleAI:
     """规则AI - 负责意图解析和规则判定"""
 
-    def __init__(self, context: Context, provider_name: str = None):
+    def __init__(self, context: Context, provider_name: str = None, config: dict = None):
         self.context = context
         self.provider_name = provider_name
+        self.config = config or {}
         self.rules = self._load_rules()
 
     def _load_rules(self):
@@ -60,7 +61,10 @@ class RuleAI:
             logger.error("[RuleAI] 未找到LLM提供商")
             return {"intent": "unknown", "target": None, "category": "其他"}
 
-        prompt = f"""你是一个TRPG规则AI，负责解析玩家的行动意图。
+        # 使用配置中的提示词模板，如果没有则使用默认
+        prompt_template = self.config.get("rule_ai_intent_prompt", "").strip()
+        if not prompt_template:
+            prompt_template = """你是一个TRPG规则AI，负责解析玩家的行动意图。
 
 玩家输入：{player_input}
 
@@ -72,6 +76,8 @@ class RuleAI:
 }}
 
 只输出JSON，不要其他内容。"""
+
+        prompt = prompt_template.replace("{player_input}", player_input)
 
         try:
             # 调用LLM

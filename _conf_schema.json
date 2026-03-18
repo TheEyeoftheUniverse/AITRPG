@@ -25,5 +25,23 @@
         "type": "string",
         "default": "default_module",
         "hint": "对应modules目录下的JSON文件名（不含.json后缀）。默认使用default_module。"
+    },
+    "rule_ai_intent_prompt": {
+        "description": "规则AI意图解析提示词模板",
+        "type": "text",
+        "default": "",
+        "hint": "留空使用默认模板。支持占位符：{player_input}"
+    },
+    "rhythm_ai_prompt": {
+        "description": "节奏AI剧情控制提示词模板",
+        "type": "text",
+        "default": "",
+        "hint": "留空使用默认模板。支持占位符：{current_location}, {progress}, {round_count}, {clues_found}, {player_input}, {intent}, {module_context}"
+    },
+    "narrative_ai_prompt": {
+        "description": "文案AI叙述生成提示词模板",
+        "type": "text",
+        "default": "",
+        "hint": "留空使用默认模板。支持占位符：{history_text}, {rule_info}, {rhythm_info}"
     }
 }

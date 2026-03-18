@@ -11,7 +11,8 @@
       "0.7-0.89": "horror：主动渲染恐怖，感官细节，异常现象强化",
       "0.9-1.0": "dread：克苏鲁式宇宙恐惧，着重于人类视野的渺小感，语言可破碎跳跃"
     },
-    "atmosphere_note": "事件和地点的atmosphere值(0.0~1.0)表示该内容的基础氛围强度。文案AI应以此为基础，结合当前游戏进度(progress)适当叠加渲染强度：最终氛围 = min(1.0, atmosphere + progress * 0.3)"
+    "atmosphere_note": "事件和地点的atmosphere值(0.0~1.0)表示该内容的基础氛围强度。文案AI应以此为基础，结合当前游戏进度(progress)适当叠加渲染强度：最终氛围 = min(1.0, atmosphere + progress * 0.3)",
+    "prompt_context": "此字段由节奏AI动态生成，包含当前场景、可交互物品、NPC等信息。模组设计者无需手动填写。"
   },
   "locations": {
     "master_bedroom": {
