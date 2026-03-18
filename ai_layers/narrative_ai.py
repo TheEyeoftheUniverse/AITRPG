@@ -93,14 +93,36 @@ class NarrativeAI:
             logger.error(f"[NarrativeAI] 文案生成出错: {e}")
             return self._get_default_narrative(rule_result, rhythm_result)
 
+    def _build_history_text(self, narrative_history: list) -> str:
+        """构建历史文本：10轮内用完整文案，超过10轮的用小总结替换"""
+        history_list = list(narrative_history) if narrative_history else []
+        if not history_list:
+            return "游戏刚开始"
+
+        total = len(history_list)
+        cutoff = max(0, total - 10)  # 10轮以内保留完整文案
+
+        parts = []
+        for i, entry in enumerate(history_list):
+            if isinstance(entry, dict):
+                round_num = entry.get("round", i + 1)
+                if i < cutoff:
+                    parts.append(f"[第{round_num}轮] {entry.get('summary', '')}")
+                else:
+                    parts.append(f"[第{round_num}轮] {entry.get('narrative', entry.get('summary', ''))}")
+            else:
+                # 兼容旧格式（纯字符串）
+                parts.append(str(entry))
+
+        return "\n\n".join(parts)
+
     def _build_prompt(self, rule_result: dict, rhythm_result: dict, narrative_history: list):
         """构建文案AI的提示词"""
         # 获取模组开场白
         opening = self.module_data.get("module_info", {}).get("opening", "")
 
-        # 历史总结（将deque转换为list以支持切片）
-        history_list = list(narrative_history) if narrative_history else []
-        history_text = "\n".join(history_list[-5:]) if history_list else "游戏刚开始"
+        # 历史文本（近10轮完整文案，更早的用小总结）
+        history_text = self._build_history_text(narrative_history)
 
         # 规则判定信息
         rule_info = ""

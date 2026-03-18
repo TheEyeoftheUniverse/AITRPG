@@ -189,6 +189,7 @@ class AITRPGPlugin(Star):
         # 更新文案历史
         self.session_manager.add_narrative_summary(
             session_id,
+            narrative_result["narrative"],
             narrative_result["summary"]
         )
 

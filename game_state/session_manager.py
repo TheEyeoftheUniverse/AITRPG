@@ -122,13 +122,17 @@ class SessionManager:
             "world_changes": rhythm_result.get("world_changes", {})
         })
 
-    def add_narrative_summary(self, session_id: str, summary: str):
-        """添加文案总结到历史"""
+    def add_narrative_summary(self, session_id: str, narrative: str, summary: str):
+        """添加文案记录到历史"""
         if session_id not in self.sessions:
             return
 
         state = self.sessions[session_id]
-        state["narrative_history"].append(summary)
+        state["narrative_history"].append({
+            "round": state["round_count"],
+            "narrative": narrative,
+            "summary": summary
+        })
 
     def get_opening(self) -> str:
         """获取游戏开场白"""
