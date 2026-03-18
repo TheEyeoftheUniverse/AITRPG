@@ -148,7 +148,7 @@ class AITRPGPlugin(Star):
         logger.info(f"[AITRPG] 规则判定结果: {rule_result}")
 
         # 根据判定结果应用对应的outcome
-        outcome = rhythm_result.get("success_outcome" if rule_result.get("success", True) else "failure_outcome", {})
+        outcome = rhythm_result.get("success_outcome" if rule_result.get("success", True) else "failure_outcome", {}) or {}
 
         # 更新进度
         if outcome.get("progress_gain"):
