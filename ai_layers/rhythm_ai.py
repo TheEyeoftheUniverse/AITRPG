@@ -134,30 +134,31 @@ class RhythmAI:
 
 # 你的任务
 1. 判断玩家行动是否可行（是否在当前场景）
-2. **从模组信息中提取**相关内容，不要自己编造描述
-3. 决定是否需要检定，以及难度
-4. 将模组中的success_result和failure_result直接输出
-5. 更新游戏进度
-6. 如果玩家卡住（连续3轮无进展），给出提示
+2. 找到模组中最匹配的物品/场景
+3. **直接复制**模组中的success_result和failure_result作为description，一字不改
+4. 决定是否需要检定（根据模组中的check_required字段）
+5. 判断当前剧情阶段（探索/解谜/逃离/结局）
+6. 更新游戏进度
 
-# 重要提示
-- success_outcome和failure_outcome的description应该直接使用模组中的内容
-- 不要自己编造新的描述，只从模组中提取
-- 如果模组中没有相关信息，使用简短的通用描述
+# 核心规则
+- description字段必须是模组原文的**完全复制**，不要改写、不要总结、不要添加内容
+- 如果模组中没有完全匹配的物品，选择最接近的物品，使用其原文
+- 如果完全没有相关内容，description设为null
 
 # 输出格式（JSON）
 {{
     "feasible": true/false,
     "reason": "可行性说明",
+    "stage": "探索/解谜/逃离/结局",
     "check_required": "侦查/图书馆/聆听/null",
     "difficulty": "普通/困难/极难",
     "success_outcome": {{
-        "description": "成功时的描述",
-        "clue": "线索名称（如果有）",
+        "description": "模组中的success_result原文",
+        "clue": "线索名称",
         "progress_gain": 0.2
     }},
     "failure_outcome": {{
-        "description": "失败时的描述",
+        "description": "模组中的failure_result原文",
         "consequence": "后果"
     }},
     "current_progress": {current_progress},
@@ -170,9 +171,9 @@ class RhythmAI:
     }},
     "hint": "提示内容（如果需要）",
     "style_context": {{
-        "theme": "模组主题（如：心理恐怖+克苏鲁恐怖）",
+        "theme": "模组主题",
         "location": "当前场景名称",
-        "atmosphere": "氛围强度（0.0-1.0）"
+        "atmosphere": 0.5
     }}
 }}
 
