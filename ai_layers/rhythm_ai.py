@@ -126,6 +126,10 @@ class RhythmAI:
         round_count = game_state.get("round_count", 0)
         clues_found = game_state.get("world_state", {}).get("clues_found", [])
 
+        # 获取剧情阶段描述（直接从模组读取字符串）
+        stages = self.module_data.get("module_info", {}).get("stages", "")
+        stage_desc = ""
+
         # 生成模组上下文
         module_context = self._build_module_context(game_state)
 
@@ -147,6 +151,8 @@ class RhythmAI:
         prompt = prompt.replace("{intent}", json.dumps(intent, ensure_ascii=False))
         prompt = prompt.replace("{module_context}", module_context)
         prompt = prompt.replace("{current_progress}", str(progress + 0.1))
+        prompt = prompt.replace("{stages}", stages)
+        prompt = prompt.replace("{stage_desc}", stage_desc)
 
         return prompt
 

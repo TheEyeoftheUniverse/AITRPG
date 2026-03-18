@@ -1,9 +1,9 @@
 {
   "module_info": {
     "name": "门缝",
-    "theme": "心理恐怖+克苏鲁恐怖",
     "target_rounds": 30,
-    "description": "你是一个想要购买低价房产的人。卖家似乎很着急想把这座'闹鬼'的房子脱手，你觉得这是个好机会。当晚，你就住了进去。然而，当你在陌生的卧室中醒来时，你发现有些事情不太对劲——门开了一条缝，而空气中弥漫的沉默，不断地从四面八方压迫着你的思考...",
+    "description": "单人短模",
+    "stages": "第一阶段：初期探索，玩家在二楼探索，获得基本信息（1~10轮）；第二阶段：深入探索，玩家可能前往一楼，可能与NPC交流情报（11~20轮）；第三阶段：执行计划，玩家可能找到了能离开这里的方式，正在执行逃离计划（21~30轮）",
     "atmosphere_guide": {
       "0.0-0.29": "calm：平静克制，客观叙述，偶尔埋下伏笔",
       "0.3-0.49": "uneasy：隐约不安，细微异常，说不清哪里不对",
@@ -13,7 +13,7 @@
     },
     "atmosphere_note": "事件和地点的atmosphere值(0.0~1.0)表示该内容的基础氛围强度。文案AI应以此为基础，结合当前游戏进度(progress)适当叠加渲染强度：最终氛围 = min(1.0, atmosphere + progress * 0.3)",
     "prompt_context": "此字段由节奏AI动态生成，包含当前场景、可交互物品、NPC等信息。模组设计者无需手动填写。",
-    "opening": "你是一个想要购买低价房产的人。卖家似乎很着急想把这座'闹鬼'的房子脱手，你觉得这是个好机会。\n\n当晚，你就住了进去。然而，当你在陌生的卧室中醒来时，你发现有些事情不太对劲——门开了一条缝，而空气中弥漫的沉默，不断地从四面八方压迫着你的思考...\n\n你的目标是找到真相，并活着离开这里。"
+    "opening": "你在陌生的卧室中醒来。\n\n不合适的枕头与坚硬的床垫带来全身酸痛的疲惫感。\n\n而空气中弥漫的沉默，不断地从四面八方压迫着你的思考..."
   },
   "locations": {
     "master_bedroom": {
@@ -24,13 +24,12 @@
         "房产广告",
         "窗户",
         "床",
-        "门缝",
+        "门",
         "破碎的镜子"
       ],
       "exits": [
         "二楼走廊"
       ],
-      "danger_level": 0,
       "floor": 2
     },
     "second_floor_hallway": {
@@ -47,7 +46,6 @@
         "书房",
         "一楼走廊"
       ],
-      "danger_level": 1,
       "floor": 2
     },
     "guest_bedroom": {
@@ -59,7 +57,6 @@
       "exits": [
         "二楼走廊"
       ],
-      "danger_level": 0,
       "floor": 2,
       "npc_location": true,
       "atmosphere": 0.35
@@ -74,7 +71,6 @@
       "exits": [
         "二楼走廊"
       ],
-      "danger_level": 1,
       "floor": 2,
       "atmosphere": 0.4
     },
@@ -90,7 +86,6 @@
         "客厅",
         "厨房"
       ],
-      "danger_level": 2,
       "floor": 1,
       "atmosphere": 0.55
     },
@@ -106,7 +101,6 @@
       "exits": [
         "一楼走廊"
       ],
-      "danger_level": 5,
       "floor": 1,
       "has_butler": true,
       "atmosphere": 0.75
@@ -123,7 +117,6 @@
       "exits": [
         "一楼走廊"
       ],
-      "danger_level": 1,
       "floor": 1,
       "atmosphere": 0.5
     },
@@ -138,7 +131,6 @@
         "厨房",
         "仪式现场"
       ],
-      "danger_level": 3,
       "floor": -1,
       "atmosphere": 0.7
     },
@@ -153,7 +145,6 @@
       "exits": [
         "地下室"
       ],
-      "danger_level": 4,
       "floor": -1,
       "is_final_location": true,
       "atmosphere": 0.85
@@ -167,19 +158,19 @@
       "difficulty": "无需判定，直接成功",
       "clue_value": 0.05,
       "san_cost": 0,
-      "success_result": "你找到了自己带进来的购房广告。'急售！价格面议！'玩家想起来，电话议价的时候卖家的语气也透着焦急。广告上的照片显示这是一座老房子，建于1950年代。",
+      "success_result": "玩家带进来的购房广告。'急售！价格面议！'玩家想起来，电话议价的时候卖家的语气也透着焦急。广告上的照片显示这是一座老房子，建于1950年代。",
       "can_take": true,
       "used_for": "了解房子背景",
       "atmosphere": 0.05
     },
-    "门缝": {
+    "门": {
       "type": "clue",
       "location": "master_bedroom",
       "check_required": "侦查",
       "difficulty": "无需判定，直接成功",
       "clue_value": 0.05,
       "san_cost": -1,
-      "success_result": "门开了一条缝，绝对不是玩家打开的。玩家在入睡前是关了门的。",
+      "success_result": "通往二楼走廊的主卧的门，门开了一条缝，绝对不是玩家打开的。玩家在入睡前是关了门的。",
       "can_take": false,
       "atmosphere": 0.3
     },
