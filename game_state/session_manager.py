@@ -11,6 +11,34 @@ class SessionManager:
         self.sessions: Dict[str, Dict[str, Any]] = {}
         self.module_data = self._load_module()
 
+    def list_modules(self) -> list:
+        """列出所有可用模组"""
+        modules_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "modules")
+        modules = []
+        for filename in sorted(os.listdir(modules_dir)):
+            if filename.endswith(".json"):
+                module_path = os.path.join(modules_dir, filename)
+                try:
+                    with open(module_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    info = data.get("module_info", {})
+                    modules.append({
+                        "filename": filename[:-5],
+                        "name": info.get("name", filename[:-5]),
+                        "module_type": info.get("module_type", ""),
+                        "description": info.get("description", ""),
+                        "opening": info.get("opening", "")
+                    })
+                except Exception:
+                    pass
+        return modules
+
+    def load_module_for_session(self, session_id: str, module_filename: str):
+        """为会话加载指定模组"""
+        self.module_data = self._load_module(module_filename)
+        if session_id in self.sessions:
+            self.sessions[session_id]["module_filename"] = module_filename
+
     def _load_module(self, module_name: str = "default_module"):
         """加载模组数据"""
         # 从JSON文件加载模组

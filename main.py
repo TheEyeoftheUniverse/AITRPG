@@ -46,21 +46,68 @@ class AITRPGPlugin(Star):
 
     @filter.command("trpg")
     async def start_game(self, event: AstrMessageEvent):
-        """开始TRPG游戏"""
+        """列出模组或开始游戏"""
         session_id = event.session_id
+        args = event.message_str.strip().split()
 
-        # 检查是否已有游戏进行中
+        # /trpg [序号] 选择并开始模组
+        if len(args) >= 2 and args[1].isdigit():
+            index = int(args[1]) - 1
+            modules = self.session_manager.list_modules()
+
+            if index < 0 or index >= len(modules):
+                yield event.plain_result(f"序号无效，请输入 1~{len(modules)} 之间的数字。")
+                return
+
+            if self.session_manager.has_session(session_id):
+                yield event.plain_result("游戏已在进行中！发送 /trpg_reset 可以重新开始。")
+                return
+
+            selected = modules[index]
+
+            # 创建会话并加载模组
+            self.session_manager.create_session(session_id)
+            self.session_manager.load_module_for_session(session_id, selected["filename"])
+
+            # 同步各AI层的模组数据
+            self.rhythm_ai.module_data = self.session_manager.module_data
+            self.narrative_ai.module_data = self.session_manager.module_data
+
+            # 新建独立对话，避免污染之前的上下文
+            conv_mgr = self.context.conversation_manager
+            conv_id = await conv_mgr.new_conversation(session_id)
+            await conv_mgr.switch_conversation(session_id, conv_id)
+            logger.info(f"[AITRPG] 为会话 {session_id} 新建对话 {conv_id}")
+
+            # 将开场白作为第一组固定对话写入history
+            opening = selected["opening"]
+            await conv_mgr.add_message_pair(
+                cid=conv_id,
+                user_message={"role": "user", "content": "缓缓苏醒"},
+                assistant_message={"role": "assistant", "content": opening}
+            )
+
+            yield event.plain_result(f"🎲 {selected['name']}\n\n{opening}\n\n请输入你的行动...")
+            return
+
+        # /trpg 列出所有可用模组
         if self.session_manager.has_session(session_id):
             yield event.plain_result("游戏已在进行中！发送 /trpg_reset 可以重新开始。")
             return
 
-        # 创建新游戏会话
-        self.session_manager.create_session(session_id)
+        modules = self.session_manager.list_modules()
+        if not modules:
+            yield event.plain_result("未找到任何模组文件。")
+            return
 
-        # 获取开场白
-        opening = self.session_manager.get_opening()
+        lines = ["🎲 AI驱动TRPG跑团系统", "", "请选择模组："]
+        for i, m in enumerate(modules, 1):
+            type_tag = f"（{m['module_type']}）" if m['module_type'] else ""
+            lines.append(f"{i}. {m['name']} - {m['description']}{type_tag}")
+        lines.append("")
+        lines.append("使用 /trpg [序号] 开始游戏")
 
-        yield event.plain_result(f"🎲 AI驱动TRPG跑团系统\n\n{opening}\n\n请输入你的行动...")
+        yield event.plain_result("\n".join(lines))
 
     @filter.command("trpg_reset")
     async def reset_game(self, event: AstrMessageEvent):
