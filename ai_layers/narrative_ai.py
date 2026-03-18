@@ -47,6 +47,16 @@ class NarrativeAI:
             # 提取文本内容
             response_text = llm_response.completion_text if hasattr(llm_response, 'completion_text') else str(llm_response)
 
+            # 清理markdown代码块标记
+            response_text = response_text.strip()
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.startswith("```"):
+                response_text = response_text[3:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+
             # 解析JSON
             result = json.loads(response_text)
 
@@ -87,10 +97,21 @@ class NarrativeAI:
 - 结果: {outcome.get('description', '继续探索')}
 - 进度: {int(rhythm_result.get('current_progress', 0) * 100)}%"""
 
+        # 风格上下文（从节奏AI获取）
+        style_context = rhythm_result.get("style_context", {})
+        theme = style_context.get("theme", "克苏鲁恐怖")
+        location = style_context.get("location", "未知场景")
+        atmosphere = style_context.get("atmosphere", 0.5)
+
         # 使用配置中的提示词模板
         prompt_template = self.config.get("narrative_ai_prompt", "").strip()
         if not prompt_template:
-            prompt_template = """你是一个TRPG文案AI，负责生成沉浸式的克苏鲁风格叙述文本。
+            prompt_template = """你是一个TRPG文案AI，负责生成沉浸式的叙述文本。
+
+# 模组风格
+- 主题: {theme}
+- 当前场景: {location}
+- 氛围强度: {atmosphere}（0.0=平静，1.0=极度恐怖）
 
 # 历史总结
 {history_text}
@@ -101,14 +122,14 @@ class NarrativeAI:
 
 # 你的任务
 1. 根据规则判定结果和剧情进展，生成一段沉浸式的叙述文本（100-200字）
-2. 保持克苏鲁恐怖氛围：昏暗、诡异、不安
+2. 严格遵循模组主题和氛围强度
 3. 细节描写丰富，但不剧透后续剧情
 4. 同时生成一个简短的总结（20字内），用于保存到历史
 
 # 风格要求
 - 使用第二人称"你"
 - 描写环境细节和玩家感受
-- 营造紧张感和恐怖氛围
+- 根据氛围强度调整恐怖程度
 - 不要过度夸张
 
 # 输出格式（JSON）
@@ -123,6 +144,9 @@ class NarrativeAI:
         prompt = prompt_template.replace("{history_text}", history_text)
         prompt = prompt.replace("{rule_info}", rule_info)
         prompt = prompt.replace("{rhythm_info}", rhythm_info)
+        prompt = prompt.replace("{theme}", theme)
+        prompt = prompt.replace("{location}", location)
+        prompt = prompt.replace("{atmosphere}", str(atmosphere))
 
         return prompt
 

@@ -48,6 +48,16 @@ class RhythmAI:
             # 提取文本内容
             response_text = llm_response.completion_text if hasattr(llm_response, 'completion_text') else str(llm_response)
 
+            # 清理markdown代码块标记
+            response_text = response_text.strip()
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.startswith("```"):
+                response_text = response_text[3:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            response_text = response_text.strip()
+
             # 解析JSON
             result = json.loads(response_text)
 
@@ -124,10 +134,16 @@ class RhythmAI:
 
 # 你的任务
 1. 判断玩家行动是否可行（是否在当前场景）
-2. 决定是否需要检定，以及难度
-3. 描述成功和失败的可能结果
-4. 更新游戏进度
-5. 如果玩家卡住（连续3轮无进展），给出提示
+2. **从模组信息中提取**相关内容，不要自己编造描述
+3. 决定是否需要检定，以及难度
+4. 将模组中的success_result和failure_result直接输出
+5. 更新游戏进度
+6. 如果玩家卡住（连续3轮无进展），给出提示
+
+# 重要提示
+- success_outcome和failure_outcome的description应该直接使用模组中的内容
+- 不要自己编造新的描述，只从模组中提取
+- 如果模组中没有相关信息，使用简短的通用描述
 
 # 输出格式（JSON）
 {{
@@ -152,7 +168,12 @@ class RhythmAI:
     "world_changes": {{
         "clues": ["线索名"]
     }},
-    "hint": "提示内容（如果需要）"
+    "hint": "提示内容（如果需要）",
+    "style_context": {{
+        "theme": "模组主题（如：心理恐怖+克苏鲁恐怖）",
+        "location": "当前场景名称",
+        "atmosphere": "氛围强度（0.0-1.0）"
+    }}
 }}
 
 只输出JSON，不要其他内容。"""
