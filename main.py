@@ -40,7 +40,7 @@ class AITRPGPlugin(Star):
         # 初始化三层AI（传入提供商名称、配置和模组数据）
         self.rule_ai = RuleAI(self.context, rule_ai_provider, config)
         self.rhythm_ai = RhythmAI(self.context, rhythm_ai_provider, config, self.session_manager.module_data)
-        self.narrative_ai = NarrativeAI(self.context, narrative_ai_provider, config)
+        self.narrative_ai = NarrativeAI(self.context, narrative_ai_provider, config, self.session_manager.module_data)
 
         logger.info("[AITRPG] 插件初始化完成！")
 
@@ -125,6 +125,18 @@ class AITRPGPlugin(Star):
         # 获取当前游戏状态
         state = self.session_manager.get_session(session_id)
 
+        # 获取或创建对话ID
+        conv_mgr = self.context.conversation_manager
+        conv_id = await conv_mgr.get_curr_conversation_id(session_id)
+        if not conv_id:
+            conv_id = await conv_mgr.new_conversation(session_id)
+            logger.info(f"[AITRPG] 创建新对话: {conv_id}")
+
+        # 获取对话历史
+        conversation = await conv_mgr.get_conversation(session_id, conv_id)
+        history = json.loads(conversation.history) if conversation and conversation.history else []
+        logger.info(f"[AITRPG] 当前对话历史长度: {len(history)}")
+
         # === 第一步：规则AI - 意图解析 ===
         logger.info("[AITRPG] 调用规则AI进行意图解析...")
         intent = await self.rule_ai.parse_intent(player_input)
@@ -135,7 +147,8 @@ class AITRPGPlugin(Star):
         rhythm_result = await self.rhythm_ai.process(
             intent=intent,
             player_input=player_input,
-            game_state=state
+            game_state=state,
+            history=history
         )
         logger.info(f"[AITRPG] 节奏AI结果: {rhythm_result}")
 
@@ -172,7 +185,8 @@ class AITRPGPlugin(Star):
         narrative_result = await self.narrative_ai.generate(
             rule_result=rule_result,
             rhythm_result=rhythm_result,
-            narrative_history=state.get("narrative_history", [])
+            narrative_history=state.get("narrative_history", []),
+            history=history
         )
         logger.info(f"[AITRPG] 文案生成完成")
 
@@ -189,6 +203,14 @@ class AITRPGPlugin(Star):
             rhythm_result=rhythm_result,
             state=state
         )
+
+        # 将用户输入和小总结添加到对话历史
+        await conv_mgr.add_message_pair(
+            cid=conv_id,
+            user_message={"role": "user", "content": player_input},
+            assistant_message={"role": "assistant", "content": narrative_result["summary"]}
+        )
+        logger.info(f"[AITRPG] 已更新对话历史")
 
         return output
 

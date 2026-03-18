@@ -7,10 +7,11 @@ import os
 class NarrativeAI:
     """文案AI - 负责生成沉浸式叙述文本"""
 
-    def __init__(self, context: Context, provider_name: str = None, config: dict = None):
+    def __init__(self, context: Context, provider_name: str = None, config: dict = None, module_data: dict = None):
         self.context = context
         self.provider_name = provider_name
         self.config = config or {}
+        self.module_data = module_data or {}
         self.prompts = self._load_prompts()
 
     def _load_prompts(self):
@@ -26,7 +27,7 @@ class NarrativeAI:
             logger.error(f"[NarrativeAI] 提示词配置文件JSON格式错误: {e}")
             return {}
 
-    async def generate(self, rule_result: dict, rhythm_result: dict, narrative_history: list) -> dict:
+    async def generate(self, rule_result: dict, rhythm_result: dict, narrative_history: list, history: list = None) -> dict:
         """
         生成最终叙述文本和总结
 
@@ -34,10 +35,13 @@ class NarrativeAI:
             rule_result: 规则AI的判定结果
             rhythm_result: 节奏AI的剧情进展
             narrative_history: 历史总结列表
+            history: 对话历史
 
         Returns:
             {"narrative": "叙述文本", "summary": "本轮总结"}
         """
+        if history is None:
+            history = []
         # 获取指定的LLM提供商
         provider = None
         if self.provider_name:
@@ -57,7 +61,7 @@ class NarrativeAI:
 
         try:
             # 调用LLM
-            llm_response = await provider.text_chat(prompt, [])
+            llm_response = await provider.text_chat(prompt, history)
 
             # 提取文本内容
             response_text = llm_response.completion_text if hasattr(llm_response, 'completion_text') else str(llm_response)
@@ -91,6 +95,9 @@ class NarrativeAI:
 
     def _build_prompt(self, rule_result: dict, rhythm_result: dict, narrative_history: list):
         """构建文案AI的提示词"""
+        # 获取模组开场白
+        opening = self.module_data.get("module_info", {}).get("opening", "")
+
         # 历史总结（将deque转换为list以支持切片）
         history_list = list(narrative_history) if narrative_history else []
         history_text = "\n".join(history_list[-5:]) if history_list else "游戏刚开始"
@@ -129,7 +136,8 @@ class NarrativeAI:
             return ""
 
         # 替换占位符
-        prompt = prompt_template.replace("{history_text}", history_text)
+        prompt = prompt_template.replace("{opening}", opening)
+        prompt = prompt.replace("{history_text}", history_text)
         prompt = prompt.replace("{rule_info}", rule_info)
         prompt = prompt.replace("{rhythm_info}", rhythm_info)
         prompt = prompt.replace("{theme}", theme)

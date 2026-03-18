@@ -27,7 +27,7 @@ class RhythmAI:
             logger.error(f"[RhythmAI] 提示词配置文件JSON格式错误: {e}")
             return {}
 
-    async def process(self, intent: dict, player_input: str, game_state: dict) -> dict:
+    async def process(self, intent: dict, player_input: str, game_state: dict, history: list = None) -> dict:
         """
         处理玩家行动，对比模组，控制剧情节奏
 
@@ -35,10 +35,13 @@ class RhythmAI:
             intent: 规则AI解析的意图
             player_input: 玩家原始输入
             game_state: 当前游戏状态
+            history: 对话历史
 
         Returns:
             节奏AI输出JSON
         """
+        if history is None:
+            history = []
         # 获取指定的LLM提供商
         provider = None
         if self.provider_name:
@@ -58,7 +61,7 @@ class RhythmAI:
 
         try:
             # 调用LLM
-            llm_response = await provider.text_chat(prompt, [])
+            llm_response = await provider.text_chat(prompt, history)
 
             # 提取文本内容
             response_text = llm_response.completion_text if hasattr(llm_response, 'completion_text') else str(llm_response)
