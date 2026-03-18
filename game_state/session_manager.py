@@ -44,7 +44,7 @@ class SessionManager:
         """创建新游戏会话"""
         self.sessions[session_id] = {
             "session_id": session_id,
-            "current_location": "bedroom",
+            "current_location": "master_bedroom",
             "progress": 0.0,
             "round_count": 0,
 
