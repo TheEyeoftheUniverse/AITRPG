@@ -76,8 +76,9 @@ class NarrativeAI:
 
     def _build_prompt(self, rule_result: dict, rhythm_result: dict, narrative_history: list):
         """构建文案AI的提示词"""
-        # 历史总结
-        history_text = "\n".join(narrative_history[-5:]) if narrative_history else "游戏刚开始"
+        # 历史总结（将deque转换为list以支持切片）
+        history_list = list(narrative_history) if narrative_history else []
+        history_text = "\n".join(history_list[-5:]) if history_list else "游戏刚开始"
 
         # 规则判定信息
         rule_info = ""
