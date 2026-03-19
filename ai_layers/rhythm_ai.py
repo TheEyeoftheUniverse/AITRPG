@@ -116,6 +116,12 @@ class RhythmAI:
             context_parts.append("\n场景内物品完整字段（原文）：")
             context_parts.append(json.dumps(scene_objects, ensure_ascii=False, indent=2))
 
+        # 模组氛围指南（原文）
+        atmosphere_guide = self.module_data.get("module_info", {}).get("atmosphere_guide", {})
+        if atmosphere_guide:
+            context_parts.append("\n模组氛围指南（原文，直接复制到输出的 atmosphere_guide 字段）：")
+            context_parts.append(json.dumps(atmosphere_guide, ensure_ascii=False, indent=2))
+
         return "\n".join(context_parts)
 
     def _build_history_summaries(self, game_state: dict) -> str:
