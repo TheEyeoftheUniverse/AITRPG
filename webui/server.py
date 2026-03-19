@@ -1,10 +1,96 @@
 import asyncio
 import uuid
 import json
+import socket
+import os
+import platform
+import re
 from collections import deque
 from quart import Quart, render_template, request, jsonify, make_response
 
 from astrbot.api import logger
+
+
+async def _is_port_available(port: int) -> bool:
+    """检查端口是否可用"""
+    def check_sync():
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("0.0.0.0", port))
+            return True
+        except OSError:
+            return False
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, check_sync)
+
+
+async def _get_pids_on_port(port: int) -> list:
+    """获取占用指定端口的进程 PID 列表（仅 Linux）"""
+    pids = set()
+    try:
+        methods = [
+            ("ss", ["-ltnp", f"sport = {port}"]),
+            ("lsof", ["-i", f":{port}", "-sTCP:LISTEN", "-t"]),
+            ("netstat", ["-tlnp"]),
+        ]
+        for i, (cmd, args) in enumerate(methods):
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    cmd, *args,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, _ = await proc.communicate()
+                result = stdout.decode(errors="ignore")
+                if i == 0:  # ss
+                    for line in result.splitlines():
+                        if f":{port} " in line or line.strip().endswith(f":{port}"):
+                            m = re.search(r'pid=(\d+)', line)
+                            if m:
+                                pids.add(int(m.group(1)))
+                    if pids:
+                        break
+                elif i == 1:  # lsof
+                    for line in result.splitlines():
+                        if line.strip().isdigit():
+                            pids.add(int(line.strip()))
+                    if pids:
+                        break
+                elif i == 2:  # netstat
+                    for line in result.splitlines():
+                        if f":{port} " in line and "LISTEN" in line:
+                            parts = line.split()
+                            if parts and "/" in parts[-1]:
+                                pid_str = parts[-1].split("/")[0]
+                                if pid_str.isdigit():
+                                    pids.add(int(pid_str))
+            except FileNotFoundError:
+                continue
+    except Exception as e:
+        logger.warning(f"[AITRPG] 获取端口 {port} 占用进程时出错: {e}")
+    current_pid = os.getpid()
+    pids.discard(current_pid)
+    return list(pids)
+
+
+async def _free_port(port: int) -> bool:
+    """尝试杀死占用端口的进程，返回是否成功释放"""
+    pids = await _get_pids_on_port(port)
+    if not pids:
+        return True
+    for pid in pids:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "kill", "-9", str(pid),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            logger.warning(f"[AITRPG] 已终止占用端口 {port} 的进程 PID={pid}")
+        except Exception as e:
+            logger.warning(f"[AITRPG] 终止进程 {pid} 失败: {e}")
+    await asyncio.sleep(1)
+    return await _is_port_available(port)
 
 
 def create_trpg_app(plugin):
@@ -250,17 +336,32 @@ async def start_webui_server(app, port: int, shutdown_event: asyncio.Event = Non
     from hypercorn.asyncio import serve
     from hypercorn.config import Config
 
-    if shutdown_event is None:
-        shutdown_event = asyncio.Event()
+    # 检查端口占用，尝试释放
+    if not await _is_port_available(port):
+        logger.warning(f"[AITRPG] 端口 {port} 被占用，尝试自动释放...")
+        freed = await _free_port(port)
+        if not freed:
+            # 等待最多 10 秒
+            for _ in range(10):
+                await asyncio.sleep(1)
+                if await _is_port_available(port):
+                    freed = True
+                    break
+        if not freed:
+            logger.error(f"[AITRPG] 端口 {port} 无法释放，WebUI 启动失败")
+            return
 
     config = Config()
     config.bind = [f"0.0.0.0:{port}"]
+    config.use_reloader = False
     config.accesslog = None
-    config.graceful_timeout = 3
 
     try:
         logger.info(f"[AITRPG] WebUI starting on http://0.0.0.0:{port}/trpg/")
-        await serve(app, config, shutdown_trigger=lambda: shutdown_event.wait())
+        await serve(app, config)
         logger.info("[AITRPG] WebUI server stopped cleanly")
+    except asyncio.CancelledError:
+        logger.info("[AITRPG] WebUI 已停止")
+        raise
     except Exception as e:
         logger.error(f"[AITRPG] WebUI server error: {e}", exc_info=True)
