@@ -246,11 +246,7 @@ def create_trpg_app(plugin):
 
 
 async def start_webui_server(app, port: int, shutdown_event: asyncio.Event = None):
-    """使用 Hypercorn 启动 WebUI 服务器
-
-    Args:
-        shutdown_event: 外部传入的 Event，set() 后 Hypercorn 会优雅关闭并释放端口。
-    """
+    """使用 Hypercorn 启动 WebUI 服务器"""
     from hypercorn.asyncio import serve
     from hypercorn.config import Config
 
@@ -260,7 +256,11 @@ async def start_webui_server(app, port: int, shutdown_event: asyncio.Event = Non
     config = Config()
     config.bind = [f"0.0.0.0:{port}"]
     config.accesslog = None
-    config.graceful_timeout = 3  # 优雅关闭超时，避免长时间挂起
+    config.graceful_timeout = 3
 
-    logger.info(f"[AITRPG] WebUI started on port {port}")
-    await serve(app, config, shutdown_trigger=shutdown_event.wait)
+    try:
+        logger.info(f"[AITRPG] WebUI starting on http://0.0.0.0:{port}/trpg/")
+        await serve(app, config, shutdown_trigger=shutdown_event.wait())
+        logger.info("[AITRPG] WebUI server stopped cleanly")
+    except Exception as e:
+        logger.error(f"[AITRPG] WebUI server error: {e}", exc_info=True)
