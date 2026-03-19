@@ -118,6 +118,23 @@ class RhythmAI:
 
         return "\n".join(context_parts)
 
+    def _build_history_summaries(self, game_state: dict) -> str:
+        """构建历史行动摘要文本"""
+        narrative_history = list(game_state.get("narrative_history", []))
+        if not narrative_history:
+            return "暂无历史行动（游戏刚开始）"
+
+        parts = []
+        for entry in narrative_history:
+            if isinstance(entry, dict):
+                round_num = entry.get("round", "?")
+                summary = entry.get("summary", "")
+                parts.append(f"[第{round_num}轮] {summary}")
+            else:
+                parts.append(str(entry))
+
+        return "\n".join(parts)
+
     def _build_prompt(self, intent: dict, player_input: str, game_state: dict):
         """构建节奏AI的提示词"""
         current_location = game_state.get("current_location", "master_bedroom")
@@ -128,6 +145,9 @@ class RhythmAI:
 
         # 生成模组上下文（完整原始字段）
         module_context = self._build_module_context(game_state)
+
+        # 生成历史行动摘要
+        history_summaries = self._build_history_summaries(game_state)
 
         # 使用配置中的提示词模板
         prompt_template = self.config.get("rhythm_ai_prompt", "").strip()
@@ -146,6 +166,7 @@ class RhythmAI:
         prompt = prompt.replace("{intent}", json.dumps(intent, ensure_ascii=False))
         prompt = prompt.replace("{module_context}", module_context)
         prompt = prompt.replace("{stages}", stages)
+        prompt = prompt.replace("{history_summaries}", history_summaries)
 
         return prompt
 

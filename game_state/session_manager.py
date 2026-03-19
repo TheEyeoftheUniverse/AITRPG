@@ -143,6 +143,16 @@ class SessionManager:
                     if clue not in state["world_state"]["clues_found"]:
                         state["world_state"]["clues_found"].append(clue)
 
+            # 更新玩家位置
+            if "player_location" in changes:
+                state["current_location"] = changes["player_location"]
+
+            # 更新NPC位置
+            if "npc_locations" in changes:
+                for npc_name, location in changes["npc_locations"].items():
+                    if npc_name in state["world_state"].get("npcs", {}):
+                        state["world_state"]["npcs"][npc_name]["location"] = location
+
         # 保存节奏AI上下文（阶段判断+世界变化）
         state["rhythm_context"].append({
             "round": state["round_count"],
