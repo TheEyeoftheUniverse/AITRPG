@@ -260,7 +260,7 @@ async def start_webui_server(app, port: int, shutdown_event: asyncio.Event = Non
 
     try:
         logger.info(f"[AITRPG] WebUI starting on http://0.0.0.0:{port}/trpg/")
-        await serve(app, config, shutdown_trigger=shutdown_event.wait())
+        await serve(app, config, shutdown_trigger=lambda: shutdown_event.wait())
         logger.info("[AITRPG] WebUI server stopped cleanly")
     except Exception as e:
         logger.error(f"[AITRPG] WebUI server error: {e}", exc_info=True)
