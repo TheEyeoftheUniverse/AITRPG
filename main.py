@@ -7,8 +7,10 @@ from .game_state.session_manager import SessionManager
 from .ai_layers.rule_ai import RuleAI
 from .ai_layers.rhythm_ai import RhythmAI
 from .ai_layers.narrative_ai import NarrativeAI
+from .webui.server import create_trpg_app, start_webui_server
 
 import json
+import asyncio
 
 
 @register("aitrpg", "TheEyeoftheUniverse", "AI驱动TRPG跑团系统", "1.1.0")
@@ -19,6 +21,8 @@ class AITRPGPlugin(Star):
         self.rule_ai = None
         self.rhythm_ai = None
         self.narrative_ai = None
+        self._webui_task = None
+        self._webui_shutdown_event = None
 
     async def initialize(self):
         """插件初始化"""
@@ -43,6 +47,18 @@ class AITRPGPlugin(Star):
         self.narrative_ai = NarrativeAI(self.context, narrative_ai_provider, config, self.session_manager.module_data)
 
         logger.info("[AITRPG] 插件初始化完成！")
+
+        # 启动 WebUI
+        webui_port = config.get("webui_port", 9999)
+        try:
+            webui_port = int(webui_port)
+        except (TypeError, ValueError):
+            webui_port = 9999
+        app = create_trpg_app(self)
+        self._webui_shutdown_event = asyncio.Event()
+        self._webui_task = asyncio.create_task(
+            start_webui_server(app, webui_port, self._webui_shutdown_event)
+        )
 
     @filter.command("trpg")
     async def start_game(self, event: AstrMessageEvent):
@@ -165,24 +181,12 @@ class AITRPGPlugin(Star):
             logger.error(traceback.format_exc())
             yield event.plain_result(f"❌ 处理出错: {str(e)}")
 
-    async def _process_player_action(self, session_id: str, player_input: str):
-        """三层AI处理流程"""
+    async def _process_action_core(self, session_id: str, player_input: str, history: list) -> dict:
+        """核心三层AI处理，返回结构化结果。可被 AstrBot 消息处理和 WebUI API 共同调用。"""
         logger.info(f"[AITRPG] 开始处理玩家行动: {player_input}")
 
         # 获取当前游戏状态
         state = self.session_manager.get_session(session_id)
-
-        # 获取或创建对话ID
-        conv_mgr = self.context.conversation_manager
-        conv_id = await conv_mgr.get_curr_conversation_id(session_id)
-        if not conv_id:
-            conv_id = await conv_mgr.new_conversation(session_id)
-            logger.info(f"[AITRPG] 创建新对话: {conv_id}")
-
-        # 获取对话历史
-        conversation = await conv_mgr.get_conversation(session_id, conv_id)
-        history = json.loads(conversation.history) if conversation and conversation.history else []
-        logger.info(f"[AITRPG] 当前对话历史长度: {len(history)}")
 
         # === 第一步：规则AI - 意图解析 ===
         logger.info("[AITRPG] 调用规则AI进行意图解析...")
@@ -232,6 +236,36 @@ class AITRPGPlugin(Star):
             history=history
         )
         logger.info(f"[AITRPG] 文案生成完成")
+
+        return {
+            "rule_result": rule_result,
+            "rhythm_result": rhythm_result,
+            "narrative_result": narrative_result,
+            "game_state": state
+        }
+
+    async def _process_player_action(self, session_id: str, player_input: str):
+        """AstrBot 消息管道的三层AI处理流程（包装器）"""
+
+        # 获取或创建对话ID
+        conv_mgr = self.context.conversation_manager
+        conv_id = await conv_mgr.get_curr_conversation_id(session_id)
+        if not conv_id:
+            conv_id = await conv_mgr.new_conversation(session_id)
+            logger.info(f"[AITRPG] 创建新对话: {conv_id}")
+
+        # 获取对话历史
+        conversation = await conv_mgr.get_conversation(session_id, conv_id)
+        history = json.loads(conversation.history) if conversation and conversation.history else []
+        logger.info(f"[AITRPG] 当前对话历史长度: {len(history)}")
+
+        # 调用核心处理
+        result = await self._process_action_core(session_id, player_input, history)
+
+        narrative_result = result["narrative_result"]
+        rule_result = result["rule_result"]
+        rhythm_result = result["rhythm_result"]
+        state = result["game_state"]
 
         # 将用户输入和完整文案写入AstrBot对话历史
         await conv_mgr.add_message_pair(
@@ -363,3 +397,16 @@ class AITRPGPlugin(Star):
     async def terminate(self):
         """插件销毁"""
         logger.info("[AITRPG] 插件正在卸载...")
+        # 通知 Hypercorn 优雅关闭（释放端口），而不是强制 cancel
+        if self._webui_shutdown_event:
+            self._webui_shutdown_event.set()
+        if self._webui_task and not self._webui_task.done():
+            try:
+                await asyncio.wait_for(self._webui_task, timeout=5)
+            except asyncio.TimeoutError:
+                self._webui_task.cancel()
+                try:
+                    await self._webui_task
+                except asyncio.CancelledError:
+                    pass
+            logger.info("[AITRPG] WebUI 已停止")

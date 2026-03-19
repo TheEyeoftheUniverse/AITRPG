@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI驱动TRPG跑团系统</title>
+    <link rel="stylesheet" href="/trpg/static/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
+</head>
+<body>
+    <!-- 模组选择遮罩层 -->
+    <div id="module-overlay" class="overlay">
+        <div class="overlay-content">
+            <h1 class="overlay-title">
+                <span class="mdi mdi-dice-d20"></span>
+                AI驱动TRPG跑团系统
+            </h1>
+            <p class="overlay-subtitle">选择一个模组开始冒险</p>
+            <div id="module-list" class="module-list">
+                <!-- 动态填充 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 主游戏界面 -->
+    <div id="game-container" class="game-container hidden">
+        <!-- 顶部栏 -->
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <span class="mdi mdi-dice-d20"></span>
+                <span id="game-title">AI驱动TRPG</span>
+            </div>
+            <div class="top-bar-right">
+                <button id="btn-reset" class="btn-icon" title="重置游戏">
+                    <span class="mdi mdi-restart"></span>
+                </button>
+            </div>
+        </header>
+
+        <!-- 三栏布局 -->
+        <div class="main-layout">
+            <!-- 左侧面板 - AI工作流 -->
+            <aside id="left-panel" class="side-panel left-panel">
+                <div class="panel-header">
+                    <span class="mdi mdi-robot"></span> AI工作流
+                    <button class="btn-collapse" onclick="togglePanel('left')" title="折叠">
+                        <span class="mdi mdi-chevron-left"></span>
+                    </button>
+                </div>
+                <div class="panel-body">
+                    <!-- 规则AI区域 -->
+                    <div class="ai-section">
+                        <div class="ai-section-title">
+                            <span class="mdi mdi-cog"></span> 规则AI · 判定
+                        </div>
+                        <div id="rule-panel" class="ai-section-content">
+                            <p class="placeholder-text">等待游戏行动...</p>
+                        </div>
+                    </div>
+                    <!-- 节奏AI区域 -->
+                    <div class="ai-section ai-section-rhythm">
+                        <div class="ai-section-title">
+                            <span class="mdi mdi-movie-open"></span> 节奏AI · 剧情
+                        </div>
+                        <div id="rhythm-panel" class="ai-section-content">
+                            <p class="placeholder-text">等待游戏行动...</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 左侧折叠按钮 -->
+            <button id="left-expand" class="btn-expand left-expand hidden" onclick="togglePanel('left')" title="展开AI工作流">
+                <span class="mdi mdi-chevron-right"></span>
+            </button>
+
+            <!-- 中间聊天区 -->
+            <main class="chat-area">
+                <div id="chat-messages" class="chat-messages">
+                    <!-- 动态填充 -->
+                </div>
+                <div class="chat-input-area">
+                    <div class="input-wrapper">
+                        <textarea id="chat-input" placeholder="输入你的行动..." rows="1"></textarea>
+                        <button id="btn-send" class="btn-send" onclick="sendAction()" title="发送">
+                            <span class="mdi mdi-send"></span>
+                        </button>
+                    </div>
+                </div>
+            </main>
+
+            <!-- 右侧面板 - 玩家状态 -->
+            <aside id="right-panel" class="side-panel right-panel">
+                <div class="panel-header">
+                    <button class="btn-collapse" onclick="togglePanel('right')" title="折叠">
+                        <span class="mdi mdi-chevron-right"></span>
+                    </button>
+                    <span class="mdi mdi-account"></span> 玩家状态
+                </div>
+                <div class="panel-body">
+                    <!-- 玩家属性 -->
+                    <div class="status-section">
+                        <div class="status-title">
+                            <span class="mdi mdi-heart-pulse"></span> 属性
+                        </div>
+                        <div id="player-stats" class="status-content">
+                            <div class="stat-row">
+                                <span class="stat-label">理智 (SAN)</span>
+                                <div class="stat-bar-wrapper">
+                                    <div id="san-bar" class="stat-bar san-bar" style="width: 100%"></div>
+                                </div>
+                                <span id="san-value" class="stat-value">65/65</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">生命 (HP)</span>
+                                <div class="stat-bar-wrapper">
+                                    <div id="hp-bar" class="stat-bar hp-bar" style="width: 100%"></div>
+                                </div>
+                                <span id="hp-value" class="stat-value">12/12</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 当前位置 -->
+                    <div class="status-section">
+                        <div class="status-title">
+                            <span class="mdi mdi-map-marker"></span> 位置
+                        </div>
+                        <div id="player-location" class="status-content">
+                            <span class="location-tag">--</span>
+                        </div>
+                    </div>
+                    <!-- 物品栏 -->
+                    <div class="status-section">
+                        <div class="status-title">
+                            <span class="mdi mdi-bag-personal"></span> 物品栏
+                        </div>
+                        <div id="player-inventory" class="status-content">
+                            <span class="placeholder-text">暂无物品</span>
+                        </div>
+                    </div>
+                    <!-- 已发现线索 -->
+                    <div class="status-section">
+                        <div class="status-title">
+                            <span class="mdi mdi-magnify"></span> 已发现线索
+                        </div>
+                        <div id="player-clues" class="status-content">
+                            <span class="placeholder-text">暂未发现线索</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 右侧折叠按钮 -->
+            <button id="right-expand" class="btn-expand right-expand hidden" onclick="togglePanel('right')" title="展开玩家状态">
+                <span class="mdi mdi-chevron-left"></span>
+            </button>
+        </div>
+    </div>
+
+    <script src="/trpg/static/js/app.js"></script>
+</body>
+</html>

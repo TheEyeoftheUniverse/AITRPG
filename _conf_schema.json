@@ -43,5 +43,11 @@
         "type": "text",
         "default": "",
         "hint": "留空使用默认模板。支持占位符：{history_text}, {rule_info}, {rhythm_info}"
+    },
+    "webui_port": {
+        "description": "WebUI 端口",
+        "type": "int",
+        "default": 9999,
+        "hint": "Web游戏界面的HTTP端口号，默认9999。启动后访问 http://localhost:9999/trpg/"
     }
 }
