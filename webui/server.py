@@ -148,6 +148,12 @@ def create_trpg_app(plugin):
 
     # ─── 路由 ───
 
+    @app.route("/")
+    async def root_redirect():
+        """根路径重定向到 /trpg/"""
+        from quart import redirect
+        return redirect("/trpg/")
+
     @app.route("/trpg/")
     async def index():
         """渲染主页面"""
