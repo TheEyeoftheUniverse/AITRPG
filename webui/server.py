@@ -239,6 +239,7 @@ def create_trpg_app(plugin):
 
         async with lock:
             try:
+                logger.info(f"[AITRPG WebUI] 收到启动游戏请求，cookie={cookie_id[:8]}")
                 data = await request.get_json()
                 if not isinstance(data, dict):
                     return jsonify({"error": "请求格式错误"}), 400
@@ -251,6 +252,7 @@ def create_trpg_app(plugin):
 
                 selected = modules[module_index]
                 session_id = web_session["session_id"]
+                logger.info(f"[AITRPG WebUI] 准备启动模组: session_id={session_id}, module={selected['filename']}")
 
                 # 如果已有游戏，先清除
                 if plugin.session_manager.has_session(session_id):
@@ -290,6 +292,7 @@ def create_trpg_app(plugin):
                 state = plugin.session_manager.get_session(session_id)
                 map_data = plugin.session_manager.get_map_data(session_id)
                 _persist_web_session(cookie_id)
+                logger.info(f"[AITRPG WebUI] 启动游戏成功: session_id={session_id}, module={selected['filename']}")
 
                 return jsonify({
                     "success": True,

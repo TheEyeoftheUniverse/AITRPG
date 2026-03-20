@@ -96,12 +96,12 @@ async function startGame(moduleIndex) {
             body: JSON.stringify({ module_index: moduleIndex })
         });
 
+        const responseText = await resp.text();
         let data = null;
         try {
-            data = await resp.json();
+            data = responseText ? JSON.parse(responseText) : {};
         } catch (parseErr) {
-            const errorText = await resp.text().catch(() => "");
-            throw new Error(errorText || `HTTP ${resp.status}`);
+            throw new Error(responseText || `HTTP ${resp.status}`);
         }
 
         if (!resp.ok || data.error) {
@@ -130,7 +130,7 @@ async function startGame(moduleIndex) {
         }
     } catch (err) {
         console.error("Failed to start game:", err);
-        alert("启动游戏失败，请刷新重试。");
+        alert(err && err.message ? err.message : "启动游戏失败，请刷新重试。");
     }
 }
 
