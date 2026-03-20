@@ -89,6 +89,8 @@ async function checkExistingSession() {
 // ─── 开始游戏 ───
 
 async function startGame(moduleIndex) {
+    let data = null;
+
     try {
         const resp = await fetch("/trpg/api/start", {
             method: "POST",
@@ -97,7 +99,6 @@ async function startGame(moduleIndex) {
         });
 
         const responseText = await resp.text();
-        let data = null;
         try {
             data = responseText ? JSON.parse(responseText) : {};
         } catch (parseErr) {
@@ -108,39 +109,76 @@ async function startGame(moduleIndex) {
             alert(data.error || `启动游戏失败（HTTP ${resp.status}）`);
             return;
         }
+    } catch (err) {
+        console.error("Failed to start game:", err);
+        alert(err && err.message ? err.message : "启动游戏失败，请刷新重试。");
+        return;
+    }
 
-        // 切换到游戏界面
-        showGameUI();
+    try {
+        const messages = document.getElementById("chat-messages");
+        if (messages) {
+            messages.innerHTML = "";
+        }
 
-        // 设置标题
-        document.getElementById("game-title").textContent = data.module_name || "AI驱动TRPG";
+        const titleEl = document.getElementById("game-title");
+        if (titleEl) {
+            titleEl.textContent = data.module_name || "AI驱动TRPG";
+        }
 
-        // 显示开场白
-        addMessage("assistant", data.opening);
-
-        // 更新状态
         if (data.game_state) {
             updatePlayerStatus(data.game_state);
         }
 
-        // 初始化地图
         if (data.map_data) {
             currentMapData = data.map_data;
-            renderMap(data.map_data);
+        } else {
+            currentMapData = null;
         }
-    } catch (err) {
-        console.error("Failed to start game:", err);
-        alert(err && err.message ? err.message : "启动游戏失败，请刷新重试。");
+
+        showGameUI(() => {
+            try {
+                addMessage("assistant", data.opening || "");
+            } catch (messageErr) {
+                console.error("Failed to render opening message:", messageErr);
+            }
+
+            if (currentMapData) {
+                try {
+                    renderMap(currentMapData);
+                } catch (mapErr) {
+                    console.error("Failed to render map:", mapErr, currentMapData);
+                }
+            }
+        });
+    } catch (uiErr) {
+        console.error("Failed to initialize game UI:", uiErr, data);
     }
 }
 
-function showGameUI() {
+function showGameUI(onShown) {
     const overlay = document.getElementById("module-overlay");
+    const gameContainer = document.getElementById("game-container");
+
+    const finishShow = () => {
+        if (overlay) {
+            overlay.style.display = "none";
+        }
+        if (gameContainer) {
+            gameContainer.classList.remove("hidden");
+        }
+        if (typeof onShown === "function") {
+            requestAnimationFrame(() => onShown());
+        }
+    };
+
+    if (!overlay) {
+        finishShow();
+        return;
+    }
+
     overlay.classList.add("fade-out");
-    setTimeout(() => {
-        overlay.style.display = "none";
-        document.getElementById("game-container").classList.remove("hidden");
-    }, 250);
+    setTimeout(finishShow, 250);
 }
 
 // ─── 发送行动 ───
@@ -460,207 +498,211 @@ function escapeHtml(text) {
 // ─── 地图渲染与交互 ───
 
 function renderMap(mapData) {
-    const svg = document.getElementById("map-svg");
-    if (!svg) return;
+    try {
+        const svg = document.getElementById("map-svg");
+        if (!svg) return;
 
-    // 清空SVG（兼容所有浏览器）
-    while (svg.firstChild) svg.removeChild(svg.firstChild);
+        // 清空SVG（兼容所有浏览器）
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-    if (!mapData || !mapData.locations) {
-        console.warn("[Map] No map data or locations");
-        return;
-    }
-
-    const locations = mapData.locations;
-    const edges = mapData.edges || [];
-    const currentLoc = mapData.current_location;
-    const reachable = new Set(mapData.reachable || []);
-
-    const keys = Object.keys(locations);
-    if (keys.length === 0) {
-        console.warn("[Map] Empty locations");
-        return;
-    }
-
-    // 按floor分组，高楼层在上
-    const floorGroups = {};
-    for (const key of keys) {
-        const floor = locations[key].floor;
-        if (floor === undefined || floor === null) continue;
-        if (!floorGroups[floor]) floorGroups[floor] = [];
-        floorGroups[floor].push(key);
-    }
-    const floors = Object.keys(floorGroups).map(Number).sort((a, b) => b - a);
-
-    // 构建邻接表（仅可见节点之间）
-    const adj = {};
-    for (const key of keys) adj[key] = [];
-    for (const edge of edges) {
-        if (locations[edge.from] && locations[edge.to]) {
-            adj[edge.from].push(edge.to);
-            adj[edge.to].push(edge.from);
+        if (!mapData || !mapData.locations || typeof mapData.locations !== "object") {
+            console.warn("[Map] No map data or invalid locations:", mapData);
+            return;
         }
-    }
 
-    // 布局参数
-    const nodeW = 60;
-    const nodeH = 28;
-    const gapX = 16;
-    const gapY = 56;
-    const labelW = 28;
-    const padX = 8;
-    const padY = 12;
-    const ns = "http://www.w3.org/2000/svg";
+        const locations = mapData.locations;
+        const edges = Array.isArray(mapData.edges) ? mapData.edges : [];
+        const currentLoc = mapData.current_location;
+        const reachable = new Set(Array.isArray(mapData.reachable) ? mapData.reachable : []);
 
-    // 每层内布局：找hub居中，其他左右排列
-    const nodePositions = {};
-    let yOffset = padY;
+        const keys = Object.keys(locations);
+        if (keys.length === 0) {
+            console.warn("[Map] Empty locations");
+            return;
+        }
 
-    for (const floor of floors) {
-        const group = floorGroups[floor];
+        // 按floor分组，高楼层在上
+        const floorGroups = {};
+        for (const key of keys) {
+            const loc = locations[key] || {};
+            const floor = loc.floor;
+            if (floor === undefined || floor === null) continue;
+            if (!floorGroups[floor]) floorGroups[floor] = [];
+            floorGroups[floor].push(key);
+        }
+        const floors = Object.keys(floorGroups).map(Number).sort((a, b) => b - a);
 
-        // 找连接数最多的节点作为hub
-        let hubKey = group[0];
-        let maxConn = 0;
-        for (const key of group) {
-            const conn = (adj[key] || []).length;
-            if (conn > maxConn) {
-                maxConn = conn;
-                hubKey = key;
+        // 构建邻接表（仅可见节点之间）
+        const adj = {};
+        for (const key of keys) adj[key] = [];
+        for (const edge of edges) {
+            if (edge && locations[edge.from] && locations[edge.to]) {
+                adj[edge.from].push(edge.to);
+                adj[edge.to].push(edge.from);
             }
         }
 
-        // 排列：hub居中，其他按连接关系左右交替
-        const ordered = [hubKey];
-        const remaining = group.filter(k => k !== hubKey);
-        const connected = remaining.filter(k => (adj[hubKey] || []).includes(k));
-        const unconnected = remaining.filter(k => !(adj[hubKey] || []).includes(k));
+        // 布局参数
+        const nodeW = 60;
+        const nodeH = 28;
+        const gapX = 16;
+        const gapY = 56;
+        const labelW = 28;
+        const padX = 8;
+        const padY = 12;
+        const ns = "http://www.w3.org/2000/svg";
 
-        let left = true;
-        for (const k of [...connected, ...unconnected]) {
-            if (left) {
-                ordered.unshift(k);
+        // 每层内布局：找hub居中，其他左右排列
+        const nodePositions = {};
+        let yOffset = padY;
+
+        for (const floor of floors) {
+            const group = floorGroups[floor];
+            if (!group || group.length === 0) continue;
+
+            // 找连接数最多的节点作为hub
+            let hubKey = group[0];
+            let maxConn = 0;
+            for (const key of group) {
+                const conn = (adj[key] || []).length;
+                if (conn > maxConn) {
+                    maxConn = conn;
+                    hubKey = key;
+                }
+            }
+
+            // 排列：hub居中，其他按连接关系左右交替
+            const ordered = [hubKey];
+            const remaining = group.filter(k => k !== hubKey);
+            const connected = remaining.filter(k => (adj[hubKey] || []).includes(k));
+            const unconnected = remaining.filter(k => !(adj[hubKey] || []).includes(k));
+
+            let left = true;
+            for (const k of [...connected, ...unconnected]) {
+                if (left) {
+                    ordered.unshift(k);
+                } else {
+                    ordered.push(k);
+                }
+                left = !left;
+            }
+
+            const startX = labelW + padX;
+            for (let i = 0; i < ordered.length; i++) {
+                nodePositions[ordered[i]] = {
+                    x: startX + i * (nodeW + gapX),
+                    y: yOffset
+                };
+            }
+
+            yOffset += nodeH + gapY;
+        }
+
+        // 计算SVG尺寸
+        let maxX = 0;
+        for (const pos of Object.values(nodePositions)) {
+            const right = pos.x + nodeW + padX;
+            if (right > maxX) maxX = right;
+        }
+        const svgW = Math.max(maxX, 200);
+        const svgH = yOffset - gapY + nodeH + padY;
+
+        // 设置SVG尺寸
+        svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
+        svg.removeAttribute("width");
+        svg.removeAttribute("height");
+
+        // 绘制楼层标签
+        for (const floor of floors) {
+            const group = floorGroups[floor];
+            const firstKey = group[0];
+            const pos = nodePositions[firstKey];
+            if (!pos) continue;
+
+            const label = document.createElementNS(ns, "text");
+            label.setAttribute("x", "4");
+            label.setAttribute("y", String(pos.y + nodeH / 2));
+            label.setAttribute("class", "map-floor-label");
+            label.textContent = floor >= 1 ? `${floor}F` : `B${Math.abs(floor)}`;
+            svg.appendChild(label);
+        }
+
+        // 绘制边
+        for (const edge of edges) {
+            if (!edge) continue;
+            const fromPos = nodePositions[edge.from];
+            const toPos = nodePositions[edge.to];
+            if (!fromPos || !toPos) continue;
+
+            const line = document.createElementNS(ns, "line");
+            line.setAttribute("x1", String(fromPos.x + nodeW / 2));
+            line.setAttribute("y1", String(fromPos.y + nodeH / 2));
+            line.setAttribute("x2", String(toPos.x + nodeW / 2));
+            line.setAttribute("y2", String(toPos.y + nodeH / 2));
+            line.setAttribute("class", edge.locked ? "map-edge map-edge--locked" : "map-edge");
+            svg.appendChild(line);
+        }
+
+        // 绘制节点
+        for (const key of keys) {
+            const loc = locations[key] || {};
+            const pos = nodePositions[key];
+            if (!pos) continue;
+
+            const isCurrent = key === currentLoc;
+            const isReachable = reachable.has(key);
+            const isVisited = Boolean(loc.visited);
+            const isSelected = key === selectedDestination;
+
+            let nodeClass = "map-node";
+            if (isCurrent) {
+                nodeClass += " map-node--current";
+            } else if (!isReachable) {
+                nodeClass += " map-node--locked";
+            } else if (!isVisited) {
+                nodeClass += " map-node--fog";
             } else {
-                ordered.push(k);
+                nodeClass += " map-node--visited";
             }
-            left = !left;
+            if (isSelected) {
+                nodeClass += " map-node--selected";
+            }
+
+            const g = document.createElementNS(ns, "g");
+            g.setAttribute("class", nodeClass);
+
+            const rect = document.createElementNS(ns, "rect");
+            rect.setAttribute("x", String(pos.x));
+            rect.setAttribute("y", String(pos.y));
+            rect.setAttribute("width", String(nodeW));
+            rect.setAttribute("height", String(nodeH));
+            rect.setAttribute("rx", "6");
+            rect.setAttribute("ry", "6");
+            g.appendChild(rect);
+
+            const text = document.createElementNS(ns, "text");
+            text.setAttribute("x", String(pos.x + nodeW / 2));
+            text.setAttribute("y", String(pos.y + nodeH / 2));
+
+            let displayName = typeof loc.display_name === "string" ? loc.display_name : "?";
+            if (displayName.length > 5) {
+                displayName = displayName.substring(0, 4) + "…";
+            }
+            text.textContent = displayName;
+            g.appendChild(text);
+
+            if (isCurrent || (!isCurrent && isReachable)) {
+                g.style.cursor = "pointer";
+                g.addEventListener("click", () => onMapNodeClick(key));
+            }
+
+            svg.appendChild(g);
         }
 
-        const startX = labelW + padX;
-        for (let i = 0; i < ordered.length; i++) {
-            nodePositions[ordered[i]] = {
-                x: startX + i * (nodeW + gapX),
-                y: yOffset
-            };
-        }
-
-        yOffset += nodeH + gapY;
+        console.log(`[Map] Rendered ${keys.length} nodes, ${edges.length} edges`);
+    } catch (err) {
+        console.error("[Map] Render failed:", err, mapData);
     }
-
-    // 计算SVG尺寸
-    let maxX = 0;
-    for (const pos of Object.values(nodePositions)) {
-        const right = pos.x + nodeW + padX;
-        if (right > maxX) maxX = right;
-    }
-    const svgW = Math.max(maxX, 200);
-    const svgH = yOffset - gapY + nodeH + padY;
-
-    // 设置SVG尺寸 — 不设width/height属性，让CSS width:100%生效，viewBox控制内部坐标
-    svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
-    svg.removeAttribute("width");
-    svg.removeAttribute("height");
-
-    // 绘制楼层标签
-    for (const floor of floors) {
-        const group = floorGroups[floor];
-        const firstKey = group[0];
-        const pos = nodePositions[firstKey];
-        if (!pos) continue;
-
-        const label = document.createElementNS(ns, "text");
-        label.setAttribute("x", "4");
-        label.setAttribute("y", String(pos.y + nodeH / 2));
-        label.setAttribute("class", "map-floor-label");
-        label.textContent = floor >= 1 ? `${floor}F` : `B${Math.abs(floor)}`;
-        svg.appendChild(label);
-    }
-
-    // 绘制边
-    for (const edge of edges) {
-        const fromPos = nodePositions[edge.from];
-        const toPos = nodePositions[edge.to];
-        if (!fromPos || !toPos) continue;
-
-        const line = document.createElementNS(ns, "line");
-        line.setAttribute("x1", String(fromPos.x + nodeW / 2));
-        line.setAttribute("y1", String(fromPos.y + nodeH / 2));
-        line.setAttribute("x2", String(toPos.x + nodeW / 2));
-        line.setAttribute("y2", String(toPos.y + nodeH / 2));
-        line.setAttribute("class", edge.locked ? "map-edge map-edge--locked" : "map-edge");
-        svg.appendChild(line);
-    }
-
-    // 绘制节点
-    for (const key of keys) {
-        const loc = locations[key];
-        const pos = nodePositions[key];
-        if (!pos) continue;
-
-        const isCurrent = key === currentLoc;
-        const isReachable = reachable.has(key);
-        const isVisited = loc.visited;
-        const isSelected = key === selectedDestination;
-
-        // 确定节点样式类
-        let nodeClass = "map-node";
-        if (isCurrent) {
-            nodeClass += " map-node--current";
-        } else if (!isReachable) {
-            nodeClass += " map-node--locked";
-        } else if (!isVisited) {
-            nodeClass += " map-node--fog";
-        } else {
-            nodeClass += " map-node--visited";
-        }
-        if (isSelected) {
-            nodeClass += " map-node--selected";
-        }
-
-        const g = document.createElementNS(ns, "g");
-        g.setAttribute("class", nodeClass);
-
-        const rect = document.createElementNS(ns, "rect");
-        rect.setAttribute("x", String(pos.x));
-        rect.setAttribute("y", String(pos.y));
-        rect.setAttribute("width", String(nodeW));
-        rect.setAttribute("height", String(nodeH));
-        rect.setAttribute("rx", "6");
-        rect.setAttribute("ry", "6");
-        g.appendChild(rect);
-
-        const text = document.createElementNS(ns, "text");
-        text.setAttribute("x", String(pos.x + nodeW / 2));
-        text.setAttribute("y", String(pos.y + nodeH / 2));
-
-        // 截断过长的名字
-        let displayName = loc.display_name || "?";
-        if (displayName.length > 5) {
-            displayName = displayName.substring(0, 4) + "…";
-        }
-        text.textContent = displayName;
-        g.appendChild(text);
-
-        // 点击事件
-        if (isCurrent || (!isCurrent && isReachable)) {
-            g.style.cursor = "pointer";
-            g.addEventListener("click", () => onMapNodeClick(key));
-        }
-
-        svg.appendChild(g);
-    }
-
-    console.log(`[Map] Rendered ${keys.length} nodes, ${edges.length} edges`);
 }
 
 function onMapNodeClick(locationKey) {
