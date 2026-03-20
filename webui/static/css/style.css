@@ -655,16 +655,6 @@ html, body {
     text-align: right;
 }
 
-/* Location Tag */
-.location-tag {
-    display: inline-block;
-    background: var(--accent-bg);
-    color: var(--accent);
-    padding: 2px 10px;
-    border-radius: 10px;
-    font-size: 13px;
-}
-
 /* Inventory & Clues */
 .item-tag, .clue-tag {
     display: inline-block;
@@ -695,6 +685,7 @@ html, body {
 #map-svg {
     display: block;
     width: 100%;
+    height: auto;
 }
 
 .map-floor-label {
@@ -715,8 +706,8 @@ html, body {
 }
 
 .map-node rect {
-    rx: 6;
-    ry: 6;
+    fill: var(--bg-tertiary);
+    stroke: var(--text-muted);
     stroke-width: 1.5;
     cursor: pointer;
     transition: fill 0.15s, stroke 0.15s;

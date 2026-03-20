@@ -371,10 +371,6 @@ function updatePlayerStatus(state) {
     document.getElementById("hp-bar").style.width = hpPct + "%";
     document.getElementById("hp-value").textContent = `${hp}/${hpMax}`;
 
-    // Location
-    const locationEl = document.getElementById("player-location");
-    locationEl.innerHTML = `<span class="location-tag">${escapeHtml(state.current_location || "--")}</span>`;
-
     // Inventory
     const invEl = document.getElementById("player-inventory");
     const inventory = player.inventory || [];
@@ -457,9 +453,17 @@ function escapeHtml(text) {
 // ─── 地图渲染与交互 ───
 
 function renderMap(mapData) {
-    if (!mapData || !mapData.locations) return;
-
     const svg = document.getElementById("map-svg");
+    if (!svg) return;
+
+    // 清空SVG（兼容所有浏览器）
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    if (!mapData || !mapData.locations) {
+        console.warn("[Map] No map data or locations");
+        return;
+    }
+
     const locations = mapData.locations;
     const edges = mapData.edges || [];
     const currentLoc = mapData.current_location;
@@ -467,7 +471,7 @@ function renderMap(mapData) {
 
     const keys = Object.keys(locations);
     if (keys.length === 0) {
-        svg.innerHTML = "";
+        console.warn("[Map] Empty locations");
         return;
     }
 
@@ -475,6 +479,7 @@ function renderMap(mapData) {
     const floorGroups = {};
     for (const key of keys) {
         const floor = locations[key].floor;
+        if (floor === undefined || floor === null) continue;
         if (!floorGroups[floor]) floorGroups[floor] = [];
         floorGroups[floor].push(key);
     }
@@ -494,13 +499,14 @@ function renderMap(mapData) {
     const nodeW = 60;
     const nodeH = 28;
     const gapX = 16;
-    const gapY = 80;
-    const labelW = 30;
+    const gapY = 56;
+    const labelW = 28;
     const padX = 8;
     const padY = 12;
+    const ns = "http://www.w3.org/2000/svg";
 
     // 每层内布局：找hub居中，其他左右排列
-    const nodePositions = {}; // key -> {x, y}
+    const nodePositions = {};
     let yOffset = padY;
 
     for (const floor of floors) {
@@ -520,12 +526,9 @@ function renderMap(mapData) {
         // 排列：hub居中，其他按连接关系左右交替
         const ordered = [hubKey];
         const remaining = group.filter(k => k !== hubKey);
-
-        // 先放与hub直连的，再放其余
         const connected = remaining.filter(k => (adj[hubKey] || []).includes(k));
         const unconnected = remaining.filter(k => !(adj[hubKey] || []).includes(k));
 
-        // 左右交替插入
         let left = true;
         for (const k of [...connected, ...unconnected]) {
             if (left) {
@@ -536,10 +539,7 @@ function renderMap(mapData) {
             left = !left;
         }
 
-        // 计算x坐标
-        const totalW = ordered.length * nodeW + (ordered.length - 1) * gapX;
         const startX = labelW + padX;
-
         for (let i = 0; i < ordered.length; i++) {
             nodePositions[ordered[i]] = {
                 x: startX + i * (nodeW + gapX),
@@ -559,12 +559,10 @@ function renderMap(mapData) {
     const svgW = Math.max(maxX, 200);
     const svgH = yOffset - gapY + nodeH + padY;
 
-    // 开始绘制SVG
-    const ns = "http://www.w3.org/2000/svg";
+    // 设置SVG尺寸 — 不设width/height属性，让CSS width:100%生效，viewBox控制内部坐标
     svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
-    svg.setAttribute("width", svgW);
-    svg.setAttribute("height", svgH);
-    svg.innerHTML = "";
+    svg.removeAttribute("width");
+    svg.removeAttribute("height");
 
     // 绘制楼层标签
     for (const floor of floors) {
@@ -574,11 +572,10 @@ function renderMap(mapData) {
         if (!pos) continue;
 
         const label = document.createElementNS(ns, "text");
-        label.setAttribute("x", 4);
-        label.setAttribute("y", pos.y + nodeH / 2);
+        label.setAttribute("x", "4");
+        label.setAttribute("y", String(pos.y + nodeH / 2));
         label.setAttribute("class", "map-floor-label");
-        const floorLabel = floor >= 1 ? `${floor}F` : `B${Math.abs(floor)}`;
-        label.textContent = floorLabel;
+        label.textContent = floor >= 1 ? `${floor}F` : `B${Math.abs(floor)}`;
         svg.appendChild(label);
     }
 
@@ -589,10 +586,10 @@ function renderMap(mapData) {
         if (!fromPos || !toPos) continue;
 
         const line = document.createElementNS(ns, "line");
-        line.setAttribute("x1", fromPos.x + nodeW / 2);
-        line.setAttribute("y1", fromPos.y + nodeH / 2);
-        line.setAttribute("x2", toPos.x + nodeW / 2);
-        line.setAttribute("y2", toPos.y + nodeH / 2);
+        line.setAttribute("x1", String(fromPos.x + nodeW / 2));
+        line.setAttribute("y1", String(fromPos.y + nodeH / 2));
+        line.setAttribute("x2", String(toPos.x + nodeW / 2));
+        line.setAttribute("y2", String(toPos.y + nodeH / 2));
         line.setAttribute("class", edge.locked ? "map-edge map-edge--locked" : "map-edge");
         svg.appendChild(line);
     }
@@ -627,15 +624,17 @@ function renderMap(mapData) {
         g.setAttribute("class", nodeClass);
 
         const rect = document.createElementNS(ns, "rect");
-        rect.setAttribute("x", pos.x);
-        rect.setAttribute("y", pos.y);
-        rect.setAttribute("width", nodeW);
-        rect.setAttribute("height", nodeH);
+        rect.setAttribute("x", String(pos.x));
+        rect.setAttribute("y", String(pos.y));
+        rect.setAttribute("width", String(nodeW));
+        rect.setAttribute("height", String(nodeH));
+        rect.setAttribute("rx", "6");
+        rect.setAttribute("ry", "6");
         g.appendChild(rect);
 
         const text = document.createElementNS(ns, "text");
-        text.setAttribute("x", pos.x + nodeW / 2);
-        text.setAttribute("y", pos.y + nodeH / 2);
+        text.setAttribute("x", String(pos.x + nodeW / 2));
+        text.setAttribute("y", String(pos.y + nodeH / 2));
 
         // 截断过长的名字
         let displayName = loc.display_name || "?";
@@ -646,16 +645,15 @@ function renderMap(mapData) {
         g.appendChild(text);
 
         // 点击事件
-        if (!isCurrent && isReachable) {
-            g.style.cursor = "pointer";
-            g.addEventListener("click", () => onMapNodeClick(key));
-        } else if (isCurrent) {
+        if (isCurrent || (!isCurrent && isReachable)) {
             g.style.cursor = "pointer";
             g.addEventListener("click", () => onMapNodeClick(key));
         }
 
         svg.appendChild(g);
     }
+
+    console.log(`[Map] Rendered ${keys.length} nodes, ${edges.length} edges`);
 }
 
 function onMapNodeClick(locationKey) {
