@@ -13,7 +13,7 @@ import json
 import asyncio
 
 
-@register("aitrpg", "TheEyeoftheUniverse", "AI驱动TRPG跑团系统", "1.1.0")
+@register("aitrpg", "TheEyeoftheUniverse", "AI驱动TRPG跑团系统", "1.2.0")
 class AITRPGPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
