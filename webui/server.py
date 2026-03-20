@@ -194,12 +194,7 @@ def create_trpg_app(plugin):
                 plugin.session_manager.delete_session(session_id)
 
             # 创建会话并加载模组
-            plugin.session_manager.create_session(session_id)
-            plugin.session_manager.load_module_for_session(session_id, selected["filename"])
-
-            # 同步 AI 层模组数据
-            plugin.rhythm_ai.module_data = plugin.session_manager.module_data
-            plugin.narrative_ai.module_data = plugin.session_manager.module_data
+            plugin.session_manager.create_session(session_id, selected["filename"])
 
             opening = selected["opening"]
 

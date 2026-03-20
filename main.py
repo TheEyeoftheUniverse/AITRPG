@@ -38,13 +38,12 @@ class AITRPGPlugin(Star):
         logger.info(f"[AITRPG] 配置: 模组={module_name}, 规则AI={rule_ai_provider or '默认'}, 节奏AI={rhythm_ai_provider or '默认'}, 文案AI={narrative_ai_provider or '默认'}")
 
         # 初始化会话管理器（传入模组名称）
-        self.session_manager = SessionManager()
-        self.session_manager.module_data = self.session_manager._load_module(module_name)
+        self.session_manager = SessionManager(module_name)
 
-        # 初始化三层AI（传入提供商名称、配置和模组数据）
+        # 初始化三层AI（传入提供商名称和配置）
         self.rule_ai = RuleAI(self.context, rule_ai_provider, config)
-        self.rhythm_ai = RhythmAI(self.context, rhythm_ai_provider, config, self.session_manager.module_data)
-        self.narrative_ai = NarrativeAI(self.context, narrative_ai_provider, config, self.session_manager.module_data)
+        self.rhythm_ai = RhythmAI(self.context, rhythm_ai_provider, config)
+        self.narrative_ai = NarrativeAI(self.context, narrative_ai_provider, config)
 
         logger.info("[AITRPG] 插件初始化完成！")
 
@@ -82,12 +81,7 @@ class AITRPGPlugin(Star):
             selected = modules[index]
 
             # 创建会话并加载模组
-            self.session_manager.create_session(session_id)
-            self.session_manager.load_module_for_session(session_id, selected["filename"])
-
-            # 同步各AI层的模组数据
-            self.rhythm_ai.module_data = self.session_manager.module_data
-            self.narrative_ai.module_data = self.session_manager.module_data
+            self.session_manager.create_session(session_id, selected["filename"])
 
             # 新建独立对话，避免污染之前的上下文
             conv_mgr = self.context.conversation_manager
@@ -187,6 +181,7 @@ class AITRPGPlugin(Star):
 
         # 获取当前游戏状态
         state = self.session_manager.get_session(session_id)
+        module_data = self.session_manager.get_module_data(session_id)
 
         # === 移动处理 ===
         move_result = None
@@ -204,12 +199,12 @@ class AITRPGPlugin(Star):
 
         # === 纯移动无行动 ===
         if move_to and not player_input:
-            locations = self.session_manager.module_data.get("locations", {})
+            locations = module_data.get("locations", {})
             target_loc = locations.get(move_to, {})
             loc_name = target_loc.get("name", move_to)
 
             # 检查目标场景是否有NPC
-            npcs = self.session_manager.module_data.get("npcs", {})
+            npcs = module_data.get("npcs", {})
             has_npc = any(
                 npc_data.get("location") == move_to
                 for npc_data in npcs.values()
@@ -240,6 +235,7 @@ class AITRPGPlugin(Star):
             intent=intent,
             player_input=player_input,
             game_state=state,
+            module_data=module_data,
             history=history
         )
         logger.info(f"[AITRPG] 节奏AI结果: {rhythm_result}")

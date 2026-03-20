@@ -7,11 +7,10 @@ import os
 class NarrativeAI:
     """文案AI - 负责生成沉浸式叙述文本"""
 
-    def __init__(self, context: Context, provider_name: str = None, config: dict = None, module_data: dict = None):
+    def __init__(self, context: Context, provider_name: str = None, config: dict = None):
         self.context = context
         self.provider_name = provider_name
         self.config = config or {}
-        self.module_data = module_data or {}
         self.prompts = self._load_prompts()
 
     def _load_prompts(self):

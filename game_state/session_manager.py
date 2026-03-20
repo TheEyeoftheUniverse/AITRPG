@@ -1,15 +1,16 @@
 import json
 import os
 from collections import deque
-from typing import Dict, Any, List, Set, Optional
+from typing import Dict, Any, List, Set
 
 
 class SessionManager:
     """游戏会话管理器"""
 
-    def __init__(self):
+    def __init__(self, default_module_name: str = "default_module"):
         self.sessions: Dict[str, Dict[str, Any]] = {}
-        self.module_data = self._load_module()
+        self.default_module_name = default_module_name
+        self.default_module_data = self._load_module(default_module_name)
 
     def list_modules(self) -> list:
         """列出所有可用模组"""
@@ -35,9 +36,16 @@ class SessionManager:
 
     def load_module_for_session(self, session_id: str, module_filename: str):
         """为会话加载指定模组"""
-        self.module_data = self._load_module(module_filename)
-        if session_id in self.sessions:
-            self.sessions[session_id]["module_filename"] = module_filename
+        if session_id not in self.sessions:
+            return
+
+        module_data = self._load_module(module_filename)
+        initial_location = self._get_initial_location(module_data)
+        self.sessions[session_id]["module_filename"] = module_filename
+        self.sessions[session_id]["module_data"] = module_data
+        self.sessions[session_id]["current_location"] = initial_location
+        self.sessions[session_id]["visited_locations"] = [initial_location]
+        self.sessions[session_id]["world_state"]["npcs"] = self._build_initial_npc_state(module_data)
 
     def _load_module(self, module_name: str = "default_module"):
         """加载模组数据"""
@@ -68,11 +76,17 @@ class SessionManager:
         except json.JSONDecodeError as e:
             raise ValueError(f"模组JSON格式错误: {e}")
 
-    def create_session(self, session_id: str):
+    def create_session(self, session_id: str, module_filename: str = None):
         """创建新游戏会话"""
+        module_filename = module_filename or self.default_module_name
+        module_data = self._load_module(module_filename)
+        initial_location = self._get_initial_location(module_data)
+
         self.sessions[session_id] = {
             "session_id": session_id,
-            "current_location": "master_bedroom",
+            "module_filename": module_filename,
+            "module_data": module_data,
+            "current_location": initial_location,
             "round_count": 0,
 
             "player": {
@@ -89,12 +103,7 @@ class SessionManager:
 
             "world_state": {
                 "clues_found": [],
-                "npcs": {
-                    "管家": {
-                        "attitude": "中立",
-                        "trust_level": 0.5
-                    }
-                },
+                "npcs": self._build_initial_npc_state(module_data),
                 "flags": {
                     "door_unlocked": False,
                     "truth_revealed": False
@@ -110,8 +119,34 @@ class SessionManager:
             # 三层AI的上下文
             "rhythm_context": [],  # 节奏AI保存游戏状态变化
             "narrative_history": deque(maxlen=15),  # 文案AI保存历史总结
-            "visited_locations": ["master_bedroom"],  # 已访问过的location key列表
+            "visited_locations": [initial_location],  # 已访问过的location key列表
         }
+
+    def _get_initial_location(self, module_data: Dict[str, Any]) -> str:
+        """获取模组的初始位置"""
+        module_info = module_data.get("module_info", {})
+        configured = module_info.get("start_location")
+        locations = module_data.get("locations", {})
+
+        if configured in locations:
+            return configured
+        if "master_bedroom" in locations:
+            return "master_bedroom"
+        if locations:
+            return next(iter(locations))
+        return "master_bedroom"
+
+    def _build_initial_npc_state(self, module_data: Dict[str, Any]) -> Dict[str, Any]:
+        """根据模组NPC定义生成初始世界状态"""
+        npc_states = {}
+        for npc_name, npc_data in module_data.get("npcs", {}).items():
+            npc_states[npc_name] = {
+                "attitude": npc_data.get("initial_attitude", "中立"),
+                "trust_level": 0.0,
+            }
+            if npc_data.get("location"):
+                npc_states[npc_name]["location"] = npc_data["location"]
+        return npc_states
 
     def has_session(self, session_id: str) -> bool:
         """检查会话是否存在"""
@@ -171,10 +206,12 @@ class SessionManager:
             "summary": summary
         })
 
-    def get_opening(self) -> str:
+    def get_opening(self, session_id: str = None) -> str:
         """获取游戏开场白"""
+        module_data = self.get_module_data(session_id)
+
         # 从模组数据中读取开场白
-        opening_text = self.module_data.get("module_info", {}).get("opening", "")
+        opening_text = module_data.get("module_info", {}).get("opening", "")
 
         if not opening_text:
             # 如果模组没有开场白，使用默认的
@@ -185,7 +222,7 @@ class SessionManager:
 你的目标是找到真相，并活着离开这里。"""
 
         # 获取模组名称
-        module_name = self.module_data.get("module_info", {}).get("name", "AI驱动TRPG")
+        module_name = module_data.get("module_info", {}).get("name", "AI驱动TRPG")
 
         return f"""🎲 {module_name}
 
@@ -202,9 +239,9 @@ class SessionManager:
 
     # ─── 地图与移动相关方法 ───
 
-    def _build_name_to_key_map(self) -> Dict[str, str]:
+    def _build_name_to_key_map(self, module_data: Dict[str, Any]) -> Dict[str, str]:
         """构建 {中文显示名 → location key} 映射"""
-        locations = self.module_data.get("locations", {})
+        locations = module_data.get("locations", {})
         name_map = {}
         for key, loc_data in locations.items():
             name = loc_data.get("name", "")
@@ -212,10 +249,10 @@ class SessionManager:
                 name_map[name] = key
         return name_map
 
-    def _get_adjacency_graph(self) -> Dict[str, List[str]]:
+    def _get_adjacency_graph(self, module_data: Dict[str, Any]) -> Dict[str, List[str]]:
         """构建邻接表，将exits中的显示名转为key，并加入passage objects的leads_to连接"""
-        locations = self.module_data.get("locations", {})
-        name_to_key = self._build_name_to_key_map()
+        locations = module_data.get("locations", {})
+        name_to_key = self._build_name_to_key_map(module_data)
         graph = {}
         for key, loc_data in locations.items():
             exits = loc_data.get("exits", [])
@@ -227,7 +264,7 @@ class SessionManager:
             graph[key] = neighbors
 
         # 加入passage objects的leads_to连接（如"地下室入口"从kitchen通向basement）
-        objects = self.module_data.get("objects", {})
+        objects = module_data.get("objects", {})
         for obj_name, obj_data in objects.items():
             leads_to = obj_data.get("leads_to")
             if leads_to and leads_to in locations:
@@ -243,7 +280,8 @@ class SessionManager:
         if not state:
             return set()
 
-        objects = self.module_data.get("objects", {})
+        module_data = self.get_module_data(session_id)
+        objects = module_data.get("objects", {})
         inventory = state.get("player", {}).get("inventory", [])
         clues_found = state.get("world_state", {}).get("clues_found", [])
         all_items = set(inventory) | set(clues_found)
@@ -285,7 +323,8 @@ class SessionManager:
         if not state:
             return {"success": False, "message": "会话不存在"}
 
-        locations = self.module_data.get("locations", {})
+        module_data = self.get_module_data(session_id)
+        locations = module_data.get("locations", {})
         if target_key not in locations:
             return {"success": False, "message": "无效的目标位置"}
 
@@ -313,8 +352,9 @@ class SessionManager:
         if not state:
             return set()
 
+        module_data = self.get_module_data(session_id)
         current = state["current_location"]
-        graph = self._get_adjacency_graph()
+        graph = self._get_adjacency_graph(module_data)
         locked_exits = self._get_locked_exits(session_id)
 
         # 将locked_exits中的location key对应回来（locked中from是location key of the object）
@@ -345,11 +385,12 @@ class SessionManager:
         if not state:
             return {}
 
-        locations = self.module_data.get("locations", {})
+        module_data = self.get_module_data(session_id)
+        locations = module_data.get("locations", {})
         visited_locations = state.get("visited_locations", [])
         reachable = self.get_reachable_locations(session_id)
         locked_exits = self._get_locked_exits(session_id)
-        name_to_key = self._build_name_to_key_map()
+        name_to_key = self._build_name_to_key_map(module_data)
 
         # 构建可见节点
         visible_locations = {}
@@ -410,6 +451,11 @@ class SessionManager:
             "reachable": list(reachable),
         }
 
-    def get_module_data(self):
+    def get_module_data(self, session_id: str = None):
         """获取模组数据"""
-        return self.module_data
+        if session_id and session_id in self.sessions:
+            module_data = self.sessions[session_id].get("module_data")
+            if module_data:
+                return module_data
+
+        return self.default_module_data

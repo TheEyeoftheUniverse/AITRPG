@@ -7,11 +7,10 @@ import os
 class RhythmAI:
     """节奏AI - 负责对比模组和控制剧情节奏"""
 
-    def __init__(self, context: Context, provider_name: str = None, config: dict = None, module_data: dict = None):
+    def __init__(self, context: Context, provider_name: str = None, config: dict = None):
         self.context = context
         self.provider_name = provider_name
         self.config = config or {}
-        self.module_data = module_data or {}
         self.prompts = self._load_prompts()
 
     def _load_prompts(self):
@@ -27,7 +26,7 @@ class RhythmAI:
             logger.error(f"[RhythmAI] 提示词配置文件JSON格式错误: {e}")
             return {}
 
-    async def process(self, intent: dict, player_input: str, game_state: dict, history: list = None) -> dict:
+    async def process(self, intent: dict, player_input: str, game_state: dict, module_data: dict, history: list = None) -> dict:
         """
         处理玩家行动，对比模组，控制剧情节奏
 
@@ -57,7 +56,7 @@ class RhythmAI:
             return self._get_default_result()
 
         # 构建提示词
-        prompt = self._build_prompt(intent, player_input, game_state)
+        prompt = self._build_prompt(intent, player_input, game_state, module_data)
 
         try:
             # 调用LLM
@@ -89,11 +88,11 @@ class RhythmAI:
             logger.error(f"[RhythmAI] 节奏AI处理出错: {e}")
             return self._get_default_result()
 
-    def _build_module_context(self, game_state: dict) -> str:
+    def _build_module_context(self, game_state: dict, module_data: dict) -> str:
         """从模组数据动态生成当前场景的上下文（传递完整原始JSON字段）"""
         current_location = game_state.get("current_location", "master_bedroom")
 
-        locations = self.module_data.get("locations", {})
+        locations = module_data.get("locations", {})
         location_data = locations.get(current_location, {})
 
         if not location_data:
@@ -105,7 +104,7 @@ class RhythmAI:
         context_parts.append(json.dumps({current_location: location_data}, ensure_ascii=False, indent=2))
 
         # 当前场景内所有物品的完整字段
-        objects = self.module_data.get("objects", {})
+        objects = module_data.get("objects", {})
         scene_objects = {}
         for obj_name in location_data.get("objects", []):
             obj_data = objects.get(obj_name, {})
@@ -117,7 +116,7 @@ class RhythmAI:
             context_parts.append(json.dumps(scene_objects, ensure_ascii=False, indent=2))
 
         # 全模组物品位置索引（帮助节奏AI识别玩家模糊提及的物品）
-        all_objects = self.module_data.get("objects", {})
+        all_objects = module_data.get("objects", {})
         if all_objects:
             obj_location_index = {
                 name: data.get("location", "未知")
@@ -127,7 +126,7 @@ class RhythmAI:
             context_parts.append(json.dumps(obj_location_index, ensure_ascii=False, indent=2))
 
         # 模组氛围指南（原文）
-        atmosphere_guide = self.module_data.get("module_info", {}).get("atmosphere_guide", {})
+        atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
         if atmosphere_guide:
             context_parts.append("\n模组氛围指南（原文，直接复制到输出的 atmosphere_guide 字段）：")
             context_parts.append(json.dumps(atmosphere_guide, ensure_ascii=False, indent=2))
@@ -151,16 +150,16 @@ class RhythmAI:
 
         return "\n".join(parts)
 
-    def _build_prompt(self, intent: dict, player_input: str, game_state: dict):
+    def _build_prompt(self, intent: dict, player_input: str, game_state: dict, module_data: dict):
         """构建节奏AI的提示词"""
         current_location = game_state.get("current_location", "master_bedroom")
         round_count = game_state.get("round_count", 0)
         clues_found = game_state.get("world_state", {}).get("clues_found", [])
 
-        stages = self.module_data.get("module_info", {}).get("stages", "")
+        stages = module_data.get("module_info", {}).get("stages", "")
 
         # 生成模组上下文（完整原始字段）
-        module_context = self._build_module_context(game_state)
+        module_context = self._build_module_context(game_state, module_data)
 
         # 生成历史行动摘要
         history_summaries = self._build_history_summaries(game_state)
