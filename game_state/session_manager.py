@@ -374,6 +374,95 @@ class SessionManager:
 
         return any(cond in all_items for cond in conditions)
 
+    def _is_location_visible(self, session_id: str, location_key: str) -> bool:
+        """判断地点是否已经满足显示条件。"""
+        module_data = self.get_module_data(session_id)
+        loc_data = module_data.get("locations", {}).get(location_key, {})
+        if not loc_data:
+            return False
+
+        if not loc_data.get("hidden", False):
+            return True
+
+        reveal_conds = loc_data.get("reveal_conditions", {})
+        return self._check_reveal_conditions(session_id, reveal_conds.get("node_visible", []))
+
+    def _get_map_frontier(self, session_id: str) -> Set[str]:
+        """返回所有已访问地点向外一层可见的未探索地点。"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return set()
+
+        graph = self._get_adjacency_graph(self.get_module_data(session_id))
+        visited_locations = set(state.get("visited_locations", []))
+        frontier = set()
+
+        for location_key in visited_locations:
+            for neighbor_key in graph.get(location_key, []):
+                if neighbor_key in visited_locations:
+                    continue
+                if not self._is_location_visible(session_id, neighbor_key):
+                    continue
+                frontier.add(neighbor_key)
+
+        return frontier
+
+    def _get_available_moves(self, session_id: str) -> Set[str]:
+        """返回当前地点可以直接前往的相邻地点。"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return set()
+
+        current = state["current_location"]
+        graph = self._get_adjacency_graph(self.get_module_data(session_id))
+        locked_exits = self._get_locked_exits(session_id)
+        visited_locations = set(state.get("visited_locations", []))
+        available_moves = set()
+
+        for neighbor_key in graph.get(current, []):
+            if (current, neighbor_key) in locked_exits:
+                continue
+            if not self._is_location_visible(session_id, neighbor_key):
+                continue
+            available_moves.add(neighbor_key)
+
+        queue = [current]
+        seen = {current}
+        while queue:
+            node = queue.pop(0)
+            for neighbor_key in graph.get(node, []):
+                if neighbor_key in seen:
+                    continue
+                if (node, neighbor_key) in locked_exits:
+                    continue
+                if neighbor_key not in visited_locations:
+                    continue
+                if not self._is_location_visible(session_id, neighbor_key):
+                    continue
+                seen.add(neighbor_key)
+                queue.append(neighbor_key)
+                available_moves.add(neighbor_key)
+
+        return available_moves
+
+    def _get_location_display_name(self, session_id: str, location_key: str, is_visited: bool) -> str:
+        """根据已探索状态和揭示条件返回地点显示名。"""
+        module_data = self.get_module_data(session_id)
+        loc_data = module_data.get("locations", {}).get(location_key, {})
+        if not loc_data:
+            return location_key
+
+        if not is_visited:
+            return "?"
+
+        hidden_name = loc_data.get("hidden_name")
+        if hidden_name:
+            reveal_conds = loc_data.get("reveal_conditions", {})
+            if not self._check_reveal_conditions(session_id, reveal_conds.get("true_name", [])):
+                return hidden_name
+
+        return loc_data.get("name", location_key)
+
     def move_player(self, session_id: str, target_key: str) -> Dict[str, Any]:
         """
         代码控制移动玩家到目标位置
@@ -395,8 +484,8 @@ class SessionManager:
             return {"success": True, "message": "已在该位置"}
 
         # BFS检查可达性
-        reachable = self.get_reachable_locations(session_id)
-        if target_key not in reachable:
+        available_moves = self._get_available_moves(session_id)
+        if target_key not in available_moves:
             return {"success": False, "message": "目标位置不可达（路径被锁定）"}
 
         # 执行移动
@@ -449,14 +538,18 @@ class SessionManager:
 
         module_data = self.get_module_data(session_id)
         locations = module_data.get("locations", {})
-        visited_locations = state.get("visited_locations", [])
-        reachable = self.get_reachable_locations(session_id)
+        visited_locations = set(state.get("visited_locations", []))
+        visible_keys = visited_locations | self._get_map_frontier(session_id)
+        reachable = self._get_available_moves(session_id)
         locked_exits = self._get_locked_exits(session_id)
         name_to_key = self._build_name_to_key_map(module_data)
 
         # 构建可见节点
         visible_locations = {}
-        for key, loc_data in locations.items():
+        for key in visible_keys:
+            loc_data = locations.get(key, {})
+            if not loc_data:
+                continue
             # 检查hidden节点是否满足node_visible条件
             if loc_data.get("hidden", False):
                 reveal_conds = loc_data.get("reveal_conditions", {})
