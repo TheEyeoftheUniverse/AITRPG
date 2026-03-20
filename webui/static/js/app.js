@@ -95,10 +95,17 @@ async function startGame(moduleIndex) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ module_index: moduleIndex })
         });
-        const data = await resp.json();
 
-        if (data.error) {
-            alert(data.error);
+        let data = null;
+        try {
+            data = await resp.json();
+        } catch (parseErr) {
+            const errorText = await resp.text().catch(() => "");
+            throw new Error(errorText || `HTTP ${resp.status}`);
+        }
+
+        if (!resp.ok || data.error) {
+            alert(data.error || `启动游戏失败（HTTP ${resp.status}）`);
             return;
         }
 

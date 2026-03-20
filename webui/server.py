@@ -238,58 +238,69 @@ def create_trpg_app(plugin):
         lock = _session_locks[cookie_id]
 
         async with lock:
-            data = await request.get_json()
-            module_index = data.get("module_index", 0)
+            try:
+                data = await request.get_json()
+                if not isinstance(data, dict):
+                    return jsonify({"error": "请求格式错误"}), 400
 
-            modules = plugin.session_manager.list_modules()
-            if module_index < 0 or module_index >= len(modules):
-                return jsonify({"error": "无效的模组序号"}), 400
+                module_index = data.get("module_index", 0)
 
-            selected = modules[module_index]
-            session_id = web_session["session_id"]
+                modules = plugin.session_manager.list_modules()
+                if module_index < 0 or module_index >= len(modules):
+                    return jsonify({"error": "无效的模组序号"}), 400
 
-            # 如果已有游戏，先清除
-            if plugin.session_manager.has_session(session_id):
-                plugin.session_manager.delete_session(session_id)
+                selected = modules[module_index]
+                session_id = web_session["session_id"]
 
-            # 创建会话并加载模组
-            plugin.session_manager.create_session(session_id, selected["filename"])
+                # 如果已有游戏，先清除
+                if plugin.session_manager.has_session(session_id):
+                    plugin.session_manager.delete_session(session_id)
 
-            opening = selected["opening"]
+                # 创建会话并加载模组
+                plugin.session_manager.create_session(session_id, selected["filename"])
 
-            # 在 AstrBot 中创建新对话并写入开场白
-            conv_mgr = plugin.context.conversation_manager
-            conv_id = await conv_mgr.new_conversation(session_id)
-            await conv_mgr.switch_conversation(session_id, conv_id)
-            await conv_mgr.add_message_pair(
-                cid=conv_id,
-                user_message={"role": "user", "content": "缓缓苏醒"},
-                assistant_message={"role": "assistant", "content": opening}
-            )
+                opening = selected["opening"]
 
-            # 初始化 web 会话
-            web_session["game_started"] = True
-            web_session["module_index"] = module_index
-            web_session["conv_id"] = conv_id
-            web_session["history"] = [
-                {"role": "user", "content": "缓缓苏醒"},
-                {"role": "assistant", "content": opening}
-            ]
-            web_session["chat_messages"] = [
-                {"role": "assistant", "content": opening}
-            ]
+                # 尝试在 AstrBot 中创建新对话并写入开场白；失败时降级为仅Web会话
+                conv_id = None
+                try:
+                    conv_mgr = plugin.context.conversation_manager
+                    conv_id = await conv_mgr.new_conversation(session_id)
+                    await conv_mgr.switch_conversation(session_id, conv_id)
+                    await conv_mgr.add_message_pair(
+                        cid=conv_id,
+                        user_message={"role": "user", "content": "缓缓苏醒"},
+                        assistant_message={"role": "assistant", "content": opening}
+                    )
+                except Exception as e:
+                    logger.warning(f"[AITRPG WebUI] 初始化 AstrBot 对话失败，将继续使用仅 Web 会话模式: {e}")
 
-            state = plugin.session_manager.get_session(session_id)
-            map_data = plugin.session_manager.get_map_data(session_id)
-            _persist_web_session(cookie_id)
+                # 初始化 web 会话
+                web_session["game_started"] = True
+                web_session["module_index"] = module_index
+                web_session["conv_id"] = conv_id
+                web_session["history"] = [
+                    {"role": "user", "content": "缓缓苏醒"},
+                    {"role": "assistant", "content": opening}
+                ]
+                web_session["chat_messages"] = [
+                    {"role": "assistant", "content": opening}
+                ]
 
-            return jsonify({
-                "success": True,
-                "opening": opening,
-                "module_name": selected["name"],
-                "game_state": _serialize_state(state),
-                "map_data": map_data
-            })
+                state = plugin.session_manager.get_session(session_id)
+                map_data = plugin.session_manager.get_map_data(session_id)
+                _persist_web_session(cookie_id)
+
+                return jsonify({
+                    "success": True,
+                    "opening": opening,
+                    "module_name": selected["name"],
+                    "game_state": _serialize_state(state),
+                    "map_data": map_data
+                })
+            except Exception as e:
+                logger.error(f"[AITRPG WebUI] 启动游戏失败: {e}", exc_info=True)
+                return jsonify({"error": f"启动游戏失败: {str(e)}"}), 500
 
     @app.route("/trpg/api/action", methods=["POST"])
     async def api_action():
