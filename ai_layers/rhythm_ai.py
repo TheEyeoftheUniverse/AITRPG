@@ -77,6 +77,7 @@ class RhythmAI:
 
             # 解析JSON
             result = json.loads(response_text)
+            result = self._normalize_result(result, module_data)
 
             logger.info(f"[RhythmAI] 节奏AI输出: {result}")
             return result
@@ -196,3 +197,46 @@ class RhythmAI:
             "stage_assessment": "无法判断当前剧情阶段",
             "world_changes": {}
         }
+
+    def _normalize_result(self, result: dict, module_data: dict) -> dict:
+        """规范化节奏AI输出，避免异常字段类型污染后续流程"""
+        if not isinstance(result, dict):
+            logger.warning(f"[RhythmAI] 节奏AI输出不是对象，已回退默认值: {result}")
+            return self._get_default_result()
+
+        normalized = self._get_default_result()
+        normalized.update(result)
+
+        normalized["feasible"] = bool(normalized.get("feasible", True))
+        if normalized.get("hint") is not None and not isinstance(normalized.get("hint"), str):
+            normalized["hint"] = str(normalized.get("hint"))
+        if not isinstance(normalized.get("stage_assessment"), str):
+            normalized["stage_assessment"] = str(normalized.get("stage_assessment", ""))
+
+        locations = module_data.get("locations", {})
+        objects = module_data.get("objects", {})
+        atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
+
+        location_context = normalized.get("location_context")
+        if isinstance(location_context, str):
+            normalized["location_context"] = locations.get(location_context, {})
+        elif not isinstance(location_context, dict):
+            normalized["location_context"] = {}
+
+        object_context = normalized.get("object_context")
+        if isinstance(object_context, str):
+            object_data = objects.get(object_context)
+            normalized["object_context"] = (
+                {"name": object_context, **object_data}
+                if isinstance(object_data, dict) else None
+            )
+        elif object_context is not None and not isinstance(object_context, dict):
+            normalized["object_context"] = None
+
+        if not isinstance(normalized.get("atmosphere_guide"), dict):
+            normalized["atmosphere_guide"] = atmosphere_guide if isinstance(atmosphere_guide, dict) else {}
+
+        world_changes = normalized.get("world_changes")
+        normalized["world_changes"] = world_changes if isinstance(world_changes, dict) else {}
+
+        return normalized

@@ -250,11 +250,16 @@ class AITRPGPlugin(Star):
 
         # 根据判定结果从物品字段中提取SAN损失并更新状态
         if rule_result.get("success"):
-            object_context = rhythm_result.get("object_context") or {}
+            object_context = rhythm_result.get("object_context")
+            object_context = object_context if isinstance(object_context, dict) else {}
             san_cost = object_context.get("san_cost", 0)
             if san_cost:
                 state["player"]["san"] += san_cost
-            clue_name = object_context.get("name") or (list(object_context.keys())[0] if object_context else None)
+            clue_name = object_context.get("name")
+            if not clue_name and object_context:
+                first_item = next(iter(object_context.items()))
+                if isinstance(first_item[1], dict):
+                    clue_name = first_item[0]
             if clue_name:
                 rhythm_result["world_changes"] = rhythm_result.get("world_changes") or {}
                 rhythm_result["world_changes"].setdefault("clues", [])

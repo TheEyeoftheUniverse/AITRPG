@@ -117,6 +117,8 @@ class NarrativeAI:
 
     def _build_prompt(self, rule_result: dict, rhythm_result: dict, narrative_history: list):
         """构建文案AI的提示词"""
+        rhythm_result = self._normalize_rhythm_result(rhythm_result)
+
         # 规则判定信息
         rule_info = ""
         if rule_result.get("check_type"):
@@ -161,6 +163,20 @@ class NarrativeAI:
         prompt = prompt.replace("{location}", location)
 
         return prompt
+
+    def _normalize_rhythm_result(self, rhythm_result: dict) -> dict:
+        """兜底规范化节奏层输出，避免字段类型异常导致文案层崩溃"""
+        if not isinstance(rhythm_result, dict):
+            return {}
+
+        normalized = dict(rhythm_result)
+        if not isinstance(normalized.get("location_context"), dict):
+            normalized["location_context"] = {}
+        if normalized.get("object_context") is not None and not isinstance(normalized.get("object_context"), dict):
+            normalized["object_context"] = None
+        if not isinstance(normalized.get("atmosphere_guide"), dict):
+            normalized["atmosphere_guide"] = {}
+        return normalized
 
     def _get_default_narrative(self, rule_result: dict, rhythm_result: dict):
         """获取默认叙述（当AI调用失败时）"""
