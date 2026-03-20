@@ -156,6 +156,68 @@ class SessionManager:
         """获取会话状态"""
         return self.sessions.get(session_id)
 
+    def export_session(self, session_id: str) -> Dict[str, Any]:
+        """导出会话状态，便于持久化"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return None
+
+        return self._serialize_value(state)
+
+    def restore_session(self, session_id: str, saved_state: Dict[str, Any]):
+        """从持久化数据恢复会话状态"""
+        if not saved_state:
+            return
+
+        restored_state = dict(saved_state)
+        restored_state["session_id"] = session_id
+
+        module_filename = restored_state.get("module_filename") or self.default_module_name
+        module_data = restored_state.get("module_data")
+        if not module_data:
+            module_data = self._load_module(module_filename)
+
+        restored_state["module_filename"] = module_filename
+        restored_state["module_data"] = module_data
+        restored_state["current_location"] = restored_state.get("current_location") or self._get_initial_location(module_data)
+        restored_state["visited_locations"] = list(restored_state.get("visited_locations") or [restored_state["current_location"]])
+        restored_state["round_count"] = int(restored_state.get("round_count", 0))
+        restored_state["rhythm_context"] = list(restored_state.get("rhythm_context") or [])
+
+        narrative_history = restored_state.get("narrative_history") or []
+        if not isinstance(narrative_history, deque):
+            narrative_history = deque(narrative_history, maxlen=15)
+        restored_state["narrative_history"] = narrative_history
+
+        player_state = dict(restored_state.get("player") or {})
+        player_state.setdefault("name", "调查员")
+        player_state.setdefault("san", 65)
+        player_state.setdefault("hp", 12)
+        player_state.setdefault("skills", {
+            "侦查": 60,
+            "图书馆": 40,
+            "聆听": 50
+        })
+        player_state.setdefault("inventory", ["手电筒"])
+        restored_state["player"] = player_state
+
+        world_state = dict(restored_state.get("world_state") or {})
+        world_state.setdefault("clues_found", [])
+        world_state.setdefault("flags", {
+            "door_unlocked": False,
+            "truth_revealed": False
+        })
+        world_state.setdefault("npcs", self._build_initial_npc_state(module_data))
+        restored_state["world_state"] = world_state
+
+        restored_state["influence_dimensions"] = dict(restored_state.get("influence_dimensions") or {
+            "escape_success": False,
+            "npc_together": False,
+            "truth_revealed": False
+        })
+
+        self.sessions[session_id] = restored_state
+
     def delete_session(self, session_id: str):
         """删除会话"""
         if session_id in self.sessions:
@@ -459,3 +521,16 @@ class SessionManager:
                 return module_data
 
         return self.default_module_data
+
+    def _serialize_value(self, value):
+        """递归序列化会话状态中的 deque 等对象"""
+        if isinstance(value, deque):
+            return list(value)
+        if isinstance(value, dict):
+            return {
+                key: self._serialize_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [self._serialize_value(item) for item in value]
+        return value

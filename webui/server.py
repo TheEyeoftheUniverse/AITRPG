@@ -9,6 +9,7 @@ from collections import deque
 from quart import Quart, render_template, request, jsonify, make_response
 
 from astrbot.api import logger
+from ..game_state.save_store import JsonSaveStore
 
 
 async def _is_port_available(port: int) -> bool:
@@ -112,18 +113,25 @@ def create_trpg_app(plugin):
     _web_sessions = {}
     # 每个会话的并发锁
     _session_locks = {}
+    save_store = JsonSaveStore(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "web_sessions")
+    )
+
+    def _build_empty_web_session(cookie_id: str) -> dict:
+        """创建空白 Web 会话结构"""
+        return {
+            "session_id": f"web_{cookie_id[:8]}",
+            "game_started": False,
+            "history": [],
+            "chat_messages": [],
+            "module_index": None,
+            "conv_id": None,
+        }
 
     def _get_or_create_web_session(cookie_id: str) -> dict:
         """获取或创建 Web 会话"""
         if cookie_id not in _web_sessions:
-            session_id = f"web_{cookie_id[:8]}"
-            _web_sessions[cookie_id] = {
-                "session_id": session_id,
-                "game_started": False,
-                "history": [],           # LLM 对话历史
-                "chat_messages": [],     # 前端聊天消息
-                "module_index": None,
-            }
+            _web_sessions[cookie_id] = _build_empty_web_session(cookie_id)
         if cookie_id not in _session_locks:
             _session_locks[cookie_id] = asyncio.Lock()
         return _web_sessions[cookie_id]
@@ -145,6 +153,57 @@ def create_trpg_app(plugin):
             else:
                 result[key] = value
         return result
+
+    def _persist_web_session(cookie_id: str):
+        """将 Web 会话和游戏状态持久化到 JSON"""
+        web_session = _web_sessions.get(cookie_id)
+        if not web_session:
+            return
+
+        session_id = web_session["session_id"]
+        game_state = plugin.session_manager.export_session(session_id)
+        if not web_session.get("game_started") or not game_state:
+            return
+
+        save_store.save(cookie_id, {
+            "web_session": {
+                "session_id": session_id,
+                "game_started": web_session.get("game_started", False),
+                "history": web_session.get("history", []),
+                "chat_messages": web_session.get("chat_messages", []),
+                "module_index": web_session.get("module_index"),
+                "conv_id": web_session.get("conv_id"),
+            },
+            "game_state": game_state,
+        })
+
+    def _restore_web_session(cookie_id: str) -> dict:
+        """如果存在 JSON 存档，则恢复 Web 会话和游戏状态"""
+        web_session = _get_or_create_web_session(cookie_id)
+        session_id = web_session["session_id"]
+
+        if web_session.get("game_started") and plugin.session_manager.has_session(session_id):
+            return web_session
+
+        saved_data = save_store.load(cookie_id)
+        if not saved_data:
+            return web_session
+
+        saved_web = saved_data.get("web_session") or {}
+        restored_web = _build_empty_web_session(cookie_id)
+        restored_web["session_id"] = saved_web.get("session_id") or restored_web["session_id"]
+        restored_web["game_started"] = bool(saved_web.get("game_started", False))
+        restored_web["history"] = list(saved_web.get("history") or [])
+        restored_web["chat_messages"] = list(saved_web.get("chat_messages") or [])
+        restored_web["module_index"] = saved_web.get("module_index")
+        restored_web["conv_id"] = saved_web.get("conv_id")
+        _web_sessions[cookie_id] = restored_web
+
+        if restored_web["game_started"] and not plugin.session_manager.has_session(restored_web["session_id"]):
+            saved_state = saved_data.get("game_state")
+            plugin.session_manager.restore_session(restored_web["session_id"], saved_state)
+
+        return restored_web
 
     # ─── 路由 ───
 
@@ -222,6 +281,7 @@ def create_trpg_app(plugin):
 
             state = plugin.session_manager.get_session(session_id)
             map_data = plugin.session_manager.get_map_data(session_id)
+            _persist_web_session(cookie_id)
 
             return jsonify({
                 "success": True,
@@ -238,7 +298,7 @@ def create_trpg_app(plugin):
         if not cookie_id:
             return jsonify({"error": "无有效会话"}), 400
 
-        web_session = _get_or_create_web_session(cookie_id)
+        web_session = _restore_web_session(cookie_id)
         if not web_session["game_started"]:
             return jsonify({"error": "游戏尚未开始"}), 400
 
@@ -298,6 +358,7 @@ def create_trpg_app(plugin):
 
                 state = plugin.session_manager.get_session(session_id)
                 map_data = plugin.session_manager.get_map_data(session_id)
+                _persist_web_session(cookie_id)
 
                 return jsonify({
                     "success": True,
@@ -325,7 +386,7 @@ def create_trpg_app(plugin):
         if not cookie_id:
             return jsonify({"error": "无有效会话"}), 400
 
-        web_session = _get_or_create_web_session(cookie_id)
+        web_session = _restore_web_session(cookie_id)
         session_id = web_session["session_id"]
 
         if not plugin.session_manager.has_session(session_id):
@@ -361,6 +422,8 @@ def create_trpg_app(plugin):
             web_session["history"] = []
             web_session["chat_messages"] = []
             web_session["module_index"] = None
+            web_session["conv_id"] = None
+            save_store.delete(cookie_id)
 
         return jsonify({"success": True})
 
