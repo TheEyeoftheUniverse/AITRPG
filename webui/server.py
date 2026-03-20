@@ -154,6 +154,20 @@ def create_trpg_app(plugin):
                 result[key] = value
         return result
 
+    def _get_static_version() -> str:
+        """基于静态资源修改时间生成版本号，避免浏览器缓存旧文件。"""
+        static_files = [
+            os.path.join(static_dir, "css", "style.css"),
+            os.path.join(static_dir, "js", "app.js"),
+        ]
+        mtimes = []
+        for file_path in static_files:
+            try:
+                mtimes.append(int(os.path.getmtime(file_path)))
+            except OSError:
+                continue
+        return str(max(mtimes) if mtimes else 1)
+
     def _persist_web_session(cookie_id: str):
         """将 Web 会话和游戏状态持久化到 JSON"""
         web_session = _web_sessions.get(cookie_id)
@@ -216,7 +230,10 @@ def create_trpg_app(plugin):
     @app.route("/trpg/")
     async def index():
         """渲染主页面"""
-        resp = await make_response(await render_template("index.html"))
+        resp = await make_response(await render_template(
+            "index.html",
+            static_version=_get_static_version()
+        ))
         if not request.cookies.get("trpg_session"):
             resp.set_cookie("trpg_session", str(uuid.uuid4()), max_age=86400 * 7)
         return resp

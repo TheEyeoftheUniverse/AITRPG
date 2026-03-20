@@ -242,7 +242,7 @@ class AITRPGPlugin(Star):
 
         # === 第三步：规则AI - 执行判定 ===
         logger.info("[AITRPG] 调用规则AI进行规则判定...")
-        rule_result = await self.rule_ai.judge(
+        rule_result = await self.rule_ai.resolve_check(
             rhythm_result=rhythm_result,
             player_state=state["player"]
         )

@@ -416,6 +416,18 @@ function updatePlayerStatus(state) {
     document.getElementById("hp-bar").style.width = hpPct + "%";
     document.getElementById("hp-value").textContent = `${hp}/${hpMax}`;
 
+    // Skills
+    const skillsEl = document.getElementById("player-skills");
+    const skills = player.skills || {};
+    const skillEntries = Object.entries(skills);
+    if (skillEntries.length > 0) {
+        skillsEl.innerHTML = skillEntries.map(([name, value]) =>
+            `<span class="item-tag">${escapeHtml(name)} ${escapeHtml(String(value))}</span>`
+        ).join("");
+    } else {
+        skillsEl.innerHTML = `<span class="placeholder-text">暂无技能</span>`;
+    }
+
     // Inventory
     const invEl = document.getElementById("player-inventory");
     const inventory = player.inventory || [];
@@ -452,6 +464,12 @@ function togglePanel(side) {
         panel.classList.add("collapsed");
         expandBtn.classList.remove("hidden");
     }
+}
+
+function toggleStatusSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    section.classList.toggle("status-section-collapsed");
 }
 
 // ─── 重置游戏 ───

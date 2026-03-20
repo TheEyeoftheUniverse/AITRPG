@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI驱动TRPG跑团系统</title>
-    <link rel="stylesheet" href="/trpg/static/css/style.css">
+    <link rel="stylesheet" href="/trpg/static/css/style.css?v={{ static_version }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
 </head>
 <body>
@@ -106,8 +106,11 @@
                 </div>
                 <div class="panel-body">
                     <!-- 玩家属性 -->
-                    <div class="status-section">
+                    <div class="status-section" id="stats-section">
                         <div class="status-title">
+                            <button class="status-toggle" type="button" onclick="toggleStatusSection('stats-section')" title="展开或收起属性">
+                                <span class="mdi mdi-chevron-down"></span>
+                            </button>
                             <span class="mdi mdi-heart-pulse"></span> 属性
                         </div>
                         <div id="player-stats" class="status-content">
@@ -127,9 +130,23 @@
                             </div>
                         </div>
                     </div>
-                    <!-- 物品栏 -->
-                    <div class="status-section">
+                    <div class="status-section status-section-collapsed" id="skills-section">
                         <div class="status-title">
+                            <button class="status-toggle" type="button" onclick="toggleStatusSection('skills-section')" title="展开或收起技能">
+                                <span class="mdi mdi-chevron-down"></span>
+                            </button>
+                            <span class="mdi mdi-book-open-page-variant"></span> 技能
+                        </div>
+                        <div id="player-skills" class="status-content">
+                            <span class="placeholder-text">暂无技能</span>
+                        </div>
+                    </div>
+                    <!-- 物品栏 -->
+                    <div class="status-section" id="inventory-section">
+                        <div class="status-title">
+                            <button class="status-toggle" type="button" onclick="toggleStatusSection('inventory-section')" title="展开或收起物品栏">
+                                <span class="mdi mdi-chevron-down"></span>
+                            </button>
                             <span class="mdi mdi-bag-personal"></span> 物品栏
                         </div>
                         <div id="player-inventory" class="status-content">
@@ -137,8 +154,11 @@
                         </div>
                     </div>
                     <!-- 已发现线索 -->
-                    <div class="status-section">
+                    <div class="status-section" id="clues-section">
                         <div class="status-title">
+                            <button class="status-toggle" type="button" onclick="toggleStatusSection('clues-section')" title="展开或收起线索">
+                                <span class="mdi mdi-chevron-down"></span>
+                            </button>
                             <span class="mdi mdi-magnify"></span> 已发现线索
                         </div>
                         <div id="player-clues" class="status-content">
@@ -146,8 +166,11 @@
                         </div>
                     </div>
                     <!-- 地图 -->
-                    <div class="status-section map-section">
+                    <div class="status-section map-section" id="map-section">
                         <div class="status-title">
+                            <button class="status-toggle" type="button" onclick="toggleStatusSection('map-section')" title="展开或收起地图">
+                                <span class="mdi mdi-chevron-down"></span>
+                            </button>
                             <span class="mdi mdi-map"></span> 地图
                         </div>
                         <div id="game-map" class="map-container">
@@ -164,6 +187,6 @@
         </div>
     </div>
 
-    <script src="/trpg/static/js/app.js"></script>
+    <script src="/trpg/static/js/app.js?v={{ static_version }}"></script>
 </body>
 </html>

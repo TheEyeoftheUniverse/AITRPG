@@ -173,6 +173,71 @@ class RuleAI:
 
         return result
 
+    async def resolve_check(self, rhythm_result: dict, player_state: dict) -> dict:
+        """根据模组物品字段执行代码检定。"""
+        object_context = rhythm_result.get("object_context")
+        if not isinstance(object_context, dict):
+            return {
+                "check_type": None,
+                "success": True,
+                "result_description": "无需检定"
+            }
+
+        skill_name = object_context.get("check_required")
+        difficulty = self._normalize_difficulty(object_context.get("difficulty"))
+        if not skill_name or difficulty == "无需判定":
+            return {
+                "check_type": "auto_check" if skill_name else None,
+                "skill": skill_name,
+                "difficulty": difficulty,
+                "success": True,
+                "result_description": "自动成功" if skill_name else "无需检定"
+            }
+
+        player_skill = int(player_state.get("skills", {}).get(skill_name, 0))
+        threshold = self._get_threshold(player_skill, difficulty)
+        roll = random.randint(1, 100)
+        success = roll <= threshold
+        critical_success = roll <= 5
+        critical_failure = roll >= 96
+
+        result = {
+            "check_type": "skill_check",
+            "skill": skill_name,
+            "difficulty": difficulty,
+            "player_skill": player_skill,
+            "threshold": threshold,
+            "roll": roll,
+            "success": success,
+            "critical_success": critical_success,
+            "critical_failure": critical_failure,
+            "result_description": self._get_result_description(success, critical_success, critical_failure)
+        }
+
+        logger.info(f"[RuleAI] 判定结果: {skill_name} {roll}/{threshold} {'成功' if success else '失败'}")
+        return result
+
+    def _normalize_difficulty(self, difficulty) -> str:
+        """将模组中的难度描述归一化为代码判定等级。"""
+        text = str(difficulty or "").strip()
+        if not text:
+            return "无需判定"
+        if "无需判定" in text or "直接成功" in text or "自动成功" in text:
+            return "无需判定"
+        if "极难" in text:
+            return "极难"
+        if "困难" in text:
+            return "困难"
+        return "普通"
+
+    def _get_threshold(self, player_skill: int, difficulty: str) -> int:
+        """根据难度计算成功阈值。"""
+        if difficulty == "困难":
+            return max(1, player_skill // 2)
+        if difficulty == "极难":
+            return max(1, player_skill // 5)
+        return player_skill
+
     def _get_result_description(self, success, critical_success, critical_failure):
         """获取判定结果描述"""
         if critical_success:

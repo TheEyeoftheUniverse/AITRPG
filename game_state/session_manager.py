@@ -1,7 +1,28 @@
 import json
 import os
+import copy
 from collections import deque
 from typing import Dict, Any, List, Set
+
+
+PRESET_PLAYER_PROFILE = {
+    "name": "调查员",
+    "san": 65,
+    "hp": 12,
+    "skills": {
+        "侦查": 60,
+        "图书馆": 60,
+        "聆听": 50,
+        "教育": 60,
+        "心理学": 50,
+        "说服": 50,
+        "话术": 40,
+        "潜行": 40,
+        "斗殴": 45,
+        "闪避": 30
+    },
+    "inventory": ["手电筒"]
+}
 
 
 class SessionManager:
@@ -45,6 +66,7 @@ class SessionManager:
         self.sessions[session_id]["module_data"] = module_data
         self.sessions[session_id]["current_location"] = initial_location
         self.sessions[session_id]["visited_locations"] = [initial_location]
+        self.sessions[session_id]["player"] = self._build_default_player_state()
         self.sessions[session_id]["world_state"]["npcs"] = self._build_initial_npc_state(module_data)
 
     def _load_module(self, module_name: str = "default_module"):
@@ -121,6 +143,7 @@ class SessionManager:
             "narrative_history": deque(maxlen=15),  # 文案AI保存历史总结
             "visited_locations": [initial_location],  # 已访问过的location key列表
         }
+        self.sessions[session_id]["player"] = self._build_default_player_state()
 
     def _get_initial_location(self, module_data: Dict[str, Any]) -> str:
         """获取模组的初始位置"""
@@ -147,6 +170,10 @@ class SessionManager:
             if npc_data.get("location"):
                 npc_states[npc_name]["location"] = npc_data["location"]
         return npc_states
+
+    def _build_default_player_state(self) -> Dict[str, Any]:
+        """返回固定预设角色卡。"""
+        return copy.deepcopy(PRESET_PLAYER_PROFILE)
 
     def has_session(self, session_id: str) -> bool:
         """检查会话是否存在"""
@@ -188,6 +215,7 @@ class SessionManager:
         if not isinstance(narrative_history, deque):
             narrative_history = deque(narrative_history, maxlen=15)
         restored_state["narrative_history"] = narrative_history
+        default_player = self._build_default_player_state()
 
         player_state = dict(restored_state.get("player") or {})
         player_state.setdefault("name", "调查员")
@@ -200,6 +228,10 @@ class SessionManager:
         })
         player_state.setdefault("inventory", ["手电筒"])
         restored_state["player"] = player_state
+        player_state["name"] = player_state.get("name") or default_player["name"]
+        player_state["skills"] = copy.deepcopy(default_player["skills"])
+        if not player_state.get("inventory"):
+            player_state["inventory"] = list(default_player["inventory"])
 
         world_state = dict(restored_state.get("world_state") or {})
         world_state.setdefault("clues_found", [])
