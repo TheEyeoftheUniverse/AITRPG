@@ -682,6 +682,139 @@ html, body {
 }
 
 /* ═══════════════════════════════════════
+   Map
+   ═══════════════════════════════════════ */
+.map-container {
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+    padding: 8px;
+    min-height: 120px;
+    overflow: auto;
+}
+
+#map-svg {
+    display: block;
+    width: 100%;
+}
+
+.map-floor-label {
+    font-size: 11px;
+    font-weight: 700;
+    fill: var(--text-muted);
+}
+
+.map-edge {
+    stroke: var(--border-color);
+    stroke-width: 1.5;
+    fill: none;
+}
+.map-edge--locked {
+    stroke: var(--text-muted);
+    stroke-dasharray: 4 3;
+    opacity: 0.5;
+}
+
+.map-node rect {
+    rx: 6;
+    ry: 6;
+    stroke-width: 1.5;
+    cursor: pointer;
+    transition: fill 0.15s, stroke 0.15s;
+}
+
+.map-node text {
+    font-size: 10px;
+    fill: var(--text-primary);
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+}
+
+/* Current location */
+.map-node--current rect {
+    fill: var(--accent);
+    stroke: var(--accent);
+}
+.map-node--current text {
+    fill: #fff;
+}
+
+/* Visited & reachable */
+.map-node--visited rect {
+    fill: var(--bg-tertiary);
+    stroke: var(--text-secondary);
+}
+.map-node--visited:hover rect {
+    fill: var(--bg-hover);
+    stroke: var(--accent);
+}
+
+/* Fog (unvisited "?") & reachable */
+.map-node--fog rect {
+    fill: var(--bg-secondary);
+    stroke: var(--text-muted);
+    opacity: 0.6;
+}
+.map-node--fog:hover rect {
+    opacity: 1;
+    stroke: var(--accent);
+}
+.map-node--fog text {
+    fill: var(--text-muted);
+}
+
+/* Locked */
+.map-node--locked rect {
+    fill: var(--bg-secondary);
+    stroke: var(--text-muted);
+    stroke-dasharray: 4 3;
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+.map-node--locked text {
+    fill: var(--text-muted);
+}
+
+/* Selected destination */
+.map-node--selected rect {
+    stroke: var(--accent);
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 4px var(--accent));
+}
+
+/* Move indicator */
+.move-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    margin-bottom: 6px;
+    background: var(--accent-bg);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    color: var(--accent);
+}
+.move-indicator .mdi {
+    font-size: 16px;
+}
+.move-indicator-cancel {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+}
+.move-indicator-cancel:hover {
+    background: rgba(108, 126, 225, 0.2);
+}
+
+/* ═══════════════════════════════════════
    Utilities
    ═══════════════════════════════════════ */
 .hidden {

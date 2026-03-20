@@ -3,6 +3,8 @@
 // ═══════════════════════════════════════
 
 let isProcessing = false;
+let selectedDestination = null;   // 待移动的目标location key
+let currentMapData = null;        // 缓存的地图数据
 
 // ─── 初始化 ───
 
@@ -73,6 +75,11 @@ async function checkExistingSession() {
             if (data.game_state) {
                 updatePlayerStatus(data.game_state);
             }
+            // 恢复地图
+            if (data.map_data) {
+                currentMapData = data.map_data;
+                renderMap(data.map_data);
+            }
         }
     } catch (err) {
         // 首次访问，正常显示模组选择
@@ -108,6 +115,12 @@ async function startGame(moduleIndex) {
         if (data.game_state) {
             updatePlayerStatus(data.game_state);
         }
+
+        // 初始化地图
+        if (data.map_data) {
+            currentMapData = data.map_data;
+            renderMap(data.map_data);
+        }
     } catch (err) {
         console.error("Failed to start game:", err);
         alert("启动游戏失败，请刷新重试。");
@@ -130,14 +143,32 @@ async function sendAction() {
 
     const input = document.getElementById("chat-input");
     const text = input.value.trim();
-    if (!text) return;
+    const moveTo = selectedDestination;
+
+    // 需要有文字输入或移动目标
+    if (!text && !moveTo) return;
 
     // 清空输入
     input.value = "";
     input.style.height = "auto";
 
+    // 构建显示文本
+    let displayText = text;
+    if (moveTo && !text) {
+        const locData = currentMapData && currentMapData.locations[moveTo];
+        const locName = locData ? locData.display_name : moveTo;
+        displayText = `[移动到${locName}]`;
+    } else if (moveTo && text) {
+        const locData = currentMapData && currentMapData.locations[moveTo];
+        const locName = locData ? locData.display_name : moveTo;
+        displayText = `[移动到${locName}] ${text}`;
+    }
+
+    // 清除移动选择
+    cancelMoveSelection();
+
     // 显示用户消息
-    addMessage("user", text);
+    addMessage("user", displayText);
 
     // 显示 loading
     isProcessing = true;
@@ -145,10 +176,14 @@ async function sendAction() {
     const loadingEl = addLoadingIndicator();
 
     try {
+        const body = {};
+        if (text) body.input = text;
+        if (moveTo) body.move_to = moveTo;
+
         const resp = await fetch("/trpg/api/action", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ input: text })
+            body: JSON.stringify(body)
         });
         const data = await resp.json();
 
@@ -168,6 +203,12 @@ async function sendAction() {
             // 更新右侧状态
             if (data.game_state) {
                 updatePlayerStatus(data.game_state);
+            }
+
+            // 更新地图
+            if (data.map_data) {
+                currentMapData = data.map_data;
+                renderMap(data.map_data);
             }
         }
     } catch (err) {
@@ -387,6 +428,12 @@ async function resetGame() {
         document.getElementById("rule-panel").innerHTML = `<p class="placeholder-text">等待游戏行动...</p>`;
         document.getElementById("rhythm-panel").innerHTML = `<p class="placeholder-text">等待游戏行动...</p>`;
 
+        // 重置地图
+        selectedDestination = null;
+        currentMapData = null;
+        document.getElementById("map-svg").innerHTML = "";
+        document.getElementById("move-indicator").classList.add("hidden");
+
         // 回到模组选择
         document.getElementById("game-container").classList.add("hidden");
         const overlay = document.getElementById("module-overlay");
@@ -405,4 +452,245 @@ function escapeHtml(text) {
     const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
+}
+
+// ─── 地图渲染与交互 ───
+
+function renderMap(mapData) {
+    if (!mapData || !mapData.locations) return;
+
+    const svg = document.getElementById("map-svg");
+    const locations = mapData.locations;
+    const edges = mapData.edges || [];
+    const currentLoc = mapData.current_location;
+    const reachable = new Set(mapData.reachable || []);
+
+    const keys = Object.keys(locations);
+    if (keys.length === 0) {
+        svg.innerHTML = "";
+        return;
+    }
+
+    // 按floor分组，高楼层在上
+    const floorGroups = {};
+    for (const key of keys) {
+        const floor = locations[key].floor;
+        if (!floorGroups[floor]) floorGroups[floor] = [];
+        floorGroups[floor].push(key);
+    }
+    const floors = Object.keys(floorGroups).map(Number).sort((a, b) => b - a);
+
+    // 构建邻接表（仅可见节点之间）
+    const adj = {};
+    for (const key of keys) adj[key] = [];
+    for (const edge of edges) {
+        if (locations[edge.from] && locations[edge.to]) {
+            adj[edge.from].push(edge.to);
+            adj[edge.to].push(edge.from);
+        }
+    }
+
+    // 布局参数
+    const nodeW = 60;
+    const nodeH = 28;
+    const gapX = 16;
+    const gapY = 80;
+    const labelW = 30;
+    const padX = 8;
+    const padY = 12;
+
+    // 每层内布局：找hub居中，其他左右排列
+    const nodePositions = {}; // key -> {x, y}
+    let yOffset = padY;
+
+    for (const floor of floors) {
+        const group = floorGroups[floor];
+
+        // 找连接数最多的节点作为hub
+        let hubKey = group[0];
+        let maxConn = 0;
+        for (const key of group) {
+            const conn = (adj[key] || []).length;
+            if (conn > maxConn) {
+                maxConn = conn;
+                hubKey = key;
+            }
+        }
+
+        // 排列：hub居中，其他按连接关系左右交替
+        const ordered = [hubKey];
+        const remaining = group.filter(k => k !== hubKey);
+
+        // 先放与hub直连的，再放其余
+        const connected = remaining.filter(k => (adj[hubKey] || []).includes(k));
+        const unconnected = remaining.filter(k => !(adj[hubKey] || []).includes(k));
+
+        // 左右交替插入
+        let left = true;
+        for (const k of [...connected, ...unconnected]) {
+            if (left) {
+                ordered.unshift(k);
+            } else {
+                ordered.push(k);
+            }
+            left = !left;
+        }
+
+        // 计算x坐标
+        const totalW = ordered.length * nodeW + (ordered.length - 1) * gapX;
+        const startX = labelW + padX;
+
+        for (let i = 0; i < ordered.length; i++) {
+            nodePositions[ordered[i]] = {
+                x: startX + i * (nodeW + gapX),
+                y: yOffset
+            };
+        }
+
+        yOffset += nodeH + gapY;
+    }
+
+    // 计算SVG尺寸
+    let maxX = 0;
+    for (const pos of Object.values(nodePositions)) {
+        const right = pos.x + nodeW + padX;
+        if (right > maxX) maxX = right;
+    }
+    const svgW = Math.max(maxX, 200);
+    const svgH = yOffset - gapY + nodeH + padY;
+
+    // 开始绘制SVG
+    const ns = "http://www.w3.org/2000/svg";
+    svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
+    svg.setAttribute("width", svgW);
+    svg.setAttribute("height", svgH);
+    svg.innerHTML = "";
+
+    // 绘制楼层标签
+    for (const floor of floors) {
+        const group = floorGroups[floor];
+        const firstKey = group[0];
+        const pos = nodePositions[firstKey];
+        if (!pos) continue;
+
+        const label = document.createElementNS(ns, "text");
+        label.setAttribute("x", 4);
+        label.setAttribute("y", pos.y + nodeH / 2);
+        label.setAttribute("class", "map-floor-label");
+        const floorLabel = floor >= 1 ? `${floor}F` : `B${Math.abs(floor)}`;
+        label.textContent = floorLabel;
+        svg.appendChild(label);
+    }
+
+    // 绘制边
+    for (const edge of edges) {
+        const fromPos = nodePositions[edge.from];
+        const toPos = nodePositions[edge.to];
+        if (!fromPos || !toPos) continue;
+
+        const line = document.createElementNS(ns, "line");
+        line.setAttribute("x1", fromPos.x + nodeW / 2);
+        line.setAttribute("y1", fromPos.y + nodeH / 2);
+        line.setAttribute("x2", toPos.x + nodeW / 2);
+        line.setAttribute("y2", toPos.y + nodeH / 2);
+        line.setAttribute("class", edge.locked ? "map-edge map-edge--locked" : "map-edge");
+        svg.appendChild(line);
+    }
+
+    // 绘制节点
+    for (const key of keys) {
+        const loc = locations[key];
+        const pos = nodePositions[key];
+        if (!pos) continue;
+
+        const isCurrent = key === currentLoc;
+        const isReachable = reachable.has(key);
+        const isVisited = loc.visited;
+        const isSelected = key === selectedDestination;
+
+        // 确定节点样式类
+        let nodeClass = "map-node";
+        if (isCurrent) {
+            nodeClass += " map-node--current";
+        } else if (!isReachable) {
+            nodeClass += " map-node--locked";
+        } else if (!isVisited) {
+            nodeClass += " map-node--fog";
+        } else {
+            nodeClass += " map-node--visited";
+        }
+        if (isSelected) {
+            nodeClass += " map-node--selected";
+        }
+
+        const g = document.createElementNS(ns, "g");
+        g.setAttribute("class", nodeClass);
+
+        const rect = document.createElementNS(ns, "rect");
+        rect.setAttribute("x", pos.x);
+        rect.setAttribute("y", pos.y);
+        rect.setAttribute("width", nodeW);
+        rect.setAttribute("height", nodeH);
+        g.appendChild(rect);
+
+        const text = document.createElementNS(ns, "text");
+        text.setAttribute("x", pos.x + nodeW / 2);
+        text.setAttribute("y", pos.y + nodeH / 2);
+
+        // 截断过长的名字
+        let displayName = loc.display_name || "?";
+        if (displayName.length > 5) {
+            displayName = displayName.substring(0, 4) + "…";
+        }
+        text.textContent = displayName;
+        g.appendChild(text);
+
+        // 点击事件
+        if (!isCurrent && isReachable) {
+            g.style.cursor = "pointer";
+            g.addEventListener("click", () => onMapNodeClick(key));
+        } else if (isCurrent) {
+            g.style.cursor = "pointer";
+            g.addEventListener("click", () => onMapNodeClick(key));
+        }
+
+        svg.appendChild(g);
+    }
+}
+
+function onMapNodeClick(locationKey) {
+    if (!currentMapData) return;
+    const reachable = new Set(currentMapData.reachable || []);
+
+    // 点击当前位置 → 取消选择
+    if (locationKey === currentMapData.current_location) {
+        cancelMoveSelection();
+        return;
+    }
+
+    // 点击不可达 → 无效果
+    if (!reachable.has(locationKey)) return;
+
+    // 设为选中目标
+    selectedDestination = locationKey;
+
+    // 更新移动提示
+    const loc = currentMapData.locations[locationKey];
+    const locName = loc ? loc.display_name : locationKey;
+    const indicator = document.getElementById("move-indicator");
+    const indicatorText = document.getElementById("move-indicator-text");
+    indicatorText.textContent = `即将移动到：${locName}`;
+    indicator.classList.remove("hidden");
+
+    // 重新渲染地图以更新选中样式
+    renderMap(currentMapData);
+}
+
+function cancelMoveSelection() {
+    selectedDestination = null;
+    const indicator = document.getElementById("move-indicator");
+    indicator.classList.add("hidden");
+
+    // 重新渲染地图以清除选中样式
+    if (currentMapData) renderMap(currentMapData);
 }

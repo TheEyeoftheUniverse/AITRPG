@@ -181,12 +181,53 @@ class AITRPGPlugin(Star):
             logger.error(traceback.format_exc())
             yield event.plain_result(f"❌ 处理出错: {str(e)}")
 
-    async def _process_action_core(self, session_id: str, player_input: str, history: list) -> dict:
+    async def _process_action_core(self, session_id: str, player_input: str, history: list, move_to: str = None) -> dict:
         """核心三层AI处理，返回结构化结果。可被 AstrBot 消息处理和 WebUI API 共同调用。"""
-        logger.info(f"[AITRPG] 开始处理玩家行动: {player_input}")
+        logger.info(f"[AITRPG] 开始处理玩家行动: {player_input}, move_to: {move_to}")
 
         # 获取当前游戏状态
         state = self.session_manager.get_session(session_id)
+
+        # === 移动处理 ===
+        move_result = None
+        if move_to:
+            move_result = self.session_manager.move_player(session_id, move_to)
+            if not move_result["success"]:
+                return {
+                    "rule_result": {"check_type": None},
+                    "rhythm_result": {"feasible": False, "hint": move_result["message"], "stage_assessment": "", "world_changes": {}},
+                    "narrative_result": {"narrative": move_result["message"], "summary": move_result["message"]},
+                    "game_state": state
+                }
+            # 刷新状态（位置已更新）
+            state = self.session_manager.get_session(session_id)
+
+        # === 纯移动无行动 ===
+        if move_to and not player_input:
+            locations = self.session_manager.module_data.get("locations", {})
+            target_loc = locations.get(move_to, {})
+            loc_name = target_loc.get("name", move_to)
+
+            # 检查目标场景是否有NPC
+            npcs = self.session_manager.module_data.get("npcs", {})
+            has_npc = any(
+                npc_data.get("location") == move_to
+                for npc_data in npcs.values()
+            )
+
+            if not has_npc:
+                # 无NPC：直接返回模组场景描述，零成本零延迟
+                description = target_loc.get("description", f"你来到了{loc_name}。")
+                narrative = f"你来到了{loc_name}。\n\n{description}"
+                return {
+                    "rule_result": {"check_type": None},
+                    "rhythm_result": {"feasible": True, "hint": None, "stage_assessment": "", "world_changes": {}},
+                    "narrative_result": {"narrative": narrative, "summary": f"移动到{loc_name}"},
+                    "game_state": state
+                }
+            else:
+                # 有NPC：调用文案AI生成到达描述
+                player_input = f"我前往{loc_name}"
 
         # === 第一步：规则AI - 意图解析 ===
         logger.info("[AITRPG] 调用规则AI进行意图解析...")

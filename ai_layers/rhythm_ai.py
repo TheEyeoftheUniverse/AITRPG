@@ -116,6 +116,16 @@ class RhythmAI:
             context_parts.append("\n场景内物品完整字段（原文）：")
             context_parts.append(json.dumps(scene_objects, ensure_ascii=False, indent=2))
 
+        # 全模组物品位置索引（帮助节奏AI识别玩家模糊提及的物品）
+        all_objects = self.module_data.get("objects", {})
+        if all_objects:
+            obj_location_index = {
+                name: data.get("location", "未知")
+                for name, data in all_objects.items()
+            }
+            context_parts.append("\n全模组物品初始位置索引（用于识别玩家模糊提及的物品是否属于本模组）：")
+            context_parts.append(json.dumps(obj_location_index, ensure_ascii=False, indent=2))
+
         # 模组氛围指南（原文）
         atmosphere_guide = self.module_data.get("module_info", {}).get("atmosphere_guide", {})
         if atmosphere_guide:

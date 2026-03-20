@@ -1,7 +1,7 @@
 import json
 import os
 from collections import deque
-from typing import Dict, Any
+from typing import Dict, Any, List, Set, Optional
 
 
 class SessionManager:
@@ -109,7 +109,8 @@ class SessionManager:
 
             # 三层AI的上下文
             "rhythm_context": [],  # 节奏AI保存游戏状态变化
-            "narrative_history": deque(maxlen=15)  # 文案AI保存历史总结
+            "narrative_history": deque(maxlen=15),  # 文案AI保存历史总结
+            "visited_locations": ["master_bedroom"],  # 已访问过的location key列表
         }
 
     def has_session(self, session_id: str) -> bool:
@@ -143,9 +144,7 @@ class SessionManager:
                     if clue not in state["world_state"]["clues_found"]:
                         state["world_state"]["clues_found"].append(clue)
 
-            # 更新玩家位置
-            if "player_location" in changes:
-                state["current_location"] = changes["player_location"]
+            # 玩家位置由代码控制（move_player方法），不再从节奏AI结果更新
 
             # 更新NPC位置
             if "npc_locations" in changes:
@@ -200,6 +199,216 @@ class SessionManager:
 
 📍 当前位置: 卧室
 ━━━━━━━━━━━━━━━━"""
+
+    # ─── 地图与移动相关方法 ───
+
+    def _build_name_to_key_map(self) -> Dict[str, str]:
+        """构建 {中文显示名 → location key} 映射"""
+        locations = self.module_data.get("locations", {})
+        name_map = {}
+        for key, loc_data in locations.items():
+            name = loc_data.get("name", "")
+            if name:
+                name_map[name] = key
+        return name_map
+
+    def _get_adjacency_graph(self) -> Dict[str, List[str]]:
+        """构建邻接表，将exits中的显示名转为key，并加入passage objects的leads_to连接"""
+        locations = self.module_data.get("locations", {})
+        name_to_key = self._build_name_to_key_map()
+        graph = {}
+        for key, loc_data in locations.items():
+            exits = loc_data.get("exits", [])
+            neighbors = []
+            for exit_name in exits:
+                neighbor_key = name_to_key.get(exit_name)
+                if neighbor_key:
+                    neighbors.append(neighbor_key)
+            graph[key] = neighbors
+
+        # 加入passage objects的leads_to连接（如"地下室入口"从kitchen通向basement）
+        objects = self.module_data.get("objects", {})
+        for obj_name, obj_data in objects.items():
+            leads_to = obj_data.get("leads_to")
+            if leads_to and leads_to in locations:
+                from_loc = obj_data.get("location", "")
+                if from_loc in graph and leads_to not in graph[from_loc]:
+                    graph[from_loc].append(leads_to)
+
+        return graph
+
+    def _get_locked_exits(self, session_id: str) -> Set[tuple]:
+        """扫描所有objects，找到有leads_to且requires未满足的，返回锁定的边集合 {(from_key, to_key)}"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return set()
+
+        objects = self.module_data.get("objects", {})
+        inventory = state.get("player", {}).get("inventory", [])
+        clues_found = state.get("world_state", {}).get("clues_found", [])
+        all_items = set(inventory) | set(clues_found)
+
+        locked = set()
+        for obj_name, obj_data in objects.items():
+            leads_to = obj_data.get("leads_to")
+            requires = obj_data.get("requires")
+            if leads_to and requires:
+                # 检查requires中的所有物品是否都已获得
+                if not all(req in all_items for req in requires):
+                    from_loc = obj_data.get("location", "")
+                    locked.add((from_loc, leads_to))
+
+        return locked
+
+    def _check_reveal_conditions(self, session_id: str, conditions: list) -> bool:
+        """检查reveal_conditions中的条件列表是否有任一满足"""
+        if not conditions:
+            return False
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+
+        inventory = state.get("player", {}).get("inventory", [])
+        clues_found = state.get("world_state", {}).get("clues_found", [])
+        all_items = set(inventory) | set(clues_found)
+
+        return any(cond in all_items for cond in conditions)
+
+    def move_player(self, session_id: str, target_key: str) -> Dict[str, Any]:
+        """
+        代码控制移动玩家到目标位置
+
+        Returns:
+            {"success": bool, "message": str}
+        """
+        state = self.sessions.get(session_id)
+        if not state:
+            return {"success": False, "message": "会话不存在"}
+
+        locations = self.module_data.get("locations", {})
+        if target_key not in locations:
+            return {"success": False, "message": "无效的目标位置"}
+
+        current = state["current_location"]
+        if target_key == current:
+            return {"success": True, "message": "已在该位置"}
+
+        # BFS检查可达性
+        reachable = self.get_reachable_locations(session_id)
+        if target_key not in reachable:
+            return {"success": False, "message": "目标位置不可达（路径被锁定）"}
+
+        # 执行移动
+        state["current_location"] = target_key
+
+        # 标记已访问
+        if target_key not in state["visited_locations"]:
+            state["visited_locations"].append(target_key)
+
+        return {"success": True, "message": f"移动到{locations[target_key].get('name', target_key)}"}
+
+    def get_reachable_locations(self, session_id: str) -> Set[str]:
+        """BFS遍历exits图，跳过锁定出口，返回所有从当前位置可达的location key集合"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return set()
+
+        current = state["current_location"]
+        graph = self._get_adjacency_graph()
+        locked_exits = self._get_locked_exits(session_id)
+
+        # 将locked_exits中的location key对应回来（locked中from是location key of the object）
+        # 需要将object.location转为location key
+        # 注意：locked_exits中的from_loc是object的location字段（这是一个location key）
+        # 所以 (from_loc, to_loc) 就是 (location_key, location_key)
+
+        visited = set()
+        queue = [current]
+        visited.add(current)
+
+        while queue:
+            node = queue.pop(0)
+            for neighbor in graph.get(node, []):
+                if neighbor in visited:
+                    continue
+                # 检查这条边是否被锁定
+                if (node, neighbor) in locked_exits:
+                    continue
+                visited.add(neighbor)
+                queue.append(neighbor)
+
+        return visited
+
+    def get_map_data(self, session_id: str) -> Dict[str, Any]:
+        """返回完整地图数据给前端（含战争迷雾计算）"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+
+        locations = self.module_data.get("locations", {})
+        visited_locations = state.get("visited_locations", [])
+        reachable = self.get_reachable_locations(session_id)
+        locked_exits = self._get_locked_exits(session_id)
+        name_to_key = self._build_name_to_key_map()
+
+        # 构建可见节点
+        visible_locations = {}
+        for key, loc_data in locations.items():
+            # 检查hidden节点是否满足node_visible条件
+            if loc_data.get("hidden", False):
+                reveal_conds = loc_data.get("reveal_conditions", {})
+                node_visible_conds = reveal_conds.get("node_visible", [])
+                if not self._check_reveal_conditions(session_id, node_visible_conds):
+                    continue  # 隐藏且未解锁，不出现在地图上
+
+            # 计算显示名（三层逻辑）
+            is_visited = key in visited_locations
+            if not is_visited:
+                display_name = "?"
+            else:
+                # 已访问，检查是否有hidden_name且true_name条件未满足
+                hidden_name = loc_data.get("hidden_name")
+                if hidden_name:
+                    reveal_conds = loc_data.get("reveal_conditions", {})
+                    true_name_conds = reveal_conds.get("true_name", [])
+                    if self._check_reveal_conditions(session_id, true_name_conds):
+                        display_name = loc_data.get("name", key)  # 里名
+                    else:
+                        display_name = hidden_name  # 表名
+                else:
+                    display_name = loc_data.get("name", key)
+
+            visible_locations[key] = {
+                "display_name": display_name,
+                "floor": loc_data.get("floor", 1),
+                "visited": is_visited,
+            }
+
+        # 构建可见边
+        edges = []
+        visible_keys = set(visible_locations.keys())
+        seen_edges = set()
+        for key in visible_keys:
+            loc_data = locations.get(key, {})
+            for exit_name in loc_data.get("exits", []):
+                neighbor_key = name_to_key.get(exit_name)
+                if neighbor_key and neighbor_key in visible_keys:
+                    edge_pair = tuple(sorted([key, neighbor_key]))
+                    if edge_pair not in seen_edges:
+                        seen_edges.add(edge_pair)
+                        is_locked = (key, neighbor_key) in locked_exits or (neighbor_key, key) in locked_exits
+                        edges.append({
+                            "from": key,
+                            "to": neighbor_key,
+                            "locked": is_locked,
+                        })
+
+        return {
+            "locations": visible_locations,
+            "edges": edges,
+            "current_location": state["current_location"],
+            "reachable": list(reachable),
+        }
 
     def get_module_data(self):
         """获取模组数据"""

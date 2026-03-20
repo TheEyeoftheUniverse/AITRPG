@@ -80,6 +80,13 @@
                     <!-- 动态填充 -->
                 </div>
                 <div class="chat-input-area">
+                    <div id="move-indicator" class="move-indicator hidden">
+                        <span class="mdi mdi-map-marker-right"></span>
+                        <span id="move-indicator-text"></span>
+                        <button id="move-indicator-cancel" class="move-indicator-cancel" onclick="cancelMoveSelection()" title="取消移动">
+                            <span class="mdi mdi-close"></span>
+                        </button>
+                    </div>
                     <div class="input-wrapper">
                         <textarea id="chat-input" placeholder="输入你的行动..." rows="1"></textarea>
                         <button id="btn-send" class="btn-send" onclick="sendAction()" title="发送">
@@ -145,6 +152,15 @@
                         </div>
                         <div id="player-clues" class="status-content">
                             <span class="placeholder-text">暂未发现线索</span>
+                        </div>
+                    </div>
+                    <!-- 地图 -->
+                    <div class="status-section map-section">
+                        <div class="status-title">
+                            <span class="mdi mdi-map"></span> 地图
+                        </div>
+                        <div id="game-map" class="map-container">
+                            <svg id="map-svg"></svg>
                         </div>
                     </div>
                 </div>

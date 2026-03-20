@@ -137,6 +137,12 @@
     },
     "ritual_chamber": {
       "name": "仪式现场",
+      "hidden_name": "暗门后的空间",
+      "hidden": true,
+      "reveal_conditions": {
+        "node_visible": ["改造蓝图"],
+        "true_name": ["仪式笔记"]
+      },
       "description": "暗门后的密室。地面上画着复杂的召唤阵，粗绳从四个方向延伸，束缚着中央的符咒地毯。空气中弥漫着令人作呕的气息，不知道是来源于地面上的暗红色，还是别的什么。",
       "objects": [
         "召唤阵",

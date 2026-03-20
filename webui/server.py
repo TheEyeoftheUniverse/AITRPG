@@ -203,9 +203,20 @@ def create_trpg_app(plugin):
 
             opening = selected["opening"]
 
+            # 在 AstrBot 中创建新对话并写入开场白
+            conv_mgr = plugin.context.conversation_manager
+            conv_id = await conv_mgr.new_conversation(session_id)
+            await conv_mgr.switch_conversation(session_id, conv_id)
+            await conv_mgr.add_message_pair(
+                cid=conv_id,
+                user_message={"role": "user", "content": "缓缓苏醒"},
+                assistant_message={"role": "assistant", "content": opening}
+            )
+
             # 初始化 web 会话
             web_session["game_started"] = True
             web_session["module_index"] = module_index
+            web_session["conv_id"] = conv_id
             web_session["history"] = [
                 {"role": "user", "content": "缓缓苏醒"},
                 {"role": "assistant", "content": opening}
@@ -215,12 +226,14 @@ def create_trpg_app(plugin):
             ]
 
             state = plugin.session_manager.get_session(session_id)
+            map_data = plugin.session_manager.get_map_data(session_id)
 
             return jsonify({
                 "success": True,
                 "opening": opening,
                 "module_name": selected["name"],
-                "game_state": _serialize_state(state)
+                "game_state": _serialize_state(state),
+                "map_data": map_data
             })
 
     @app.route("/trpg/api/action", methods=["POST"])
@@ -239,7 +252,9 @@ def create_trpg_app(plugin):
         async with lock:
             data = await request.get_json()
             player_input = data.get("input", "").strip()
-            if not player_input:
+            move_to = data.get("move_to", "").strip() or None
+
+            if not player_input and not move_to:
                 return jsonify({"error": "输入不能为空"}), 400
 
             session_id = web_session["session_id"]
@@ -249,14 +264,29 @@ def create_trpg_app(plugin):
                 result = await plugin._process_action_core(
                     session_id=session_id,
                     player_input=player_input,
-                    history=web_session["history"]
+                    history=web_session["history"],
+                    move_to=move_to
                 )
 
                 narrative = result["narrative_result"]["narrative"]
                 summary = result["narrative_result"]["summary"]
 
+                # 同步到 AstrBot 对话记录
+                conv_id = web_session.get("conv_id")
+                display_input = player_input or (f"[移动到{move_to}]" if move_to else "")
+                if conv_id:
+                    try:
+                        conv_mgr = plugin.context.conversation_manager
+                        await conv_mgr.add_message_pair(
+                            cid=conv_id,
+                            user_message={"role": "user", "content": display_input},
+                            assistant_message={"role": "assistant", "content": narrative}
+                        )
+                    except Exception as e:
+                        logger.warning(f"[AITRPG WebUI] 同步对话记录失败: {e}")
+
                 # 更新 web 会话历史
-                web_session["history"].append({"role": "user", "content": player_input})
+                web_session["history"].append({"role": "user", "content": display_input})
                 web_session["history"].append({"role": "assistant", "content": narrative})
 
                 # 限制历史长度（保留最近 20 条对话）
@@ -264,13 +294,15 @@ def create_trpg_app(plugin):
                     web_session["history"] = web_session["history"][-40:]
 
                 # 更新前端聊天消息
-                web_session["chat_messages"].append({"role": "user", "content": player_input})
+                if display_input:
+                    web_session["chat_messages"].append({"role": "user", "content": display_input})
                 web_session["chat_messages"].append({"role": "assistant", "content": narrative})
 
                 # 同步 narrative_history
                 plugin.session_manager.add_narrative_summary(session_id, narrative, summary)
 
                 state = plugin.session_manager.get_session(session_id)
+                map_data = plugin.session_manager.get_map_data(session_id)
 
                 return jsonify({
                     "success": True,
@@ -281,7 +313,8 @@ def create_trpg_app(plugin):
                         "hint": result["rhythm_result"].get("hint"),
                         "stage_assessment": result["rhythm_result"].get("stage_assessment"),
                     },
-                    "game_state": _serialize_state(state)
+                    "game_state": _serialize_state(state),
+                    "map_data": map_data
                 })
 
             except Exception as e:
@@ -308,10 +341,12 @@ def create_trpg_app(plugin):
             })
 
         state = plugin.session_manager.get_session(session_id)
+        map_data = plugin.session_manager.get_map_data(session_id)
         return jsonify({
             "game_started": web_session["game_started"],
             "game_state": _serialize_state(state),
-            "chat_messages": web_session["chat_messages"]
+            "chat_messages": web_session["chat_messages"],
+            "map_data": map_data
         })
 
     @app.route("/trpg/api/reset", methods=["POST"])
