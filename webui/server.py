@@ -399,6 +399,7 @@ def create_trpg_app(plugin):
                     "rule_result": result.get("rule_result", {}),
                     "hard_changes": result.get("hard_changes", {}),
                     "rhythm_result": result.get("rhythm_result", {}),
+                    "telemetry": result.get("telemetry", {}),
                 }
                 _persist_web_session(cookie_id)
 
@@ -409,6 +410,7 @@ def create_trpg_app(plugin):
                     "rule_result": result["rule_result"],
                     "hard_changes": result.get("hard_changes", {}),
                     "rhythm_result": result["rhythm_result"],
+                    "telemetry": result.get("telemetry", {}),
                     "game_state": _serialize_state(state),
                     "map_data": map_data
                 })
@@ -418,6 +420,19 @@ def create_trpg_app(plugin):
                 import traceback
                 logger.error(traceback.format_exc())
                 return jsonify({"error": f"处理出错: {str(e)}"}), 500
+
+    @app.route("/trpg/api/progress", methods=["GET"])
+    async def api_progress():
+        """获取当前动作处理进度"""
+        cookie_id = _get_cookie_id()
+        if not cookie_id:
+            return jsonify({"progress": {}})
+
+        web_session = _restore_web_session(cookie_id)
+        session_id = web_session["session_id"]
+        return jsonify({
+            "progress": plugin.get_action_progress(session_id)
+        })
 
     @app.route("/trpg/api/state", methods=["GET"])
     async def api_state():
@@ -466,6 +481,8 @@ def create_trpg_app(plugin):
             web_session["module_index"] = None
             web_session["conv_id"] = None
             save_store.delete(cookie_id)
+            if session_id in plugin._action_progress:
+                del plugin._action_progress[session_id]
 
         return jsonify({"success": True})
 

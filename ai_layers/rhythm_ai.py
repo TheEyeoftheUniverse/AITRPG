@@ -1,6 +1,7 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
 from ..game_state.location_context import build_runtime_location_context
+from .usage_metrics import extract_usage_metrics
 
 import json
 import os
@@ -14,6 +15,12 @@ class RhythmAI:
         self.provider_name = provider_name
         self.config = config or {}
         self.prompts = self._load_prompts()
+        self._call_metrics = {}
+
+    def pop_call_metric(self, trace_id: str) -> dict:
+        if not trace_id:
+            return {}
+        return self._call_metrics.pop(trace_id, {})
 
     def _load_prompts(self):
         prompts_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ai_prompts.json")
@@ -55,7 +62,8 @@ class RhythmAI:
         rule_result: dict,
         game_state: dict,
         module_data: dict,
-        history: list = None
+        history: list = None,
+        trace_id: str = None,
     ) -> dict:
         if history is None:
             history = []
@@ -92,6 +100,8 @@ class RhythmAI:
                 if hasattr(llm_response, "completion_text")
                 else str(llm_response)
             )
+            if trace_id:
+                self._call_metrics[trace_id] = extract_usage_metrics(llm_response, prompt, response_text)
             result = json.loads(self._strip_json_fence(response_text))
             normalized = self._normalize_result(result, base_result)
             logger.info(f"[RhythmAI] process result: {normalized}")

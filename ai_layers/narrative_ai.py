@@ -1,5 +1,6 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
+from .usage_metrics import extract_usage_metrics, merge_usage_metrics
 
 import json
 import os
@@ -13,6 +14,12 @@ class NarrativeAI:
         self.provider_name = provider_name
         self.config = config or {}
         self.prompts = self._load_prompts()
+        self._call_metrics = {}
+
+    def pop_call_metric(self, trace_id: str) -> dict:
+        if not trace_id:
+            return {}
+        return self._call_metrics.pop(trace_id, {})
 
     def _load_prompts(self):
         prompts_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ai_prompts.json")
@@ -71,12 +78,14 @@ class NarrativeAI:
         rule_result: dict,
         rhythm_result: dict,
         narrative_history: list,
-        history: list = None
+        history: list = None,
+        trace_id: str = None,
     ) -> dict:
         if history is None:
             history = []
 
         provider = self._get_provider()
+        usage_metrics = {}
 
         if not provider:
             logger.error("[NarrativeAI] No provider available")
@@ -110,6 +119,7 @@ class NarrativeAI:
                 if hasattr(llm_response, "completion_text")
                 else str(llm_response)
             )
+            usage_metrics = merge_usage_metrics(usage_metrics, extract_usage_metrics(llm_response, prompt, response_text))
             response_text = self._strip_json_fence(response_text)
             result = json.loads(response_text)
 
@@ -121,12 +131,16 @@ class NarrativeAI:
                 summary = self._build_default_summary(player_input)
 
             logger.info(f"[NarrativeAI] Narrative generated, len={len(narrative)}")
+            if trace_id:
+                self._call_metrics[trace_id] = usage_metrics
             return {
                 "narrative": narrative,
                 "summary": summary,
             }
         except json.JSONDecodeError:
             logger.warning(f"[NarrativeAI] JSON decode failed. Response={response_text}")
+            if trace_id:
+                self._call_metrics[trace_id] = usage_metrics
             return {
                 "narrative": response_text,
                 "summary": self._build_default_summary(player_input),
@@ -157,11 +171,17 @@ class NarrativeAI:
                     if hasattr(retry_response, "completion_text")
                     else str(retry_response)
                 )
+                usage_metrics = merge_usage_metrics(
+                    usage_metrics,
+                    extract_usage_metrics(retry_response, compact_prompt, retry_text),
+                )
                 retry_text = self._strip_json_fence(retry_text)
                 retry_result = json.loads(retry_text)
                 narrative = str(retry_result.get("narrative") or "").strip()
                 summary = str(retry_result.get("summary") or "").strip()
                 if narrative:
+                    if trace_id:
+                        self._call_metrics[trace_id] = usage_metrics
                     return {
                         "narrative": narrative,
                         "summary": summary or self._build_default_summary(player_input),
@@ -182,11 +202,17 @@ class NarrativeAI:
                     if hasattr(fresh_response, "completion_text")
                     else str(fresh_response)
                 )
+                usage_metrics = merge_usage_metrics(
+                    usage_metrics,
+                    extract_usage_metrics(fresh_response, compact_prompt, fresh_text),
+                )
                 fresh_text = self._strip_json_fence(fresh_text)
                 fresh_result = json.loads(fresh_text)
                 narrative = str(fresh_result.get("narrative") or "").strip()
                 summary = str(fresh_result.get("summary") or "").strip()
                 if narrative:
+                    if trace_id:
+                        self._call_metrics[trace_id] = usage_metrics
                     return {
                         "narrative": narrative,
                         "summary": summary or self._build_default_summary(player_input),
@@ -199,6 +225,8 @@ class NarrativeAI:
                     getattr(fresh_error, "__cause__", None),
                 )
 
+            if trace_id:
+                self._call_metrics[trace_id] = usage_metrics
             return self._build_local_fallback_narrative(player_input, rule_plan, rule_result, rhythm_result)
 
     def _strip_json_fence(self, text: str) -> str:

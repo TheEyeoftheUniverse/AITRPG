@@ -77,6 +77,28 @@
 
             <!-- 中间聊天区 -->
             <main class="chat-area">
+                <section id="processing-status" class="processing-status hidden" aria-live="polite">
+                    <div class="processing-status-header">
+                        <div class="processing-status-title">
+                            <span class="mdi mdi-timer-sand"></span>
+                            <span>AI 处理进度</span>
+                        </div>
+                        <div class="processing-status-actions">
+                            <div id="processing-status-badge" class="processing-status-badge">待机</div>
+                            <button
+                                id="processing-status-toggle"
+                                class="processing-status-toggle hidden"
+                                type="button"
+                                onclick="toggleProcessingStatus()"
+                                title="展开或收起处理详情"
+                            >
+                                <span class="mdi mdi-chevron-up"></span>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="processing-status-summary" class="processing-status-summary">等待下一次行动...</div>
+                    <div id="processing-status-steps" class="processing-status-steps"></div>
+                </section>
                 <div id="chat-messages" class="chat-messages">
                     <!-- 动态填充 -->
                 </div>

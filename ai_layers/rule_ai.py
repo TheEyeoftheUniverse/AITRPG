@@ -1,6 +1,7 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
 from ..game_state.location_context import build_runtime_location_context
+from .usage_metrics import extract_usage_metrics
 
 import json
 import os
@@ -17,6 +18,12 @@ class RuleAI:
         self.config = config or {}
         self.rules = self._load_rules()
         self.prompts = self._load_prompts()
+        self._call_metrics = {}
+
+    def pop_call_metric(self, trace_id: str) -> dict:
+        if not trace_id:
+            return {}
+        return self._call_metrics.pop(trace_id, {})
 
     def _load_rules(self):
         return """
@@ -60,7 +67,7 @@ class RuleAI:
             text = text[:-3]
         return text.strip()
 
-    async def parse_intent(self, player_input: str) -> dict:
+    async def parse_intent(self, player_input: str, trace_id: str = None) -> dict:
         provider = self._get_provider()
         if not provider:
             logger.error("[RuleAI] No provider available for parse_intent")
@@ -79,6 +86,8 @@ class RuleAI:
         try:
             llm_response = await provider.text_chat(prompt=prompt, contexts=[])
             response_text = llm_response.completion_text if hasattr(llm_response, "completion_text") else str(llm_response)
+            if trace_id:
+                self._call_metrics[trace_id] = extract_usage_metrics(llm_response, prompt, response_text)
             return json.loads(self._strip_json_fence(response_text))
         except json.JSONDecodeError:
             logger.warning(f"[RuleAI] parse_intent JSON decode failed: {player_input}")
@@ -92,7 +101,8 @@ class RuleAI:
         player_input: str,
         intent: dict,
         game_state: dict,
-        module_data: dict
+        module_data: dict,
+        trace_id: str = None,
     ) -> dict:
         fallback = self._get_fallback_action_plan(player_input, intent, game_state, module_data)
 
@@ -114,6 +124,8 @@ class RuleAI:
         try:
             llm_response = await provider.text_chat(prompt=prompt, contexts=[])
             response_text = llm_response.completion_text if hasattr(llm_response, "completion_text") else str(llm_response)
+            if trace_id:
+                self._call_metrics[trace_id] = extract_usage_metrics(llm_response, prompt, response_text)
             result = json.loads(self._strip_json_fence(response_text))
             normalized = self._normalize_action_plan(result, player_input, intent, game_state, module_data)
             logger.info(f"[RuleAI] adjudicate_action result: {normalized}")

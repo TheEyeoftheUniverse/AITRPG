@@ -5,6 +5,37 @@
 let isProcessing = false;
 let selectedDestination = null;   // 待移动的目标location key
 let currentMapData = null;        // 缓存的地图数据
+let progressPollTimer = null;
+let processingStatusCollapsed = true;
+
+const PROCESSING_STAGE_GROUPS = [
+    {
+        key: "rule",
+        order: 1,
+        label: "规则AI",
+        stepKeys: ["rule_intent", "rule_adjudication", "rule_check"],
+    },
+    {
+        key: "rhythm",
+        order: 2,
+        label: "节奏AI",
+        stepKeys: ["rhythm"],
+    },
+    {
+        key: "narrative",
+        order: 3,
+        label: "文案AI",
+        stepKeys: ["narrative"],
+    },
+];
+
+const PROCESSING_STEP_FALLBACK_MESSAGES = {
+    rule_intent: "规则AI 解析意图中……",
+    rule_adjudication: "规则AI 裁定动作中……",
+    rule_check: "规则层 执行判定中……",
+    rhythm: "节奏AI 掌控情况中……",
+    narrative: "文案AI 生成描述中……",
+};
 
 // ─── 初始化 ───
 
@@ -144,6 +175,8 @@ async function startGame(moduleIndex) {
             currentMapData = null;
         }
 
+        clearProcessingStatus();
+
         showGameUI(() => {
             try {
                 addMessage("assistant", data.opening || "");
@@ -189,6 +222,296 @@ function showGameUI(onShown) {
     setTimeout(finishShow, 250);
 }
 
+function formatDurationMs(durationMs) {
+    const safeMs = Math.max(0, Number(durationMs) || 0);
+    if (safeMs >= 10000) {
+        return `${(safeMs / 1000).toFixed(0)}秒`;
+    }
+    return `${(safeMs / 1000).toFixed(1)}秒`;
+}
+
+function getProcessingStepMessage(step) {
+    if (step && step.message) return step.message;
+    if (step && step.key && PROCESSING_STEP_FALLBACK_MESSAGES[step.key]) {
+        return PROCESSING_STEP_FALLBACK_MESSAGES[step.key];
+    }
+    return "AI 正在处理中……";
+}
+
+function summarizeProcessingGroup(groupDef, progress) {
+    const stepsByKey = new Map(
+        ((progress && progress.steps) || []).map((step) => [step.key, step || {}])
+    );
+    const steps = groupDef.stepKeys.map((key) => stepsByKey.get(key) || {
+        key,
+        status: "pending",
+        duration_ms: 0,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
+        token_source: null,
+        message: "",
+    });
+
+    const statuses = steps.map((step) => step.status || "pending");
+    const activeStep = steps.find((step) => step.status === "running");
+    const lastFinishedStep = [...steps].reverse().find((step) => step.status === "completed" || step.status === "skipped");
+    const totalDurationMs = steps.reduce((sum, step) => sum + Math.max(0, Number(step.duration_ms) || 0), 0);
+    const promptTokens = steps.reduce((sum, step) => sum + Math.max(0, Number(step.prompt_tokens) || 0), 0);
+    const completionTokens = steps.reduce((sum, step) => sum + Math.max(0, Number(step.completion_tokens) || 0), 0);
+    const totalTokens = steps.reduce((sum, step) => sum + Math.max(0, Number(step.total_tokens) || 0), 0);
+    const tokenSources = new Set(steps.map((step) => step.token_source).filter(Boolean));
+
+    let status = "pending";
+    if (statuses.includes("error")) {
+        status = "error";
+    } else if (statuses.includes("running")) {
+        status = "running";
+    } else if (statuses.every((value) => value === "skipped")) {
+        status = "skipped";
+    } else if (statuses.some((value) => value === "completed") && statuses.some((value) => value === "pending")) {
+        status = "running";
+    } else if (statuses.every((value) => value === "completed" || value === "skipped")) {
+        status = "completed";
+    }
+
+    let message = "";
+    if (activeStep) {
+        message = getProcessingStepMessage(activeStep);
+    } else if (lastFinishedStep) {
+        message = lastFinishedStep.message || `${groupDef.label} 已完成`;
+    } else if (status === "pending") {
+        message = `${groupDef.label} 等待执行`;
+    } else if (status === "skipped") {
+        message = `${groupDef.label} 本轮跳过`;
+    } else {
+        message = `${groupDef.label} 已完成`;
+    }
+
+    let tokenSource = null;
+    if (tokenSources.size === 1) {
+        tokenSource = [...tokenSources][0];
+    } else if (tokenSources.size > 1) {
+        tokenSource = "mixed";
+    }
+
+    return {
+        key: groupDef.key,
+        order: groupDef.order,
+        label: groupDef.label,
+        status,
+        message,
+        durationMs: totalDurationMs,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        tokenSource,
+    };
+}
+
+function buildProcessingSummary(progress, groups) {
+    const safeProgress = progress || {};
+    const totalDuration = formatDurationMs(safeProgress.total_duration_ms || 0);
+    const totalPromptTokens = Math.max(0, Number(safeProgress.summary && safeProgress.summary.prompt_tokens) || 0);
+    const totalCompletionTokens = Math.max(0, Number(safeProgress.summary && safeProgress.summary.completion_tokens) || 0);
+    const totalTokenText = (totalPromptTokens || totalCompletionTokens)
+        ? ` 输入 ${totalPromptTokens} / 输出 ${totalCompletionTokens}`
+        : "";
+
+    if (safeProgress.status === "running") {
+        const runningGroup = groups.find((group) => group.status === "running") || groups.find((group) => group.status === "pending") || groups[0];
+        return `${runningGroup.message}（${runningGroup.order}/3） 已用时：${formatDurationMs(runningGroup.durationMs)}${totalTokenText}`;
+    }
+    if (safeProgress.status === "error") {
+        return `本轮处理失败。总用时：${totalDuration}${totalTokenText}`;
+    }
+    if (safeProgress.status === "completed") {
+        return `本轮 AI 处理完成。总用时：${totalDuration}${totalTokenText}`;
+    }
+    return "等待下一次行动...";
+}
+
+function renderProcessingGroup(group) {
+    const statusLabel = {
+        pending: "待开始",
+        running: "进行中",
+        completed: "已完成",
+        skipped: "已跳过",
+        error: "出错",
+    }[group.status] || "待开始";
+
+    const statusTone = group.status === "running"
+        ? "active"
+        : group.status === "completed"
+        ? "success"
+        : "";
+    const tokenSourceLabel = group.tokenSource === "estimated"
+        ? "估算"
+        : group.tokenSource === "mixed"
+        ? "混合"
+        : "";
+
+    return `
+        <div class="processing-step ${group.status}">
+            <div class="processing-step-main">
+                <div class="processing-step-title">${group.order}/3 ${escapeHtml(group.label)}</div>
+                <div class="processing-step-message">${escapeHtml(group.message)}</div>
+            </div>
+            <div class="processing-step-meta">
+                <span class="processing-chip ${statusTone}">${statusLabel}</span>
+                <span class="processing-chip">${escapeHtml(formatDurationMs(group.durationMs))}</span>
+                ${group.promptTokens ? `<span class="processing-chip">输入 ${group.promptTokens}</span>` : ""}
+                ${group.completionTokens ? `<span class="processing-chip">输出 ${group.completionTokens}</span>` : ""}
+                ${group.totalTokens ? `<span class="processing-chip">总计 ${group.totalTokens}</span>` : ""}
+                ${tokenSourceLabel ? `<span class="processing-chip">${tokenSourceLabel}</span>` : ""}
+            </div>
+        </div>
+    `;
+}
+
+function hideProcessingStatus() {
+    const panel = document.getElementById("processing-status");
+    if (!panel) return;
+    panel.classList.add("hidden");
+    panel.classList.add("collapsed");
+}
+
+function renderProcessingStatus(progress, options = {}) {
+    const panel = document.getElementById("processing-status");
+    const badge = document.getElementById("processing-status-badge");
+    const summary = document.getElementById("processing-status-summary");
+    const steps = document.getElementById("processing-status-steps");
+    const toggle = document.getElementById("processing-status-toggle");
+    if (!panel || !badge || !summary || !steps || !toggle) return;
+
+    if (!progress || !Object.keys(progress).length) {
+        hideProcessingStatus();
+        return;
+    }
+
+    const groups = PROCESSING_STAGE_GROUPS.map((groupDef) => summarizeProcessingGroup(groupDef, progress));
+    const status = progress.status || "running";
+
+    if (options.forceExpanded) {
+        processingStatusCollapsed = false;
+    } else if (options.forceCollapsed) {
+        processingStatusCollapsed = true;
+    } else if (status === "running") {
+        processingStatusCollapsed = false;
+    } else if (status === "completed" || status === "error") {
+        processingStatusCollapsed = true;
+    }
+
+    badge.textContent = {
+        running: "处理中",
+        completed: "已完成",
+        error: "出错",
+        skipped: "已跳过",
+    }[status] || "待机";
+    badge.className = `processing-status-badge ${status}`;
+    summary.textContent = buildProcessingSummary(progress, groups);
+    steps.innerHTML = groups.map((group) => renderProcessingGroup(group)).join("");
+
+    toggle.classList.remove("hidden");
+    toggle.setAttribute("aria-expanded", processingStatusCollapsed ? "false" : "true");
+    toggle.title = processingStatusCollapsed ? "展开处理详情" : "收起处理详情";
+
+    panel.classList.remove("hidden");
+    panel.classList.toggle("collapsed", processingStatusCollapsed);
+}
+
+function buildInitialProcessingState() {
+    return {
+        status: "running",
+        message: "已提交本轮行动，等待 AI 开始处理",
+        total_duration_ms: 0,
+        summary: {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            token_source: null,
+        },
+        steps: [
+            {
+                key: "rule_intent",
+                status: "running",
+                message: "规则AI 解析意图中……",
+                duration_ms: 0,
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0,
+                token_source: null,
+            },
+            { key: "rule_adjudication", status: "pending", duration_ms: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_source: null },
+            { key: "rule_check", status: "pending", duration_ms: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_source: null },
+            { key: "rhythm", status: "pending", duration_ms: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_source: null },
+            { key: "narrative", status: "pending", duration_ms: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_source: null },
+        ],
+    };
+}
+
+async function fetchAndRenderActionProgress() {
+    try {
+        const resp = await fetch("/trpg/api/progress", { cache: "no-store" });
+        const data = await resp.json();
+        const progress = data.progress || {};
+        if (progress && Object.keys(progress).length) {
+            renderProcessingStatus(progress);
+            if (progress.status !== "running" && !isProcessing) {
+                stopProgressPolling();
+            }
+            return progress;
+        }
+    } catch (err) {
+        console.debug("Progress polling failed:", err);
+    }
+
+    if (!isProcessing) {
+        stopProgressPolling();
+    }
+    return null;
+}
+
+function startProgressPolling() {
+    stopProgressPolling();
+    fetchAndRenderActionProgress();
+    progressPollTimer = window.setInterval(() => {
+        fetchAndRenderActionProgress();
+    }, 500);
+}
+
+function stopProgressPolling() {
+    if (progressPollTimer) {
+        window.clearInterval(progressPollTimer);
+        progressPollTimer = null;
+    }
+}
+
+function clearProcessingStatus() {
+    stopProgressPolling();
+    processingStatusCollapsed = true;
+    hideProcessingStatus();
+}
+
+window.toggleProcessingStatus = function toggleProcessingStatus() {
+    const panel = document.getElementById("processing-status");
+    if (!panel || panel.classList.contains("hidden")) return;
+    processingStatusCollapsed = !processingStatusCollapsed;
+    panel.classList.toggle("collapsed", processingStatusCollapsed);
+
+    const toggle = document.getElementById("processing-status-toggle");
+    if (toggle) {
+        toggle.setAttribute("aria-expanded", processingStatusCollapsed ? "false" : "true");
+        toggle.title = processingStatusCollapsed ? "展开处理详情" : "收起处理详情";
+    }
+};
+
+window.renderProcessingStatus = renderProcessingStatus;
+window.fetchAndRenderActionProgress = fetchAndRenderActionProgress;
+window.startProgressPolling = startProgressPolling;
+window.stopProgressPolling = stopProgressPolling;
+window.clearProcessingStatus = clearProcessingStatus;
+
 // ─── 发送行动 ───
 
 async function sendAction() {
@@ -227,6 +550,8 @@ async function sendAction() {
     isProcessing = true;
     setInputEnabled(false);
     const loadingEl = addLoadingIndicator();
+    renderProcessingStatus(buildInitialProcessingState(), { forceExpanded: true });
+    startProgressPolling();
 
     try {
         const body = {};
@@ -244,6 +569,18 @@ async function sendAction() {
         loadingEl.remove();
 
         if (data.error) {
+            renderProcessingStatus({
+                status: "error",
+                message: data.error,
+                total_duration_ms: 0,
+                summary: {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    total_tokens: 0,
+                    token_source: null,
+                },
+                steps: [],
+            }, { forceCollapsed: true });
             addMessage("assistant", "处理出错: " + data.error);
         } else {
             // 显示叙述
@@ -263,12 +600,27 @@ async function sendAction() {
                 currentMapData = data.map_data;
                 renderMap(data.map_data);
             }
+
+            renderProcessingStatus(data.telemetry || null, { forceCollapsed: true });
         }
     } catch (err) {
         loadingEl.remove();
+        renderProcessingStatus({
+            status: "error",
+            message: "网络错误",
+            total_duration_ms: 0,
+            summary: {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0,
+                token_source: null,
+            },
+            steps: [],
+        }, { forceCollapsed: true });
         addMessage("assistant", "网络错误，请重试。");
         console.error("Action failed:", err);
     } finally {
+        stopProgressPolling();
         isProcessing = false;
         setInputEnabled(true);
         document.getElementById("chat-input").focus();
@@ -506,6 +858,7 @@ async function resetGame() {
         const overlay = document.getElementById("module-overlay");
         overlay.style.display = "";
         overlay.classList.remove("fade-out");
+        clearProcessingStatus();
         loadModules();
     } catch (err) {
         console.error("Reset failed:", err);

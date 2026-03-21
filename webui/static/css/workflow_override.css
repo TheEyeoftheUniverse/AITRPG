@@ -90,3 +90,205 @@
     overflow-x: auto;
     font-family: Consolas, "SFMono-Regular", Menlo, Monaco, monospace;
 }
+
+.processing-status {
+    margin: 14px 18px 6px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        radial-gradient(circle at top right, rgba(89, 156, 255, 0.16), transparent 36%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(0, 0, 0, 0.12));
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+}
+
+.processing-status.hidden {
+    display: none;
+}
+
+.processing-status-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.processing-status-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.processing-status-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.03em;
+}
+
+.processing-status-badge {
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.processing-status-badge.running {
+    color: #9fd0ff;
+    border-color: rgba(89, 156, 255, 0.28);
+    background: rgba(89, 156, 255, 0.12);
+}
+
+.processing-status-badge.completed {
+    color: var(--success);
+    border-color: rgba(76, 175, 136, 0.28);
+    background: rgba(76, 175, 136, 0.12);
+}
+
+.processing-status-badge.error {
+    color: var(--danger);
+    border-color: rgba(224, 92, 108, 0.28);
+    background: rgba(224, 92, 108, 0.12);
+}
+
+.processing-status-toggle {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.processing-status-toggle.hidden {
+    display: none;
+}
+
+.processing-status-toggle:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+.processing-status.collapsed .processing-status-toggle .mdi {
+    transform: rotate(180deg);
+}
+
+.processing-status-summary {
+    margin-bottom: 10px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.processing-status.collapsed .processing-status-summary {
+    margin-bottom: 0;
+}
+
+.processing-status-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.processing-status.collapsed .processing-status-steps {
+    display: none;
+}
+
+.processing-step {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.processing-step.running {
+    border-color: rgba(89, 156, 255, 0.28);
+    background: rgba(89, 156, 255, 0.08);
+}
+
+.processing-step.completed {
+    border-color: rgba(76, 175, 136, 0.18);
+}
+
+.processing-step.skipped {
+    opacity: 0.7;
+}
+
+.processing-step.error {
+    border-color: rgba(224, 92, 108, 0.24);
+    background: rgba(224, 92, 108, 0.08);
+}
+
+.processing-step-main {
+    min-width: 0;
+}
+
+.processing-step-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.processing-step-message {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+
+.processing-step-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.processing-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: rgba(0, 0, 0, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.processing-chip.active {
+    color: #9fd0ff;
+}
+
+.processing-chip.success {
+    color: var(--success);
+}
+
+@media (max-width: 768px) {
+    .processing-status {
+        margin: 10px 10px 4px;
+        padding: 10px 12px;
+    }
+
+    .processing-step {
+        grid-template-columns: 1fr;
+    }
+
+    .processing-step-meta {
+        justify-content: flex-start;
+    }
+}

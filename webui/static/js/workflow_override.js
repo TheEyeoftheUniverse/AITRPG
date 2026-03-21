@@ -285,16 +285,9 @@ function workflowRulePlanSection(rulePlan, ruleResult, hardChanges) {
     if (!workflowIsEmpty(normalizedAction.raw_target_text)) {
         body += workflowField("原始目标", normalizedAction.raw_target_text);
     }
-    if (!workflowIsEmpty(rulePlan && rulePlan.location_context)) {
-        body += workflowStructuredField("地点上下文", rulePlan.location_context, "location_context");
-    }
     if (!workflowIsEmpty(rulePlan && rulePlan.object_context)) {
         body += workflowStructuredField("物品上下文", rulePlan.object_context, "object_context");
     }
-    if (!workflowIsEmpty(rulePlan && rulePlan.npc_context)) {
-        body += workflowStructuredField("NPC 上下文", rulePlan.npc_context, "npc_context");
-    }
-    body += workflowStructuredField("完整规则规划", rulePlan, "rule_plan");
 
     let html = workflowSection("规则规划（rule_plan）", body, tone);
 
@@ -346,13 +339,9 @@ window.updateRhythmPanel = function updateRhythmPanel(result) {
     body += workflowField("节奏结论", feasibleText, feasibleClass);
     if (result.hint) body += workflowField("叙述提示", result.hint);
     if (result.stage_assessment) body += workflowField("阶段评估", result.stage_assessment);
-    body += workflowStructuredField("NPC 行动引导", result.npc_action_guide, "npc_action_guide");
     body += workflowStructuredField("软变化", result.soft_world_changes, "soft_world_changes");
     body += workflowStructuredField("合并后的世界变化", result.world_changes, "world_changes");
-    body += workflowStructuredField("地点上下文", result.location_context, "location_context");
     body += workflowStructuredField("物品上下文", result.object_context, "object_context");
-    body += workflowStructuredField("NPC 上下文", result.npc_context, "npc_context");
-    body += workflowStructuredField("完整节奏结果", result, "rhythm_result");
 
     panel.innerHTML = workflowSection("节奏结果（rhythm_result）", body, feasibleClass) ||
         `<p class="placeholder-text">${WORKFLOW_EMPTY_TEXT}</p>`;
@@ -381,10 +370,19 @@ window.checkExistingSession = async function checkExistingSession() {
                 data.last_workflow.hard_changes
             );
             updateRhythmPanel(data.last_workflow.rhythm_result);
+            if (typeof renderProcessingStatus === "function") {
+                renderProcessingStatus(data.last_workflow.telemetry || null, { forceCollapsed: true });
+            }
         }
         if (data.map_data) {
             currentMapData = data.map_data;
             renderMap(data.map_data);
+        }
+        if (typeof fetchAndRenderActionProgress === "function") {
+            const liveProgress = await fetchAndRenderActionProgress();
+            if (liveProgress && liveProgress.status === "running" && typeof startProgressPolling === "function") {
+                startProgressPolling();
+            }
         }
     } catch (err) {
         // 首次访问时保留模组选择界面
