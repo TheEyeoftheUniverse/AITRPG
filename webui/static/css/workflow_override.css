@@ -1,0 +1,14 @@
+.ai-structured-value {
+    margin: 4px 0 0;
+    padding: 8px 10px;
+    background: rgba(0, 0, 0, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+    font-family: Consolas, "SFMono-Regular", Menlo, Monaco, monospace;
+}

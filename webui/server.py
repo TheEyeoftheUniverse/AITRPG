@@ -124,6 +124,7 @@ def create_trpg_app(plugin):
             "game_started": False,
             "history": [],
             "chat_messages": [],
+            "last_workflow": None,
             "module_index": None,
             "conv_id": None,
         }
@@ -158,7 +159,9 @@ def create_trpg_app(plugin):
         """基于静态资源修改时间生成版本号，避免浏览器缓存旧文件。"""
         static_files = [
             os.path.join(static_dir, "css", "style.css"),
+            os.path.join(static_dir, "css", "workflow_override.css"),
             os.path.join(static_dir, "js", "app.js"),
+            os.path.join(static_dir, "js", "workflow_override.js"),
         ]
         mtimes = []
         for file_path in static_files:
@@ -185,6 +188,7 @@ def create_trpg_app(plugin):
                 "game_started": web_session.get("game_started", False),
                 "history": web_session.get("history", []),
                 "chat_messages": web_session.get("chat_messages", []),
+                "last_workflow": web_session.get("last_workflow"),
                 "module_index": web_session.get("module_index"),
                 "conv_id": web_session.get("conv_id"),
             },
@@ -209,6 +213,7 @@ def create_trpg_app(plugin):
         restored_web["game_started"] = bool(saved_web.get("game_started", False))
         restored_web["history"] = list(saved_web.get("history") or [])
         restored_web["chat_messages"] = list(saved_web.get("chat_messages") or [])
+        restored_web["last_workflow"] = saved_web.get("last_workflow")
         restored_web["module_index"] = saved_web.get("module_index")
         restored_web["conv_id"] = saved_web.get("conv_id")
         _web_sessions[cookie_id] = restored_web
@@ -385,21 +390,25 @@ def create_trpg_app(plugin):
                 web_session["chat_messages"].append({"role": "assistant", "content": narrative})
 
                 # 同步 narrative_history
-                plugin.session_manager.add_narrative_summary(session_id, narrative, summary)
+                plugin.session_manager.add_narrative_summary(session_id, display_input, narrative, summary)
 
                 state = plugin.session_manager.get_session(session_id)
                 map_data = plugin.session_manager.get_map_data(session_id)
+                web_session["last_workflow"] = {
+                    "rule_plan": result.get("rule_plan", {}),
+                    "rule_result": result.get("rule_result", {}),
+                    "hard_changes": result.get("hard_changes", {}),
+                    "rhythm_result": result.get("rhythm_result", {}),
+                }
                 _persist_web_session(cookie_id)
 
                 return jsonify({
                     "success": True,
                     "narrative": narrative,
+                    "rule_plan": result.get("rule_plan", {}),
                     "rule_result": result["rule_result"],
-                    "rhythm_result": {
-                        "feasible": result["rhythm_result"].get("feasible"),
-                        "hint": result["rhythm_result"].get("hint"),
-                        "stage_assessment": result["rhythm_result"].get("stage_assessment"),
-                    },
+                    "hard_changes": result.get("hard_changes", {}),
+                    "rhythm_result": result["rhythm_result"],
                     "game_state": _serialize_state(state),
                     "map_data": map_data
                 })
@@ -433,6 +442,7 @@ def create_trpg_app(plugin):
             "game_started": web_session["game_started"],
             "game_state": _serialize_state(state),
             "chat_messages": web_session["chat_messages"],
+            "last_workflow": web_session.get("last_workflow"),
             "map_data": map_data
         })
 
@@ -452,6 +462,7 @@ def create_trpg_app(plugin):
             web_session["game_started"] = False
             web_session["history"] = []
             web_session["chat_messages"] = []
+            web_session["last_workflow"] = None
             web_session["module_index"] = None
             web_session["conv_id"] = None
             save_store.delete(cookie_id)

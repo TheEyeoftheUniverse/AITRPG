@@ -75,6 +75,14 @@ async function checkExistingSession() {
             if (data.game_state) {
                 updatePlayerStatus(data.game_state);
             }
+            if (data.last_workflow) {
+                updateRulePanel(
+                    data.last_workflow.rule_plan,
+                    data.last_workflow.rule_result,
+                    data.last_workflow.hard_changes
+                );
+                updateRhythmPanel(data.last_workflow.rhythm_result);
+            }
             // 恢复地图
             if (data.map_data) {
                 currentMapData = data.map_data;
@@ -242,7 +250,7 @@ async function sendAction() {
             addMessage("assistant", data.narrative);
 
             // 更新左侧面板
-            updateRulePanel(data.rule_result);
+            updateRulePanel(data.rule_plan, data.rule_result, data.hard_changes);
             updateRhythmPanel(data.rhythm_result);
 
             // 更新右侧状态

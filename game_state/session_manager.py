@@ -166,10 +166,22 @@ class SessionManager:
             npc_states[npc_name] = {
                 "attitude": npc_data.get("initial_attitude", "中立"),
                 "trust_level": 0.0,
+                "memory": self._build_initial_npc_memory(),
             }
             if npc_data.get("location"):
                 npc_states[npc_name]["location"] = npc_data["location"]
         return npc_states
+
+    def _build_initial_npc_memory(self) -> Dict[str, Any]:
+        return {
+            "player_facts": {},
+            "evidence_seen": [],
+            "promises": [],
+            "topics_discussed": [],
+            "pending_questions": [],
+            "conversation_flags": {},
+            "last_impression": {},
+        }
 
     def _build_default_player_state(self) -> Dict[str, Any]:
         """返回固定预设角色卡。"""
@@ -240,6 +252,13 @@ class SessionManager:
             "truth_revealed": False
         })
         world_state.setdefault("npcs", self._build_initial_npc_state(module_data))
+        for npc_name, npc_state in list(world_state.get("npcs", {}).items()):
+            if not isinstance(npc_state, dict):
+                world_state["npcs"][npc_name] = {
+                    "memory": self._build_initial_npc_memory()
+                }
+                continue
+            npc_state.setdefault("memory", self._build_initial_npc_memory())
         restored_state["world_state"] = world_state
 
         restored_state["influence_dimensions"] = dict(restored_state.get("influence_dimensions") or {
@@ -273,6 +292,26 @@ class SessionManager:
                     if clue not in state["world_state"]["clues_found"]:
                         state["world_state"]["clues_found"].append(clue)
 
+            if "san_delta" in changes:
+                san_delta = int(changes.get("san_delta", 0) or 0)
+                state["player"]["san"] = max(0, state["player"].get("san", 0) + san_delta)
+
+            if "inventory_add" in changes:
+                inventory = state["player"].setdefault("inventory", [])
+                for item in changes["inventory_add"]:
+                    if item and item not in inventory:
+                        inventory.append(item)
+
+            if "inventory_remove" in changes:
+                inventory = state["player"].setdefault("inventory", [])
+                for item in changes["inventory_remove"]:
+                    if item in inventory:
+                        inventory.remove(item)
+
+            if "flags" in changes and isinstance(changes["flags"], dict):
+                state["world_state"].setdefault("flags", {})
+                state["world_state"]["flags"].update(changes["flags"])
+
             # 玩家位置由代码控制（move_player方法），不再从节奏AI结果更新
 
             # 更新NPC位置
@@ -281,6 +320,17 @@ class SessionManager:
                     if npc_name in state["world_state"].get("npcs", {}):
                         state["world_state"]["npcs"][npc_name]["location"] = location
 
+            if "npc_updates" in changes and isinstance(changes["npc_updates"], dict):
+                npc_state = state["world_state"].setdefault("npcs", {})
+                for npc_name, update in changes["npc_updates"].items():
+                    if npc_name not in npc_state:
+                        npc_state[npc_name] = {}
+                    if isinstance(update, dict):
+                        self._deep_merge_dict(npc_state[npc_name], update)
+                        npc_state[npc_name].setdefault("memory", self._build_initial_npc_memory())
+                    elif isinstance(update, str):
+                        npc_state[npc_name]["location"] = update
+
         # 保存节奏AI上下文（阶段判断+世界变化）
         state["rhythm_context"].append({
             "round": state["round_count"],
@@ -288,7 +338,7 @@ class SessionManager:
             "world_changes": rhythm_result.get("world_changes", {})
         })
 
-    def add_narrative_summary(self, session_id: str, narrative: str, summary: str):
+    def add_narrative_summary(self, session_id: str, player_input: str, narrative: str, summary: str):
         """添加文案记录到历史"""
         if session_id not in self.sessions:
             return
@@ -296,6 +346,7 @@ class SessionManager:
         state = self.sessions[session_id]
         state["narrative_history"].append({
             "round": state["round_count"],
+            "player_input": player_input,
             "narrative": narrative,
             "summary": summary
         })
@@ -659,3 +710,25 @@ class SessionManager:
         if isinstance(value, list):
             return [self._serialize_value(item) for item in value]
         return value
+
+    def _deep_merge_dict(self, base: Dict[str, Any], incoming: Dict[str, Any]):
+        for key, value in incoming.items():
+            if isinstance(value, dict):
+                existing = base.get(key)
+                if not isinstance(existing, dict):
+                    existing = {}
+                    base[key] = existing
+                self._deep_merge_dict(existing, value)
+                continue
+
+            if isinstance(value, list):
+                existing = base.get(key)
+                if not isinstance(existing, list):
+                    existing = []
+                    base[key] = existing
+                for item in value:
+                    if item not in existing:
+                        existing.append(item)
+                continue
+
+            base[key] = value

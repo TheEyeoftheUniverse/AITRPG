@@ -1,8 +1,6 @@
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
-from astrbot.api.provider import ProviderRequest
-
 from .game_state.session_manager import SessionManager
 from .ai_layers.rule_ai import RuleAI
 from .ai_layers.rhythm_ai import RhythmAI
@@ -189,8 +187,10 @@ class AITRPGPlugin(Star):
             move_result = self.session_manager.move_player(session_id, move_to)
             if not move_result["success"]:
                 return {
+                    "rule_plan": {},
                     "rule_result": {"check_type": None},
-                    "rhythm_result": {"feasible": False, "hint": move_result["message"], "stage_assessment": "", "world_changes": {}},
+                    "hard_changes": {},
+                    "rhythm_result": {"feasible": False, "hint": move_result["message"], "stage_assessment": "", "world_changes": {}, "soft_world_changes": {}},
                     "narrative_result": {"narrative": move_result["message"], "summary": move_result["message"]},
                     "game_state": state
                 }
@@ -203,20 +203,30 @@ class AITRPGPlugin(Star):
             target_loc = locations.get(move_to, {})
             loc_name = target_loc.get("name", move_to)
 
-            # 检查目标场景是否有NPC
-            npcs = module_data.get("npcs", {})
-            has_npc = any(
-                npc_data.get("location") == move_to
-                for npc_data in npcs.values()
-            )
+            # 检查目标场景是否有NPC，优先使用运行时位置而不是模组初始位置
+            npc_states = state.get("world_state", {}).get("npcs", {})
+            if npc_states:
+                has_npc = any(
+                    npc_state.get("location") == move_to
+                    for npc_state in npc_states.values()
+                    if isinstance(npc_state, dict)
+                )
+            else:
+                npcs = module_data.get("npcs", {})
+                has_npc = any(
+                    npc_data.get("location") == move_to
+                    for npc_data in npcs.values()
+                )
 
             if not has_npc:
                 # 无NPC：直接返回模组场景描述，零成本零延迟
                 description = target_loc.get("description", f"你来到了{loc_name}。")
                 narrative = f"你来到了{loc_name}。\n\n{description}"
                 return {
+                    "rule_plan": {},
                     "rule_result": {"check_type": None},
-                    "rhythm_result": {"feasible": True, "hint": None, "stage_assessment": "", "world_changes": {}},
+                    "hard_changes": {},
+                    "rhythm_result": {"feasible": True, "hint": None, "stage_assessment": "", "world_changes": {}, "soft_world_changes": {}},
                     "narrative_result": {"narrative": narrative, "summary": f"移动到{loc_name}"},
                     "game_state": state
                 }
@@ -229,49 +239,67 @@ class AITRPGPlugin(Star):
         intent = await self.rule_ai.parse_intent(player_input)
         logger.info(f"[AITRPG] 意图解析结果: {intent}")
 
-        # === 第二步：节奏AI - 对比模组 + 控制节奏 ===
-        logger.info("[AITRPG] 调用节奏AI进行剧情控制...")
+        # === 第二步：规则AI - 动作裁定与硬变化规划 ===
+        logger.info("[AITRPG] 调用规则AI进行动作裁定...")
+        rule_plan = await self.rule_ai.adjudicate_action(
+            player_input=player_input,
+            intent=intent,
+            game_state=state,
+            module_data=module_data
+        )
+        logger.info(f"[AITRPG] 动作裁定结果: {rule_plan}")
+
+        # === 第三步：规则AI - 执行检定 ===
+        logger.info("[AITRPG] 调用规则AI进行规则判定...")
+        rule_result = await self.rule_ai.resolve_check(
+            adjudication_result=rule_plan,
+            player_state=state["player"]
+        )
+        logger.info(f"[AITRPG] 规则判定结果: {rule_result}")
+
+        hard_changes = self.rule_ai.build_hard_changes(
+            player_input=player_input,
+            adjudication_result=rule_plan,
+            rule_result=rule_result,
+            game_state=state,
+        )
+        logger.info(f"[AITRPG] 规则层硬变化: {hard_changes}")
+
+        # === 第四步：节奏AI - 节奏评估与软变化补充 ===
+        logger.info("[AITRPG] 调用节奏AI进行节奏评估...")
         rhythm_result = await self.rhythm_ai.process(
             intent=intent,
             player_input=player_input,
+            rule_plan=rule_plan,
+            rule_result=rule_result,
             game_state=state,
             module_data=module_data,
             history=history
         )
         logger.info(f"[AITRPG] 节奏AI结果: {rhythm_result}")
 
-        # === 第三步：规则AI - 执行判定 ===
-        logger.info("[AITRPG] 调用规则AI进行规则判定...")
-        rule_result = await self.rule_ai.resolve_check(
-            rhythm_result=rhythm_result,
-            player_state=state["player"]
-        )
-        logger.info(f"[AITRPG] 规则判定结果: {rule_result}")
+        soft_changes = rhythm_result.get("world_changes", {})
+        soft_changes = soft_changes if isinstance(soft_changes, dict) else {}
+        merged_changes = self._merge_world_changes(hard_changes, soft_changes)
 
-        # 根据判定结果从物品字段中提取SAN损失并更新状态
-        if rule_result.get("success"):
-            object_context = rhythm_result.get("object_context")
-            object_context = object_context if isinstance(object_context, dict) else {}
-            san_cost = object_context.get("san_cost", 0)
-            if san_cost:
-                state["player"]["san"] += san_cost
-            clue_name = object_context.get("name")
-            if not clue_name and object_context:
-                first_item = next(iter(object_context.items()))
-                if isinstance(first_item[1], dict):
-                    clue_name = first_item[0]
-            if clue_name:
-                rhythm_result["world_changes"] = rhythm_result.get("world_changes") or {}
-                rhythm_result["world_changes"].setdefault("clues", [])
-                if clue_name not in rhythm_result["world_changes"]["clues"]:
-                    rhythm_result["world_changes"]["clues"].append(clue_name)
+        rhythm_result["feasible"] = bool(rule_plan.get("feasibility", {}).get("ok", True))
+        if not rhythm_result.get("hint"):
+            rhythm_result["hint"] = rule_plan.get("feasibility", {}).get("reason")
+        rhythm_result["location_context"] = rule_plan.get("location_context", {})
+        rhythm_result["object_context"] = rule_plan.get("object_context")
+        rhythm_result["npc_context"] = rhythm_result.get("npc_context") or rule_plan.get("npc_context", {})
+        rhythm_result["soft_world_changes"] = soft_changes
+        rhythm_result["world_changes"] = merged_changes
 
         # 更新游戏状态
         self.session_manager.update_state(session_id, rhythm_result)
+        state = self.session_manager.get_session(session_id)
 
-        # === 第四步：文案AI - 生成叙述 ===
+        # === 第五步：文案AI - 生成叙述 ===
         logger.info("[AITRPG] 调用文案AI生成叙述...")
         narrative_result = await self.narrative_ai.generate(
+            player_input=player_input,
+            rule_plan=rule_plan,
             rule_result=rule_result,
             rhythm_result=rhythm_result,
             narrative_history=state.get("narrative_history", []),
@@ -280,7 +308,9 @@ class AITRPGPlugin(Star):
         logger.info(f"[AITRPG] 文案生成完成")
 
         return {
+            "rule_plan": rule_plan,
             "rule_result": rule_result,
+            "hard_changes": hard_changes,
             "rhythm_result": rhythm_result,
             "narrative_result": narrative_result,
             "game_state": state
@@ -326,6 +356,7 @@ class AITRPGPlugin(Star):
         # 同步更新session_manager的文案历史记录
         self.session_manager.add_narrative_summary(
             session_id,
+            player_input,
             narrative_result["narrative"],
             narrative_result["summary"]
         )
@@ -376,6 +407,54 @@ class AITRPGPlugin(Star):
         conversation.history = json.dumps(history, ensure_ascii=False)
         await conv_mgr.update_conversation(conv_id, conversation)
         logger.info(f"[AITRPG] 已压缩第{oldest_idx}条历史记录为摘要")
+
+    def _merge_world_changes(self, hard_changes: dict, soft_changes: dict) -> dict:
+        """合并规则层硬变化与节奏层软变化，避免状态更新分散在多处。"""
+        hard_changes = hard_changes if isinstance(hard_changes, dict) else {}
+        soft_changes = soft_changes if isinstance(soft_changes, dict) else {}
+
+        merged = dict(hard_changes)
+
+        for list_key in ("clues", "inventory_add", "inventory_remove"):
+            merged_values = []
+            for source in (hard_changes, soft_changes):
+                value = source.get(list_key, [])
+                if not isinstance(value, list):
+                    continue
+                for item in value:
+                    if item and item not in merged_values:
+                        merged_values.append(item)
+            if merged_values:
+                merged[list_key] = merged_values
+
+        for dict_key in ("flags", "npc_locations", "npc_updates"):
+            merged_dict = {}
+            for source in (hard_changes, soft_changes):
+                value = source.get(dict_key, {})
+                if isinstance(value, dict):
+                    merged_dict = self._deep_merge_dict(merged_dict, value)
+            if merged_dict:
+                merged[dict_key] = merged_dict
+
+        san_delta = int(hard_changes.get("san_delta", 0) or 0) + int(soft_changes.get("san_delta", 0) or 0)
+        if san_delta:
+            merged["san_delta"] = san_delta
+
+        return merged
+
+    def _deep_merge_dict(self, base: dict, incoming: dict) -> dict:
+        merged = dict(base or {})
+        for key, value in (incoming or {}).items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = self._deep_merge_dict(merged[key], value)
+            elif isinstance(value, list) and isinstance(merged.get(key), list):
+                merged[key] = list(merged[key])
+                for item in value:
+                    if item not in merged[key]:
+                        merged[key].append(item)
+            else:
+                merged[key] = value
+        return merged
 
     def _format_output(self, narrative, rule_result, rhythm_result, state):
         """格式化输出（包含AI工作流展示）"""
