@@ -28,7 +28,6 @@
       "type": "clue/danger/item",
       "check_required": "侦查/图书馆/聆听/意志/null",
       "difficulty": "普通/困难/极难",
-      "clue_value": 0.2,
       "san_cost": -2,
       "success_result": "成功时的描述",
       "failure_result": "失败时的描述"
@@ -74,7 +73,8 @@
 ### locations（地点）
 - `location_id`: 地点的唯一标识符（用于代码引用）
 - `name`: 显示给玩家的地点名称
-- `description`: 地点的详细描述
+- `description`: 地点的基础描述。应只写场景本身稳定存在的信息
+- `npc_present_description`: 可选。仅当该地点当前确实有NPC在场时，才会附加到 `description` 后面的额外描述
 - `objects`: 该地点可交互的物品列表
 - `exits`: 可以前往的其他地点
 - `danger_level`: 危险等级（1-5），影响AI的叙述风格
@@ -86,7 +86,6 @@
   - `item`: 普通物品，可以拾取使用
 - `check_required`: 需要的技能检定（null表示无需检定）
 - `difficulty`: 检定难度
-- `clue_value`: 线索价值（0-1），影响进度增长
 - `san_cost`: SAN值损失（负数）
 - `success_result`: 检定成功时的结果描述
 - `failure_result`: 检定失败时的结果描述

@@ -1,5 +1,6 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
+from ..game_state.location_context import build_runtime_location_context
 
 import json
 import os
@@ -149,7 +150,7 @@ class RhythmAI:
 
     def _build_scene_context(self, game_state: dict, module_data: dict, rule_plan: dict) -> str:
         current_location = game_state.get("current_location", "master_bedroom")
-        location_context = module_data.get("locations", {}).get(current_location, {})
+        location_context = build_runtime_location_context(game_state, module_data, current_location)
         npc_context = self._build_scene_npc_context(game_state, module_data)
         atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
         object_context = (rule_plan or {}).get("object_context")
@@ -219,7 +220,7 @@ class RhythmAI:
 
     def _build_base_result(self, player_input: str, rule_plan: dict, game_state: dict, module_data: dict) -> dict:
         current_location = game_state.get("current_location", "master_bedroom")
-        location_context = module_data.get("locations", {}).get(current_location, {})
+        location_context = build_runtime_location_context(game_state, module_data, current_location)
         atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
         feasibility = (rule_plan or {}).get("feasibility", {})
         npc_context = self._build_scene_npc_context(game_state, module_data)
@@ -383,19 +384,7 @@ class RhythmAI:
             return {}
 
         next_line_goal = str(npc_action_guide.get("next_line_goal") or "").strip()
-        pending_questions = []
-        goal_lower = next_line_goal.lower()
-        if "name" in goal_lower:
-            pending_questions.append("player_name")
-        elif "got here" in goal_lower or "origin" in goal_lower:
-            pending_questions.append("player_origin")
-        elif "evidence" in goal_lower or "proof" in goal_lower:
-            pending_questions.append("supporting_evidence")
-        elif "want" in goal_lower or "goal" in goal_lower:
-            pending_questions.append("player_goal")
-
         memory_update = {
-            "pending_questions": pending_questions,
             "last_impression": {
                 "focus": next_line_goal,
             } if next_line_goal else {},

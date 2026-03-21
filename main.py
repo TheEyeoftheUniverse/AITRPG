@@ -9,6 +9,7 @@ from .webui.server import create_trpg_app, start_webui_server
 
 import json
 import asyncio
+import copy
 
 
 @register("aitrpg", "TheEyeoftheUniverse", "AI驱动TRPG跑团系统", "1.2.0")
@@ -199,40 +200,34 @@ class AITRPGPlugin(Star):
 
         # === 纯移动无行动 ===
         if move_to and not player_input:
-            locations = module_data.get("locations", {})
-            target_loc = locations.get(move_to, {})
+            target_loc = self.session_manager.get_location_context(session_id, move_to)
             loc_name = target_loc.get("name", move_to)
+            description = str(target_loc.get("runtime_description") or target_loc.get("description") or "").strip()
 
-            # 检查目标场景是否有NPC，优先使用运行时位置而不是模组初始位置
-            npc_states = state.get("world_state", {}).get("npcs", {})
-            if npc_states:
-                has_npc = any(
-                    npc_state.get("location") == move_to
-                    for npc_state in npc_states.values()
-                    if isinstance(npc_state, dict)
-                )
-            else:
-                npcs = module_data.get("npcs", {})
-                has_npc = any(
-                    npc_data.get("location") == move_to
-                    for npc_data in npcs.values()
+            if target_loc.get("npc_present"):
+                return await self._build_move_arrival_result(
+                    session_id=session_id,
+                    move_to=move_to,
+                    state=state,
+                    module_data=module_data,
+                    history=history,
                 )
 
-            if not has_npc:
-                # 无NPC：直接返回模组场景描述，零成本零延迟
-                description = target_loc.get("description", f"你来到了{loc_name}。")
+            # 纯移动不应被伪造成“我前往某处”再交给三层AI，否则会被误判成
+            # 主动和场景内NPC搭话，导致NPC在玩家尚未开口时就开始回应。
+            if description:
                 narrative = f"你来到了{loc_name}。\n\n{description}"
-                return {
-                    "rule_plan": {},
-                    "rule_result": {"check_type": None},
-                    "hard_changes": {},
-                    "rhythm_result": {"feasible": True, "hint": None, "stage_assessment": "", "world_changes": {}, "soft_world_changes": {}},
-                    "narrative_result": {"narrative": narrative, "summary": f"移动到{loc_name}"},
-                    "game_state": state
-                }
             else:
-                # 有NPC：调用文案AI生成到达描述
-                player_input = f"我前往{loc_name}"
+                narrative = f"你来到了{loc_name}。"
+
+            return {
+                "rule_plan": {},
+                "rule_result": {"check_type": None},
+                "hard_changes": {},
+                "rhythm_result": {"feasible": True, "hint": None, "stage_assessment": "", "world_changes": {}, "soft_world_changes": {}},
+                "narrative_result": {"narrative": narrative, "summary": f"移动到{loc_name}"},
+                "game_state": state
+            }
 
         # === 第一步：规则AI - 意图解析 ===
         logger.info("[AITRPG] 调用规则AI进行意图解析...")
@@ -267,12 +262,13 @@ class AITRPGPlugin(Star):
 
         # === 第四步：节奏AI - 节奏评估与软变化补充 ===
         logger.info("[AITRPG] 调用节奏AI进行节奏评估...")
+        preview_state = self._preview_state_with_world_changes(state, hard_changes)
         rhythm_result = await self.rhythm_ai.process(
             intent=intent,
             player_input=player_input,
             rule_plan=rule_plan,
             rule_result=rule_result,
-            game_state=state,
+            game_state=preview_state,
             module_data=module_data,
             history=history
         )
@@ -373,6 +369,78 @@ class AITRPGPlugin(Star):
 
         return output
 
+    async def _build_move_arrival_result(
+        self,
+        session_id: str,
+        move_to: str,
+        state: dict,
+        module_data: dict,
+        history: list,
+    ) -> dict:
+        target_loc = self.session_manager.get_location_context(session_id, move_to)
+        loc_name = target_loc.get("name", move_to)
+
+        rule_plan = {
+            "normalized_action": {
+                "verb": "move",
+                "target_kind": "location",
+                "target_key": move_to,
+                "raw_target_text": loc_name,
+            },
+            "feasibility": {"ok": True, "reason": None},
+            "location_context": target_loc,
+            "object_context": None,
+            "npc_context": {},
+            "check": {"required": False, "skill": None, "difficulty": "无需判定"},
+            "on_success": {
+                "discover_clues": [],
+                "add_inventory": [],
+                "remove_inventory": [],
+                "set_flags": {},
+                "npc_updates": {},
+                "san_effect": 0,
+            },
+            "on_failure": {
+                "discover_clues": [],
+                "add_inventory": [],
+                "remove_inventory": [],
+                "set_flags": {},
+                "npc_updates": {},
+                "san_effect": 0,
+            },
+            "san_effect": 0,
+        }
+        rule_result = {
+            "check_type": None,
+            "success": True,
+            "result_description": "移动到新场景",
+        }
+        rhythm_result = self.rhythm_ai._build_base_result("", rule_plan, state, module_data)
+        rhythm_result["arrival_mode"] = True
+        rhythm_result["location_context"] = target_loc
+        rhythm_result["world_changes"] = {}
+        rhythm_result["soft_world_changes"] = {}
+
+        narrative_result = await self.narrative_ai.generate(
+            player_input="",
+            rule_plan=rule_plan,
+            rule_result=rule_result,
+            rhythm_result=rhythm_result,
+            narrative_history=state.get("narrative_history", []),
+            history=history,
+        )
+        if not narrative_result.get("summary"):
+            narrative_result["summary"] = f"移动到{loc_name}"
+
+        return {
+            "rule_plan": rule_plan,
+            "rule_result": rule_result,
+            "hard_changes": {},
+            "rhythm_result": rhythm_result,
+            "narrative_result": narrative_result,
+            "game_state": state,
+        }
+
     async def _compress_history_if_needed(self, conv_mgr, session_id: str, conv_id: str):
         """超过10轮后，将最老的一轮assistant内容替换为对应的小总结"""
         conversation = await conv_mgr.get_conversation(session_id, conv_id)
@@ -448,13 +516,70 @@ class AITRPGPlugin(Star):
             if isinstance(value, dict) and isinstance(merged.get(key), dict):
                 merged[key] = self._deep_merge_dict(merged[key], value)
             elif isinstance(value, list) and isinstance(merged.get(key), list):
-                merged[key] = list(merged[key])
-                for item in value:
-                    if item not in merged[key]:
-                        merged[key].append(item)
+                if key in {"pending_questions"}:
+                    merged[key] = [item for item in value if item]
+                else:
+                    merged[key] = list(merged[key])
+                    for item in value:
+                        if item not in merged[key]:
+                            merged[key].append(item)
             else:
                 merged[key] = value
         return merged
+
+    def _preview_state_with_world_changes(self, state: dict, changes: dict) -> dict:
+        preview_state = copy.deepcopy(state or {})
+        self._apply_world_changes_to_state(preview_state, changes)
+        return preview_state
+
+    def _apply_world_changes_to_state(self, state: dict, changes: dict):
+        if not isinstance(state, dict) or not isinstance(changes, dict):
+            return
+
+        world_state = state.setdefault("world_state", {})
+        player_state = state.setdefault("player", {})
+
+        if "clues" in changes:
+            clues_found = world_state.setdefault("clues_found", [])
+            for clue in changes["clues"]:
+                if clue and clue not in clues_found:
+                    clues_found.append(clue)
+
+        if "san_delta" in changes:
+            san_delta = int(changes.get("san_delta", 0) or 0)
+            player_state["san"] = max(0, player_state.get("san", 0) + san_delta)
+
+        if "inventory_add" in changes:
+            inventory = player_state.setdefault("inventory", [])
+            for item in changes["inventory_add"]:
+                if item and item not in inventory:
+                    inventory.append(item)
+
+        if "inventory_remove" in changes:
+            inventory = player_state.setdefault("inventory", [])
+            for item in changes["inventory_remove"]:
+                if item in inventory:
+                    inventory.remove(item)
+
+        if "flags" in changes and isinstance(changes["flags"], dict):
+            world_state.setdefault("flags", {})
+            world_state["flags"].update(changes["flags"])
+
+        if "npc_locations" in changes and isinstance(changes["npc_locations"], dict):
+            npc_state = world_state.setdefault("npcs", {})
+            for npc_name, location in changes["npc_locations"].items():
+                if npc_name in npc_state:
+                    npc_state[npc_name]["location"] = location
+
+        if "npc_updates" in changes and isinstance(changes["npc_updates"], dict):
+            npc_state = world_state.setdefault("npcs", {})
+            for npc_name, update in changes["npc_updates"].items():
+                if npc_name not in npc_state:
+                    npc_state[npc_name] = {}
+                if isinstance(update, dict):
+                    npc_state[npc_name] = self._deep_merge_dict(npc_state[npc_name], update)
+                elif isinstance(update, str):
+                    npc_state[npc_name]["location"] = update
 
     def _format_output(self, narrative, rule_result, rhythm_result, state):
         """格式化输出（包含AI工作流展示）"""

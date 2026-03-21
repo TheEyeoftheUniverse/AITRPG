@@ -1,3 +1,81 @@
+.workflow-card {
+    margin-bottom: 12px;
+    padding: 10px 10px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.06));
+}
+
+.workflow-card:last-child {
+    margin-bottom: 0;
+}
+
+.workflow-card-title {
+    margin-bottom: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.04em;
+}
+
+.workflow-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.workflow-card.success {
+    border-color: rgba(76, 175, 136, 0.28);
+}
+
+.workflow-card.danger {
+    border-color: rgba(224, 92, 108, 0.28);
+}
+
+.workflow-card.accent {
+    border-color: rgba(108, 126, 225, 0.28);
+}
+
+.workflow-pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.workflow-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.workflow-pill.success {
+    background: rgba(76, 175, 136, 0.14);
+    border-color: rgba(76, 175, 136, 0.26);
+    color: var(--success);
+}
+
+.workflow-pill.danger {
+    background: rgba(224, 92, 108, 0.14);
+    border-color: rgba(224, 92, 108, 0.26);
+    color: var(--danger);
+}
+
+.workflow-pill-label {
+    color: var(--text-muted);
+}
+
+.workflow-pill-value {
+    color: inherit;
+}
+
 .ai-structured-value {
     margin: 4px 0 0;
     padding: 8px 10px;

@@ -1,5 +1,6 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
+from ..game_state.location_context import build_runtime_location_context
 
 import json
 import os
@@ -253,7 +254,7 @@ class RuleAI:
         module_data: dict
     ) -> str:
         current_location = game_state.get("current_location", "master_bedroom")
-        location_context = module_data.get("locations", {}).get(current_location, {})
+        location_context = build_runtime_location_context(game_state, module_data, current_location)
         scene_objects = self._get_scene_objects(game_state, module_data)
         scene_npcs = self._get_scene_npcs(game_state, module_data)
         inventory = game_state.get("player", {}).get("inventory", [])
@@ -280,7 +281,7 @@ class RuleAI:
         module_data: dict
     ) -> dict:
         current_location = game_state.get("current_location", "master_bedroom")
-        location_context = module_data.get("locations", {}).get(current_location, {})
+        location_context = build_runtime_location_context(game_state, module_data, current_location)
         scene_objects = self._get_scene_objects(game_state, module_data)
         scene_npcs = self._get_scene_npcs(game_state, module_data)
         all_objects = module_data.get("objects", {})
@@ -392,7 +393,7 @@ class RuleAI:
         module_data: dict
     ) -> dict:
         current_location = game_state.get("current_location", "master_bedroom")
-        location_context = module_data.get("locations", {}).get(current_location, {})
+        location_context = build_runtime_location_context(game_state, module_data, current_location)
         scene_objects = self._get_scene_objects(game_state, module_data)
         scene_npcs = self._get_scene_npcs(game_state, module_data)
         all_objects = module_data.get("objects", {})
@@ -665,6 +666,13 @@ class RuleAI:
         if not target_npc or target_npc not in npc_context:
             return {}
 
+        existing_memory = {}
+        npc_data = npc_context.get(target_npc, {}) if isinstance(npc_context, dict) else {}
+        if isinstance(npc_data, dict):
+            runtime_state = npc_data.get("runtime_state", {})
+            if isinstance(runtime_state, dict) and isinstance(runtime_state.get("memory"), dict):
+                existing_memory = runtime_state.get("memory", {})
+
         round_num = int((game_state or {}).get("round_count", 0)) + 1
         memory_delta = {
             "player_facts": {},
@@ -702,9 +710,16 @@ class RuleAI:
             memory_delta["conversation_flags"]["evidence_presented"] = True
             memory_delta["topics_discussed"].append("evidence")
 
-        pending_questions = self._derive_pending_questions(memory_delta)
-        if pending_questions:
-            memory_delta["pending_questions"] = pending_questions
+        preview_memory = self._merge_nested_dict(
+            existing_memory,
+            {
+                key: value
+                for key, value in memory_delta.items()
+                if key != "pending_questions"
+            },
+        )
+        pending_questions = self._derive_pending_questions(preview_memory)
+        memory_delta["pending_questions"] = pending_questions
 
         trust_shift = 0.0
         if facts:
@@ -721,7 +736,12 @@ class RuleAI:
             }
 
         memory_delta["topics_discussed"] = list(dict.fromkeys(memory_delta["topics_discussed"]))
-        memory_delta = {key: value for key, value in memory_delta.items() if value}
+        explicit_updates = {"pending_questions"}
+        memory_delta = {
+            key: value
+            for key, value in memory_delta.items()
+            if value or key in explicit_updates
+        }
         if not memory_delta:
             return {}
 

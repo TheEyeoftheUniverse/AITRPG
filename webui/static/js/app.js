@@ -332,7 +332,7 @@ function updateRulePanel(result) {
     if (!result || !result.check_type) {
         panel.innerHTML = `
             <div class="ai-field">
-                <div class="ai-field-value">无需检定</div>
+                <div class="ai-field-value">本轮未触发检定</div>
             </div>
         `;
         return;
@@ -347,11 +347,11 @@ function updateRulePanel(result) {
     panel.innerHTML = `
         <div class="ai-field">
             <div class="ai-field-label">技能</div>
-            <div class="ai-field-value">${escapeHtml(result.skill || "N/A")}</div>
+            <div class="ai-field-value">${escapeHtml(result.skill || "无")}</div>
         </div>
         <div class="ai-field">
             <div class="ai-field-label">难度</div>
-            <div class="ai-field-value">${escapeHtml(result.difficulty || "normal")}</div>
+            <div class="ai-field-value">${escapeHtml(result.difficulty || "普通")}</div>
         </div>
         <div class="ai-field">
             <div class="ai-field-label">投骰</div>
@@ -371,7 +371,7 @@ function updateRhythmPanel(result) {
         return;
     }
 
-    const feasibleText = result.feasible !== false ? "可行" : "不可行";
+    const feasibleText = result.feasible !== false ? "允许推进" : "当前受阻";
     const feasibleClass = result.feasible !== false ? "success" : "failure";
 
     let html = `

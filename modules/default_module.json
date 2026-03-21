@@ -3,8 +3,8 @@
     "name": "门缝",
     "module_type": "单人短模",
     "target_rounds": 30,
-    "description": "深夜，你在一间陌生的老宅卧室中醒来。门缝透出走廊微弱的光，窗外是无尽的灰色平原。你需要找到离开的方法。",
-    "stages": "第一阶段：初期探索，玩家在二楼探索，获得基本信息（1~10轮）；第二阶段：深入探索，玩家可能前往一楼，可能与NPC交流情报（11~20轮）；第三阶段：执行计划，玩家可能找到了能离开这里的方式，正在执行逃离计划（21~30轮）",
+    "description": "深夜，你在一间陌生的老宅卧室中醒来。门缝透出走廊微弱的光，窗外是无尽的平原。",
+    "stages": "第一阶段：初期探索，玩家在二楼探索，获得基本信息（1~10轮）；第二阶段：深入探索，玩家可能前往一楼，可能与NPC交流获得更多情报（11~20轮）；第三阶段：执行计划，玩家可能找到了能离开这里的方式，正在执行逃离计划（21~30轮）",
     "atmosphere_guide": {
       "0.0-0.29": "calm：平静克制，客观叙述，偶尔埋下伏笔",
       "0.3-0.49": "uneasy：隐约不安，细微异常，说不清哪里不对",
@@ -12,14 +12,14 @@
       "0.7-0.89": "horror：主动渲染恐怖，感官细节，异常现象强化",
       "0.9-1.0": "dread：克苏鲁式宇宙恐惧，着重于人类视野的渺小感，语言可破碎跳跃"
     },
-    "atmosphere_note": "事件和地点的atmosphere值(0.0~1.0)表示该内容的基础氛围强度。文案AI应以此为基础，结合当前游戏进度(progress)适当叠加渲染强度：最终氛围 = min(1.0, atmosphere + progress * 0.3)",
+    "atmosphere_note": "事件和地点的atmosphere值(0.0~1.0)表示该内容的基础氛围强度。",
     "prompt_context": "此字段由节奏AI动态生成，包含当前场景、可交互物品、NPC等信息。模组设计者无需手动填写。",
-    "opening": "你在陌生的卧室中醒来。\n\n不合适的枕头与坚硬的床垫带来全身酸痛的疲惫感。\n\n而空气中弥漫的沉默，不断地从四面八方压迫着你的思考..."
+    "opening": "你在陌生的卧室中醒来。\n\n不合适的枕头与坚硬的床垫带来全身酸痛的疲惫感。\n\n而空气中弥漫的沉默，不断地从四面八方压迫着你的思考...\n\n（请通过地图进行场景移动）"
   },
   "locations": {
     "master_bedroom": {
       "name": "主卧",
-      "description": "玩家初次醒来的地方。房间昏暗，空气中有股陈旧的味道。床铺凌乱，卧室门开了一条缝，透出走廊微弱的光。",
+      "description": "你初次醒来的地方。房间昏暗，空气中有股陈旧的味道。床铺凌乱，一面破碎的镜子立在衣柜旁，床头上还有几份你带进来的房产广告。",
       "atmosphere": 0.1,
       "objects": [
         "房产广告",
@@ -35,7 +35,7 @@
     },
     "second_floor_hallway": {
       "name": "二楼走廊",
-      "description": "狭长的走廊，木地板发出轻微的吱呀声。墙上的壁纸已经泛黄，走廊两侧有几扇门。楼梯通向一楼，下面没有光。",
+      "description": "狭长的二楼走廊，木地板发出轻微的吱呀声。墙上的壁纸已经泛黄，走廊两侧共有三扇门。楼梯通向一楼。",
       "atmosphere": 0.3,
       "objects": [
         "楼梯",
@@ -51,7 +51,8 @@
     },
     "guest_bedroom": {
       "name": "次卧",
-      "description": "门紧紧关着，从门缝里透出微弱的光。当玩家靠近时，里面会传来冰冷的女声：'谁？'",
+      "description": "次卧的门缝里透出微弱的光，里面则是普通的卧室。",
+      "npc_present_description": "当玩家初次靠近时，门后会传来冰冷的女声：'谁？'",
       "objects": [
         "紧锁的门"
       ],
@@ -64,10 +65,10 @@
     },
     "study": {
       "name": "书房",
-      "description": "堆满书籍和文件的房间。书桌上散落着各种笔记和手稿，空气中弥漫着纸张和墨水的气味，还有一丝...焦灼的味道。",
+      "description": "堆满各类书籍和文件的房间。书桌上散落着各类笔记和各种手稿，空气中弥漫着纸张和墨水的气味，还有一丝...焦灼的味道。",
       "objects": [
         "书桌",
-        "仪式笔记"
+        "笔记"
       ],
       "exits": [
         "二楼走廊"
@@ -92,7 +93,8 @@
     },
     "living_room": {
       "name": "客厅",
-      "description": "宽敞的客厅，家具上积满了灰尘。客厅入口不远处，有一个站得笔直的，类似于人的身影。它会一直背对着玩家，一动不动地凝视着茶几上的老式电话。",
+      "description": "客厅十分宽敞，但家具上积满了灰尘。茶几上放着一部老式电话，空气安静得近乎凝滞。",
+      "npc_present_description": "当玩家初次见到管家时，它就在客厅入口不远处，是一个站得笔直、近似人形的身影。始终背对着玩家，一动不动地凝视着茶几上的老式电话。",
       "objects": [
         "老式电话",
         "改造蓝图",
@@ -108,7 +110,7 @@
     },
     "kitchen": {
       "name": "厨房",
-      "description": "老旧的厨房，橱柜里的餐具蒙着厚厚的灰尘。墙上挂着一张泛黄的日历，日期停留在几十年前。角落里有一扇通向地下的门。",
+      "description": "这是一间相当老旧的厨房，橱柜里的餐具蒙着厚厚的灰尘。墙上挂着一张泛黄的日历，日期停留在几十年前。角落里有一扇通向地下的门。",
       "objects": [
         "刀具",
         "火源",
@@ -123,7 +125,7 @@
     },
     "basement": {
       "name": "地下室",
-      "description": "阴冷潮湿的地下室，堆满了旧家具和杂物。空气中有股霉味。玩家看过了蓝图之后，才会知道触发暗门的机关在哪。",
+      "description": "地下室阴冷潮湿，堆满了旧家具和杂物。空气中有股霉味。",
       "objects": [
         "杂物",
         "暗门机关"
@@ -143,7 +145,7 @@
         "node_visible": ["改造蓝图"],
         "true_name": ["仪式笔记"]
       },
-      "description": "暗门后的密室。地面上画着复杂的召唤阵，粗绳从四个方向延伸，束缚着中央的符咒地毯。空气中弥漫着令人作呕的气息，不知道是来源于地面上的暗红色，还是别的什么。",
+      "description": "你终于来到了暗门后的密室。地面上画着复杂的召唤阵，粗绳从四个方向延伸，束缚着中央的符咒地毯。空气中弥漫着令人作呕的气息，不知道是来源于地面上的暗红色，还是别的什么。",
       "objects": [
         "召唤阵",
         "粗绳",
@@ -163,7 +165,6 @@
       "location": "master_bedroom",
       "check_required": "侦查",
       "difficulty": "无需判定，直接成功",
-      "clue_value": 0.05,
       "san_cost": 0,
       "success_result": "玩家带进来的购房广告。'急售！价格面议！'玩家想起来，电话议价的时候卖家的语气也透着焦急。广告上的照片显示这是一座老房子，建于1950年代。",
       "can_take": true,
@@ -175,7 +176,6 @@
       "location": "master_bedroom",
       "check_required": "侦查",
       "difficulty": "无需判定，直接成功",
-      "clue_value": 0.05,
       "san_cost": -1,
       "success_result": "通往二楼走廊的主卧的门，门开了一条缝，绝对不是玩家打开的。玩家在入睡前是关了门的。",
       "can_take": false,
@@ -186,18 +186,16 @@
       "location": "master_bedroom",
       "check_required": "侦查",
       "difficulty": "无需判定，直接成功",
-      "clue_value": 0.1,
       "san_cost": -1,
       "success_result": "无论玩家看向哪扇窗户，都只能看见灰蒙蒙的、无尽的平原。这里不是房子原本所在的街道。",
       "can_take": false,
       "atmosphere": 0.35
     },
-    "仪式笔记": {
+    "笔记": {
       "type": "clue",
       "location": "study",
       "check_required": "图书馆",
       "difficulty": "普通",
-      "clue_value": 0.2,
       "san_cost": -1,
       "success_result": "能够找到一份潦草的研究笔记。笔记的主人在地下室进行了某种召唤仪式，试图'复活爱人'。笔记的最后写着：'若要终止仪式，需隔断束缚之绳，焚毁符咒之布。'举行仪式后，我确实见到了我的爱人，可是除了她以外，还有……",
       "failure_result": "只找到了一些古旧的小说集或学术书本。",
@@ -210,7 +208,6 @@
       "location": "living_room",
       "check_required": "教育",
       "difficulty": "自动成功",
-      "clue_value": 0.1,
       "san_cost": -2,
       "success_result": "管家曾经凝视着的1950年代的旋转拨号电话，就算拨号也只有让人窒息的等待接听音。",
       "can_take": false,
@@ -221,8 +218,7 @@
       "type": "clue",
       "location": "living_room",
       "check_required": "侦查",
-      "difficulty": "普通",
-      "clue_value": 0.25,
+      "difficulty": "自动成功",
       "san_cost": 0,
       "success_result": "地下室的改造蓝图，画着前住户在原有的仓库地下室中增建的密室，入口是一扇暗门。蓝图上标注了暗门的位置：地下室西侧墙壁，按下第三块砖即可打开。",
       "failure_result": "玩家只发现客厅里都是些老旧的东西。",
@@ -236,7 +232,6 @@
       "location": "kitchen",
       "check_required": null,
       "difficulty": null,
-      "clue_value": 0.05,
       "san_cost": 0,
       "success_result": "一把锋利的厨刀。",
       "failure_result": null,
@@ -249,7 +244,6 @@
       "location": "kitchen",
       "check_required": null,
       "difficulty": null,
-      "clue_value": 0.05,
       "san_cost": 0,
       "success_result": "打火机和一些易燃物。",
       "failure_result": null,
@@ -262,7 +256,6 @@
       "location": "kitchen",
       "check_required": "侦查",
       "difficulty": "容易",
-      "clue_value": 0.05,
       "san_cost": -1,
       "success_result": "墙上的日历停留在1957年3月。",
       "failure_result": "只是一张旧日历。",
@@ -274,7 +267,6 @@
       "location": "kitchen",
       "check_required": null,
       "difficulty": null,
-      "clue_value": 0.05,
       "san_cost": 0,
       "success_result": "通向地下室的门。门没有锁，可以直接下去。",
       "failure_result": null,
@@ -287,7 +279,6 @@
       "location": "basement",
       "check_required": null,
       "difficulty": null,
-      "clue_value": 0.1,
       "san_cost": 0,
       "success_result": "根据蓝图的指示才能找到西侧墙壁的第三块砖，按下去后，墙壁会发出沉闷的响声，一扇暗门缓缓打开，露出后面黑暗的通道。",
       "can_take": false,
@@ -302,7 +293,6 @@
       "location": "ritual_chamber",
       "check_required": null,
       "difficulty": null,
-      "clue_value": 0.15,
       "san_cost": -2,
       "success_result": "四根粗绳从召唤阵的四个方向延伸，束缚着中央的符咒地毯。这是仪式的'束缚'部分。被切断时，流出了神秘的暗色液体——这东西到底是什么做的？玩家可能不会想知道。",
       "failure_result": null,
@@ -318,7 +308,6 @@
       "location": "ritual_chamber",
       "check_required": null,
       "difficulty": null,
-      "clue_value": 0.2,
       "san_cost": -2,
       "success_result": "地毯上画满了扭曲的符文，散发着不祥的气息。这是召唤仪式的核心。被点燃后，发出浓烈的奇特臭气，以及在狭小空间内，扑面而来的热气，让玩家感到不适。",
       "failure_result": null,
@@ -351,7 +340,7 @@
         "承诺协助她找寻离开这里的线索": 0.2
       },
       "dialogue_guide": {
-        "low_trust": "警惕、简短，不愿透露太多。会用反问来试探对方。",
+        "low_trust": "警惕、简短，话少，不愿透露太多。会用反问来试探对方。",
         "medium_trust": "开始分享她观察到的管家规律，语气直接，偶有讽刺（比如嘲讽前住户居然会做这种蠢事）。",
         "high_trust": "提出合作引开管家，以便探索，寻找离开方法的计划。",
         "cooperation": "行动时冷静、果断，会主动提出自己来引开管家。偶尔会说一些轻描淡写的狠话，掩盖内心的恐惧。"
@@ -379,7 +368,7 @@
       },
       "gaze_consequence": "与管家对视会导致疯狂结局。玩家看到了不该被人类所见的东西。",
       "distraction_method": "当有其他活物进入视野时，管家会转向新目标。可以利用此特性与NPC合作，让管家离开凝视的物品，或让管家离开卧室门前。",
-      "atmosphere": 0.75
+      "atmosphere": 0.9
     }
   },
   "escape_conditions": {
@@ -437,6 +426,12 @@
         "trigger": "escape_success===true AND amnesia===false",
         "priority": 3,
         "description": "逃脱结局：根据各维度细化，最终输出类似于后日谈的结局"
+      }
+      ,
+      "getlost": {
+        "trigger": "",
+        "priority": 3,
+        "description": "迷失结局：在未烧毁仪式的情况，通过任意方式进入房外的灰色平原，就会永远迷失在平原里。"
       }
       }
     }

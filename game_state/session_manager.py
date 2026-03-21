@@ -3,6 +3,7 @@ import os
 import copy
 from collections import deque
 from typing import Dict, Any, List, Set
+from .location_context import build_runtime_location_context
 
 
 PRESET_PLAYER_PROFILE = {
@@ -698,6 +699,13 @@ class SessionManager:
 
         return self.default_module_data
 
+    def get_location_context(self, session_id: str, location_key: str = None) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+        module_data = self.get_module_data(session_id)
+        return build_runtime_location_context(state, module_data, location_key)
+
     def _serialize_value(self, value):
         """递归序列化会话状态中的 deque 等对象"""
         if isinstance(value, deque):
@@ -722,6 +730,9 @@ class SessionManager:
                 continue
 
             if isinstance(value, list):
+                if key in {"pending_questions"}:
+                    base[key] = [item for item in value if item]
+                    continue
                 existing = base.get(key)
                 if not isinstance(existing, list):
                     existing = []
