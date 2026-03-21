@@ -1,9 +1,13 @@
 import json
 import os
 import copy
+import random
 from collections import deque
 from typing import Dict, Any, List, Set
 from .location_context import build_runtime_location_context
+
+
+BUTLER_NPC_NAME = "管家"
 
 
 PRESET_PLAYER_PROFILE = {
@@ -69,6 +73,8 @@ class SessionManager:
         self.sessions[session_id]["visited_locations"] = [initial_location]
         self.sessions[session_id]["player"] = self._build_default_player_state()
         self.sessions[session_id]["world_state"]["npcs"] = self._build_initial_npc_state(module_data)
+        self.sessions[session_id]["influence_dimensions"] = self._build_default_influence_dimensions()
+        self._ensure_runtime_defaults(self.sessions[session_id], module_data)
 
     def _load_module(self, module_name: str = "default_module"):
         """加载模组数据"""
@@ -133,18 +139,15 @@ class SessionManager:
                 }
             },
 
-            "influence_dimensions": {
-                "escape_success": False,
-                "npc_together": False,
-                "truth_revealed": False
-            },
+            "influence_dimensions": self._build_default_influence_dimensions(),
 
             # 三层AI的上下文
             "rhythm_context": [],  # 节奏AI保存游戏状态变化
-            "narrative_history": deque(maxlen=15),  # 文案AI保存历史总结
+            "narrative_history": deque(),  # 文案AI保存每轮历史总结，长期保留供摘要回放
             "visited_locations": [initial_location],  # 已访问过的location key列表
         }
         self.sessions[session_id]["player"] = self._build_default_player_state()
+        self._ensure_runtime_defaults(self.sessions[session_id], module_data)
 
     def _get_initial_location(self, module_data: Dict[str, Any]) -> str:
         """获取模组的初始位置"""
@@ -171,6 +174,8 @@ class SessionManager:
             }
             if npc_data.get("location"):
                 npc_states[npc_name]["location"] = npc_data["location"]
+            if npc_name == BUTLER_NPC_NAME:
+                npc_states[npc_name]["chase_state"] = self._build_default_butler_chase_state()
         return npc_states
 
     def _build_initial_npc_memory(self) -> Dict[str, Any]:
@@ -183,6 +188,219 @@ class SessionManager:
             "conversation_flags": {},
             "last_impression": {},
         }
+
+    def _build_default_butler_chase_state(self) -> Dict[str, Any]:
+        return {
+            "active": False,
+            "status": "idle",
+            "target": None,
+            "activation_round": None,
+            "last_target_location": None,
+        }
+
+    def _build_default_influence_dimensions(self) -> Dict[str, Any]:
+        return {
+            "escape_success": False,
+            "npc_together": False,
+            "truth_revealed": False,
+            "butler_gaze": False,
+            "san_remaining": 65,
+            "rounds_used": 0,
+        }
+
+    def _ensure_runtime_defaults(self, state: Dict[str, Any], module_data: Dict[str, Any] = None):
+        if not isinstance(state, dict):
+            return
+
+        module_data = module_data or state.get("module_data") or self.default_module_data
+        world_state = state.setdefault("world_state", {})
+        npc_states = world_state.setdefault("npcs", {})
+        module_npcs = module_data.get("npcs", {}) if isinstance(module_data, dict) else {}
+
+        for npc_name, npc_data in module_npcs.items():
+            runtime_state = npc_states.setdefault(npc_name, {})
+            if not isinstance(runtime_state, dict):
+                runtime_state = {}
+                npc_states[npc_name] = runtime_state
+            runtime_state.setdefault("attitude", npc_data.get("initial_attitude", "中立"))
+            runtime_state.setdefault("trust_level", 0.0)
+            runtime_state.setdefault("memory", self._build_initial_npc_memory())
+            if npc_data.get("location"):
+                runtime_state.setdefault("location", npc_data.get("location"))
+            if npc_name == BUTLER_NPC_NAME:
+                chase_state = runtime_state.setdefault("chase_state", {})
+                if not isinstance(chase_state, dict):
+                    chase_state = {}
+                    runtime_state["chase_state"] = chase_state
+                for key, value in self._build_default_butler_chase_state().items():
+                    chase_state.setdefault(key, value)
+
+        influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions())
+        for key, value in self._build_default_influence_dimensions().items():
+            influence.setdefault(key, value)
+        self._sync_influence_dimensions(state)
+
+    def _sync_influence_dimensions(self, state: Dict[str, Any]):
+        if not isinstance(state, dict):
+            return
+
+        influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions())
+        for key, value in self._build_default_influence_dimensions().items():
+            influence.setdefault(key, value)
+
+        player = state.setdefault("player", {})
+        world_state = state.setdefault("world_state", {})
+        flags = world_state.setdefault("flags", {})
+        influence["truth_revealed"] = bool(flags.get("truth_revealed", influence.get("truth_revealed", False)))
+        influence["san_remaining"] = int(player.get("san", 0) or 0)
+        influence["rounds_used"] = int(state.get("round_count", 0) or 0)
+
+    def _get_butler_runtime_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        self._ensure_runtime_defaults(state)
+        npc_states = state.setdefault("world_state", {}).setdefault("npcs", {})
+        return npc_states.setdefault(BUTLER_NPC_NAME, {})
+
+    def get_butler_state(self, session_id: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+        return copy.deepcopy(self._get_butler_runtime_state(state))
+
+    def is_butler_active(self, session_id: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+        chase_state = self._get_butler_runtime_state(state).get("chase_state", {})
+        return bool(chase_state.get("active"))
+
+    def get_butler_location(self, session_id: str) -> str:
+        state = self.sessions.get(session_id)
+        if not state:
+            return ""
+        butler_state = self._get_butler_runtime_state(state)
+        return str(butler_state.get("location") or "").strip()
+
+    def is_player_with_active_butler(self, session_id: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state or not self.is_butler_active(session_id):
+            return False
+        return state.get("current_location") == self.get_butler_location(session_id)
+
+    def should_use_butler_arrival_judgement(self, session_id: str, target_key: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state or self.is_butler_active(session_id):
+            return False
+        if target_key != self.get_butler_location(session_id):
+            return False
+        return target_key == "living_room"
+
+    def _get_check_threshold(self, player_skill: int, difficulty: str) -> int:
+        difficulty = str(difficulty or "").strip()
+        if difficulty == "困难":
+            return max(1, player_skill // 2)
+        if difficulty == "极难":
+            return max(1, player_skill // 5)
+        return max(1, player_skill)
+
+    def _roll_skill_check(self, player_state: Dict[str, Any], skill_name: str, difficulty: str = "普通") -> Dict[str, Any]:
+        player_skill = int(player_state.get("skills", {}).get(skill_name, 0) or 0)
+        threshold = self._get_check_threshold(player_skill, difficulty)
+        roll = random.randint(1, 100)
+        success = roll <= threshold
+        return {
+            "check_type": "skill_check",
+            "skill": skill_name,
+            "difficulty": difficulty,
+            "player_skill": player_skill,
+            "threshold": threshold,
+            "roll": roll,
+            "success": success,
+            "critical_success": roll <= 5,
+            "critical_failure": roll >= 96,
+            "result_description": "成功" if success else "失败",
+        }
+
+    def _capture_player_by_butler_state(self, state: Dict[str, Any], reason: str):
+        if not isinstance(state, dict):
+            return
+        influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions())
+        influence["butler_gaze"] = True
+        world_flags = state.setdefault("world_state", {}).setdefault("flags", {})
+        world_flags["butler_capture_reason"] = reason
+        self._sync_influence_dimensions(state)
+
+    def capture_player_by_butler(self, session_id: str, reason: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+        self._capture_player_by_butler_state(state, reason)
+        state["round_count"] = int(state.get("round_count", 0) or 0) + 1
+        self._sync_influence_dimensions(state)
+        return copy.deepcopy(state)
+
+    def _advance_butler_chase(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        butler_state = self._get_butler_runtime_state(state)
+        chase_state = butler_state.setdefault("chase_state", self._build_default_butler_chase_state())
+        if not isinstance(chase_state, dict):
+            chase_state = self._build_default_butler_chase_state()
+            butler_state["chase_state"] = chase_state
+
+        if not chase_state.get("active"):
+            chase_state["status"] = "idle"
+            chase_state["target"] = None
+            chase_state["activation_round"] = None
+            chase_state["last_target_location"] = None
+            return {}
+
+        chase_state["status"] = "pursuing"
+        chase_state["target"] = "player"
+
+        current_round = int(state.get("round_count", 0) or 0)
+        current_player_location = state.get("current_location")
+        activation_round = chase_state.get("activation_round")
+        if activation_round is None:
+            chase_state["activation_round"] = current_round
+            chase_state["last_target_location"] = current_player_location
+            return {}
+
+        if activation_round == current_round:
+            chase_state["last_target_location"] = current_player_location
+            return {}
+
+        destination = chase_state.get("last_target_location") or current_player_location
+        previous_butler_location = butler_state.get("location")
+        butler_state["location"] = destination
+        chase_state["last_target_location"] = current_player_location
+
+        if destination and destination != previous_butler_location:
+            return {
+                "npc_locations": {
+                    BUTLER_NPC_NAME: destination
+                }
+            }
+        return {}
+
+    def advance_round(self, session_id: str, rhythm_result: Dict[str, Any] = None) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+
+        self._ensure_runtime_defaults(state)
+        state["round_count"] = int(state.get("round_count", 0) or 0) + 1
+
+        if isinstance(rhythm_result, dict):
+            state["rhythm_context"].append({
+                "round": state["round_count"],
+                "stage_assessment": rhythm_result.get("stage_assessment", ""),
+                "world_changes": rhythm_result.get("world_changes", {})
+            })
+
+        runtime_changes = {}
+        if not bool(state.get("influence_dimensions", {}).get("butler_gaze")):
+            runtime_changes = self._advance_butler_chase(state)
+
+        self._sync_influence_dimensions(state)
+        return runtime_changes
 
     def _build_default_player_state(self) -> Dict[str, Any]:
         """返回固定预设角色卡。"""
@@ -226,7 +444,7 @@ class SessionManager:
 
         narrative_history = restored_state.get("narrative_history") or []
         if not isinstance(narrative_history, deque):
-            narrative_history = deque(narrative_history, maxlen=15)
+            narrative_history = deque(narrative_history)
         restored_state["narrative_history"] = narrative_history
         default_player = self._build_default_player_state()
 
@@ -262,13 +480,14 @@ class SessionManager:
             npc_state.setdefault("memory", self._build_initial_npc_memory())
         restored_state["world_state"] = world_state
 
-        restored_state["influence_dimensions"] = dict(restored_state.get("influence_dimensions") or {
-            "escape_success": False,
-            "npc_together": False,
-            "truth_revealed": False
-        })
+        restored_state["influence_dimensions"] = dict(
+            restored_state.get("influence_dimensions") or self._build_default_influence_dimensions()
+        )
+        for key, value in self._build_default_influence_dimensions().items():
+            restored_state["influence_dimensions"].setdefault(key, value)
 
         self.sessions[session_id] = restored_state
+        self._ensure_runtime_defaults(self.sessions[session_id], module_data)
 
     def delete_session(self, session_id: str):
         """删除会话"""
@@ -281,6 +500,7 @@ class SessionManager:
             return
 
         state = self.sessions[session_id]
+        self._ensure_runtime_defaults(state)
 
         # 更新轮次
         state["round_count"] += 1
@@ -338,6 +558,11 @@ class SessionManager:
             "stage_assessment": rhythm_result.get("stage_assessment", ""),
             "world_changes": rhythm_result.get("world_changes", {})
         })
+        runtime_changes = {}
+        if not bool(state.get("influence_dimensions", {}).get("butler_gaze")):
+            runtime_changes = self._advance_butler_chase(state)
+        self._sync_influence_dimensions(state)
+        return runtime_changes
 
     def add_narrative_summary(self, session_id: str, player_input: str, narrative: str, summary: str):
         """添加文案记录到历史"""
@@ -491,8 +716,7 @@ class SessionManager:
 
         return frontier
 
-    def _get_available_moves(self, session_id: str) -> Set[str]:
-        """返回当前地点可以直接前往的相邻地点。"""
+    def _get_adjacent_moves(self, session_id: str) -> Set[str]:
         state = self.sessions.get(session_id)
         if not state:
             return set()
@@ -500,8 +724,31 @@ class SessionManager:
         current = state["current_location"]
         graph = self._get_adjacency_graph(self.get_module_data(session_id))
         locked_exits = self._get_locked_exits(session_id)
-        visited_locations = set(state.get("visited_locations", []))
         available_moves = set()
+
+        for neighbor_key in graph.get(current, []):
+            if (current, neighbor_key) in locked_exits:
+                continue
+            if not self._is_location_visible(session_id, neighbor_key):
+                continue
+            available_moves.add(neighbor_key)
+
+        return available_moves
+
+    def _get_available_moves(self, session_id: str) -> Set[str]:
+        """返回当前地点可以直接前往的相邻地点。"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return set()
+
+        available_moves = set(self._get_adjacent_moves(session_id))
+        if self.is_butler_active(session_id):
+            return available_moves
+
+        current = state["current_location"]
+        graph = self._get_adjacency_graph(self.get_module_data(session_id))
+        locked_exits = self._get_locked_exits(session_id)
+        visited_locations = set(state.get("visited_locations", []))
 
         for neighbor_key in graph.get(current, []):
             if (current, neighbor_key) in locked_exits:
@@ -573,11 +820,44 @@ class SessionManager:
             return {"success": False, "message": "目标位置不可达（路径被锁定）"}
 
         # 执行移动
+        adjacent_moves = self._get_adjacent_moves(session_id)
+        available_moves = self._get_available_moves(session_id)
+        if target_key not in available_moves:
+            if self.is_butler_active(session_id) and target_key not in adjacent_moves:
+                return {"success": False, "message": "管家已被激活。现在你只能逐格移动到相邻场景。"}
+            return {"success": False, "message": "目标位置不可达（路径被锁定）"}
+
+        dodge_result = None
+        movement_note = None
+        if self.is_butler_active(session_id):
+            butler_location = self.get_butler_location(session_id)
+            needs_dodge = current == butler_location or target_key == butler_location
+            if needs_dodge:
+                dodge_result = self._roll_skill_check(state.get("player", {}), "闪避", "普通")
+                if not dodge_result.get("success"):
+                    self.capture_player_by_butler(session_id, "dodge_failed")
+                    return {
+                        "success": False,
+                        "caught": True,
+                        "message": "你试图从管家身边脱身，却被那具不自然的人形慢慢逼住。下一瞬，它强迫你迎上了那道目光。",
+                        "check_result": dodge_result,
+                    }
+                movement_note = "你在那具迟缓却精准的人形逼近前猛地侧身，从它的封锁里惊险脱出。"
+
+        previous_location = current
         state["current_location"] = target_key
 
         # 标记已访问
         if target_key not in state["visited_locations"]:
             state["visited_locations"].append(target_key)
+
+        return {
+            "success": True,
+            "message": f"moved to {locations[target_key].get('name', target_key)}",
+            "previous_location": previous_location,
+            "check_result": dodge_result,
+            "movement_note": movement_note,
+        }
 
         return {"success": True, "message": f"移动到{locations[target_key].get('name', target_key)}"}
 
@@ -743,3 +1023,4 @@ class SessionManager:
                 continue
 
             base[key] = value
+

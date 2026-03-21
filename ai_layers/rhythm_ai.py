@@ -94,7 +94,8 @@ class RhythmAI:
         )
 
         try:
-            llm_response = await provider.text_chat(prompt=prompt, contexts=history)
+            # RhythmAI should rely on summarized history in the prompt, not on raw chat history.
+            llm_response = await provider.text_chat(prompt=prompt, contexts=[])
             response_text = (
                 llm_response.completion_text
                 if hasattr(llm_response, "completion_text")
@@ -158,95 +159,14 @@ class RhythmAI:
         )
         return prompt
 
-    def _build_scene_context(self, game_state: dict, module_data: dict, rule_plan: dict) -> str:
-        current_location = game_state.get("current_location", "master_bedroom")
-        location_context = build_runtime_location_context(game_state, module_data, current_location)
-        npc_context = self._build_scene_npc_context(game_state, module_data)
-        atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
-        object_context = (rule_plan or {}).get("object_context")
-
-        parts = [
-            "Current location context:",
-            json.dumps({current_location: location_context}, ensure_ascii=False, indent=2),
-        ]
-        if object_context:
-            parts.extend([
-                "",
-                "Matched object context:",
-                json.dumps(object_context, ensure_ascii=False, indent=2),
-            ])
-        if npc_context:
-            parts.extend([
-                "",
-                "Current NPC context:",
-                json.dumps(npc_context, ensure_ascii=False, indent=2),
-            ])
-        if atmosphere_guide:
-            parts.extend([
-                "",
-                "Atmosphere guide:",
-                json.dumps(atmosphere_guide, ensure_ascii=False, indent=2),
-            ])
-        return "\n".join(parts)
-
-    def _build_scene_npc_context(self, game_state: dict, module_data: dict) -> dict:
-        current_location = game_state.get("current_location", "master_bedroom")
-        npc_states = game_state.get("world_state", {}).get("npcs", {})
-        scene_npcs = {}
-
-        for npc_name, npc_data in module_data.get("npcs", {}).items():
-            runtime_state = npc_states.get(npc_name, {})
-            npc_location = runtime_state.get("location", npc_data.get("location"))
-            if npc_location != current_location:
-                continue
-
-            merged_npc = dict(npc_data)
-            merged_npc.setdefault("name", npc_name)
-            merged_npc["runtime_state"] = {
-                "location": npc_location,
-                "attitude": runtime_state.get("attitude", npc_data.get("initial_attitude", "neutral")),
-                "trust_level": runtime_state.get("trust_level", 0.0),
-                "memory": runtime_state.get("memory", {}),
-            }
-            scene_npcs[npc_name] = merged_npc
-
-        return scene_npcs
-
-    def _build_history_summaries(self, game_state: dict) -> str:
-        narrative_history = list(game_state.get("narrative_history", []))
-        if not narrative_history:
-            return "No prior turns."
-
-        parts = []
-        for entry in narrative_history:
-            if isinstance(entry, dict):
-                round_num = entry.get("round", "?")
-                summary = entry.get("summary", "")
-                parts.append(f"[Round {round_num}] {summary}")
-            else:
-                parts.append(str(entry))
-
-        return "\n".join(parts)
-
-    def _build_base_result(self, player_input: str, rule_plan: dict, game_state: dict, module_data: dict) -> dict:
-        current_location = game_state.get("current_location", "master_bedroom")
-        location_context = build_runtime_location_context(game_state, module_data, current_location)
-        atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
-        feasibility = (rule_plan or {}).get("feasibility", {})
-        npc_context = self._build_scene_npc_context(game_state, module_data)
-        npc_action_guide = self._build_npc_action_guide(player_input, rule_plan, npc_context)
-
-        return {
-            "feasible": bool(feasibility.get("ok", True)),
-            "hint": feasibility.get("reason"),
-            "location_context": location_context if isinstance(location_context, dict) else {},
-            "object_context": (rule_plan or {}).get("object_context"),
-            "npc_context": npc_context,
-            "npc_action_guide": npc_action_guide,
-            "atmosphere_guide": atmosphere_guide if isinstance(atmosphere_guide, dict) else {},
-            "stage_assessment": "Stable pacing",
-            "world_changes": self._build_npc_soft_memory_changes(npc_action_guide),
-        }
+    def _should_suppress_npc_dialogue(self, npc_name: str, npc_data: dict) -> bool:
+        if npc_name == "管家":
+            return True
+        if not isinstance(npc_data, dict):
+            return False
+        if npc_data.get("is_hostile") and not npc_data.get("dialogue_guide") and not npc_data.get("key_info"):
+            return True
+        return False
 
     def _build_npc_action_guide(self, player_input: str, rule_plan: dict, npc_context: dict) -> dict:
         if not isinstance(npc_context, dict) or not npc_context:
@@ -258,9 +178,14 @@ class RhythmAI:
 
         focused_npc = None
         if target_kind == "npc" and target_key in npc_context:
-            focused_npc = target_key
+            candidate = npc_context.get(target_key, {})
+            if not self._should_suppress_npc_dialogue(target_key, candidate):
+                focused_npc = target_key
         elif len(npc_context) == 1:
-            focused_npc = next(iter(npc_context))
+            only_npc = next(iter(npc_context))
+            candidate = npc_context.get(only_npc, {})
+            if not self._should_suppress_npc_dialogue(only_npc, candidate):
+                focused_npc = only_npc
 
         if not focused_npc:
             return {}
@@ -354,7 +279,115 @@ class RhythmAI:
             normalized.get("world_changes", {}),
         )
 
+        if not isinstance(normalized.get("creative_additions"), dict):
+            normalized["creative_additions"] = {}
+        creative = normalized["creative_additions"]
+        for key in ("ambient", "npc_micro", "tension_hook"):
+            val = creative.get(key)
+            creative[key] = str(val).strip() if val else None
+
+        cf = normalized.get("continuity_flag")
+        normalized["continuity_flag"] = str(cf).strip() if cf else None
+
+        npc_guide = normalized.get("npc_action_guide", {})
+        focus_npc = npc_guide.get("focus_npc") if isinstance(npc_guide, dict) else None
+        npc_context = normalized.get("npc_context", {})
+        if focus_npc and self._should_suppress_npc_dialogue(focus_npc, npc_context.get(focus_npc, {})):
+            normalized["npc_action_guide"] = {}
+
         return normalized
+
+    def _build_scene_context(self, game_state: dict, module_data: dict, rule_plan: dict) -> str:
+        current_location = game_state.get("current_location", "master_bedroom")
+        location_context = build_runtime_location_context(game_state, module_data, current_location)
+        npc_context = self._build_scene_npc_context(game_state, module_data)
+        atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
+        object_context = (rule_plan or {}).get("object_context")
+
+        parts = [
+            "Current location context:",
+            json.dumps({current_location: location_context}, ensure_ascii=False, indent=2),
+        ]
+        if object_context:
+            parts.extend([
+                "",
+                "Matched object context:",
+                json.dumps(object_context, ensure_ascii=False, indent=2),
+            ])
+        if npc_context:
+            parts.extend([
+                "",
+                "Current NPC context:",
+                json.dumps(npc_context, ensure_ascii=False, indent=2),
+            ])
+        if atmosphere_guide:
+            parts.extend([
+                "",
+                "Atmosphere guide:",
+                json.dumps(atmosphere_guide, ensure_ascii=False, indent=2),
+            ])
+        return "\n".join(parts)
+
+    def _build_scene_npc_context(self, game_state: dict, module_data: dict) -> dict:
+        current_location = game_state.get("current_location", "master_bedroom")
+        npc_states = game_state.get("world_state", {}).get("npcs", {})
+        scene_npcs = {}
+
+        for npc_name, npc_data in module_data.get("npcs", {}).items():
+            runtime_state = npc_states.get(npc_name, {})
+            npc_location = runtime_state.get("location", npc_data.get("location"))
+            if npc_location != current_location:
+                continue
+
+            merged_npc = dict(npc_data)
+            merged_npc.setdefault("name", npc_name)
+            merged_npc["runtime_state"] = {
+                "location": npc_location,
+                "attitude": runtime_state.get("attitude", npc_data.get("initial_attitude", "neutral")),
+                "trust_level": runtime_state.get("trust_level", 0.0),
+                "memory": runtime_state.get("memory", {}),
+            }
+            scene_npcs[npc_name] = merged_npc
+
+        return scene_npcs
+
+    def _build_history_summaries(self, game_state: dict) -> str:
+        narrative_history = list(game_state.get("narrative_history", []))
+        if not narrative_history:
+            return "No prior turns."
+
+        parts = []
+        for entry in narrative_history:
+            if isinstance(entry, dict):
+                round_num = entry.get("round", "?")
+                summary = entry.get("summary", "")
+                parts.append(f"[Round {round_num}] {summary}")
+            else:
+                parts.append(str(entry))
+
+        return "\n".join(parts)
+
+    def _build_base_result(self, player_input: str, rule_plan: dict, game_state: dict, module_data: dict) -> dict:
+        current_location = game_state.get("current_location", "master_bedroom")
+        location_context = build_runtime_location_context(game_state, module_data, current_location)
+        atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
+        feasibility = (rule_plan or {}).get("feasibility", {})
+        npc_context = self._build_scene_npc_context(game_state, module_data)
+        npc_action_guide = self._build_npc_action_guide(player_input, rule_plan, npc_context)
+
+        return {
+            "feasible": bool(feasibility.get("ok", True)),
+            "hint": feasibility.get("reason"),
+            "location_context": location_context if isinstance(location_context, dict) else {},
+            "object_context": (rule_plan or {}).get("object_context"),
+            "npc_context": npc_context,
+            "npc_action_guide": npc_action_guide,
+            "atmosphere_guide": atmosphere_guide if isinstance(atmosphere_guide, dict) else {},
+            "stage_assessment": "Stable pacing",
+            "world_changes": self._build_npc_soft_memory_changes(npc_action_guide),
+            "creative_additions": {},
+            "continuity_flag": None,
+        }
 
     def _derive_next_line_goal(
         self,

@@ -1,5 +1,6 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
+from ..game_state.location_context import is_threat_entity
 from .usage_metrics import extract_usage_metrics, merge_usage_metrics
 
 import json
@@ -8,6 +9,9 @@ import os
 
 class NarrativeAI:
     """Narrative layer: turn structured outputs into player-facing prose."""
+
+    RECENT_DIALOGUE_TURNS = 10
+    OPENING_USER_TEXT = "缓缓苏醒"
 
     def __init__(self, context: Context, provider_name: str = None, config: dict = None):
         self.context = context
@@ -239,28 +243,30 @@ class NarrativeAI:
             text = text[:-3]
         return text.strip()
 
-    def _build_history_text(self, narrative_history: list) -> str:
+    def _build_history_text(self, narrative_history: list, recent_turn_count: int = RECENT_DIALOGUE_TURNS) -> str:
         history_list = list(narrative_history) if narrative_history else []
         if not history_list:
-            return "游戏开始。"
+            return "No older turn summaries."
 
-        total = len(history_list)
-        cutoff = max(0, total - 6)
+        if len(history_list) <= recent_turn_count:
+            return "No summaries older than the recent dialogue window."
+
+        older_entries = history_list[:-recent_turn_count]
         parts = []
 
-        for i, entry in enumerate(history_list):
+        for i, entry in enumerate(older_entries):
             if isinstance(entry, dict):
                 round_num = entry.get("round", i + 1)
                 player_text = self._trim_text(entry.get("player_input", ""), 70)
                 summary = self._trim_text(entry.get("summary", ""), 70)
                 if player_text and summary:
-                    parts.append(f"[第{round_num}轮] 玩家：{player_text} | 摘要：{summary}")
+                    parts.append(f"[Round {round_num}] player: {player_text} | summary: {summary}")
                 elif summary:
-                    parts.append(f"[第{round_num}轮] {summary}")
+                    parts.append(f"[Round {round_num}] {summary}")
             else:
                 parts.append(str(entry))
 
-        return "\n".join(parts[cutoff:])
+        return "\n".join(parts) if parts else "No older turn summaries."
 
     def _build_prompt(
         self,
@@ -269,28 +275,38 @@ class NarrativeAI:
         rule_result: dict,
         rhythm_result: dict,
         narrative_history: list,
-        history: list
+        history: list = None,
     ) -> str:
+        if history is None:
+            history = []
+
         rhythm_result = self._normalize_rhythm_result(rhythm_result)
         rule_plan = rule_plan if isinstance(rule_plan, dict) else {}
 
         normalized_action = rule_plan.get("normalized_action", {})
         location_context = rhythm_result.get("location_context", {})
         object_context = rhythm_result.get("object_context")
-        npc_context = rhythm_result.get("npc_context", {})
-        npc_action_guide = rhythm_result.get("npc_action_guide", {})
+        raw_npc_context = rhythm_result.get("npc_context", {})
+        raw_npc_action_guide = rhythm_result.get("npc_action_guide", {})
+        dialogue_npcs, _, npc_action_guide = self._sanitize_npc_prompt_inputs(raw_npc_context, raw_npc_action_guide)
+        threat_entities = list(location_context.get("present_threats", []) or [])
         atmosphere_guide = rhythm_result.get("atmosphere_guide", {})
         feasible = rhythm_result.get("feasible", True)
         hint = rhythm_result.get("hint")
         stage_assessment = rhythm_result.get("stage_assessment", "")
-        history_text = self._build_history_text(narrative_history)
+        history_text = self._build_history_text(
+            narrative_history,
+            recent_turn_count=self.RECENT_DIALOGUE_TURNS,
+        )
         recent_dialogue_text = self._build_recent_dialogue_text(history)
         dialogue_memory = self._build_dialogue_memory(history, player_input, npc_action_guide)
         compact_location = self._compact_location_context(location_context)
         compact_object = self._compact_object_context(object_context)
-        compact_npc = self._compact_npc_context(npc_context, npc_action_guide)
+        compact_npc = self._compact_npc_context(dialogue_npcs, npc_action_guide)
         compact_check = self._compact_check_result(rule_result)
         has_current_scene_npc = bool(compact_npc)
+        creative_additions = rhythm_result.get("creative_additions", {})
+        continuity_flag = rhythm_result.get("continuity_flag")
 
         player_block = (
             "Player turn input:\n"
@@ -318,6 +334,17 @@ class NarrativeAI:
             f"- dialogue_memory: {json.dumps(dialogue_memory, ensure_ascii=False)}\n"
             f"- atmosphere_guide: {json.dumps(atmosphere_guide, ensure_ascii=False)}"
         )
+
+        has_creative = isinstance(creative_additions, dict) and any(
+            v for v in creative_additions.values() if v
+        )
+        if has_creative:
+            rhythm_block += f"\n- creative_additions: {json.dumps(creative_additions, ensure_ascii=False)}"
+        if continuity_flag:
+            rhythm_block += f"\n- continuity_flag: {continuity_flag}"
+
+        if threat_entities:
+            rhythm_block += f"\n- threat_entities: {json.dumps(threat_entities, ensure_ascii=False)}"
 
         if not feasible and hint:
             rhythm_block += f"\n- blocked_reason: {hint}"
@@ -351,15 +378,22 @@ class NarrativeAI:
         if rhythm_result.get("arrival_mode"):
             prompt += (
                 "- This turn is a pure arrival into the scene. The player moved here but did not speak.\n"
-                "- If an NPC is present, write their reaction to the player's arrival, not a reply to words the player never said.\n"
+                "- If an entity is present, write its reaction to the player's arrival, not a reply to words the player never said.\n"
                 "- Do not imply the player introduced themselves, explained anything, or asked a question on this turn.\n"
             )
         if not has_current_scene_npc:
             prompt += (
-                "- npc_context is none for this turn. There is no interactable NPC in the player's current location.\n"
+                "- npc_context is none for this turn. There is no dialogue-capable NPC in the player's current location.\n"
                 "- Do not continue a conversation from another room as if the NPC can still immediately hear and answer.\n"
-                "- Do not generate new NPC dialogue, quoted replies, or remote call-and-response unless the current scene data explicitly contains that NPC.\n"
+                "- Do not generate new NPC dialogue, quoted replies, or remote call-and-response unless the current scene data explicitly contains a dialogue-capable NPC.\n"
                 "- Treat recent dialogue as background memory only; the active response must come from the current room and current action.\n"
+            )
+        if threat_entities:
+            prompt += (
+                f"- Threat entities are present: {', '.join(threat_entities)}.\n"
+                "- Threat entities are not NPCs. They cannot speak, ask questions, or hold a conversation.\n"
+                "- You may describe their posture, movement, breathing, distance, gaze pressure, or pursuit.\n"
+                "- Do not write quoted speech, polite verbal exchange, or reported dialogue for threat entities.\n"
             )
         return prompt
 
@@ -374,6 +408,10 @@ class NarrativeAI:
         rhythm_result = self._normalize_rhythm_result(rhythm_result)
         rule_plan = rule_plan if isinstance(rule_plan, dict) else {}
         normalized_action = rule_plan.get("normalized_action", {})
+        raw_npc_context = rhythm_result.get("npc_context", {})
+        raw_npc_action_guide = rhythm_result.get("npc_action_guide", {})
+        dialogue_npcs, _, npc_action_guide = self._sanitize_npc_prompt_inputs(raw_npc_context, raw_npc_action_guide)
+        threat_entities = list((rhythm_result.get("location_context", {}) or {}).get("present_threats", []) or [])
         compact_payload = {
             "player_input": self._trim_text(player_input, 120),
             "action": normalized_action,
@@ -382,20 +420,27 @@ class NarrativeAI:
             "check": self._compact_check_result(rule_result),
             "location": self._compact_location_context(rhythm_result.get("location_context", {})),
             "object": self._compact_object_context(rhythm_result.get("object_context")),
-            "npc": self._compact_npc_context(
-                rhythm_result.get("npc_context", {}),
-                rhythm_result.get("npc_action_guide", {}),
-            ),
-            "npc_action_guide": rhythm_result.get("npc_action_guide", {}),
+            "npc": self._compact_npc_context(dialogue_npcs, npc_action_guide),
+            "npc_action_guide": npc_action_guide,
+            "threat_entities": threat_entities,
             "recent_dialogue": self._build_recent_dialogue_messages(history),
             "dialogue_memory": self._build_dialogue_memory(
                 history,
                 player_input,
-                rhythm_result.get("npc_action_guide", {}),
+                npc_action_guide,
             ),
-            "current_scene_has_npc": bool(rhythm_result.get("npc_context")),
+            "current_scene_has_npc": bool(dialogue_npcs),
             "arrival_mode": bool(rhythm_result.get("arrival_mode")),
         }
+        creative_additions = rhythm_result.get("creative_additions", {})
+        has_creative = isinstance(creative_additions, dict) and any(
+            v for v in creative_additions.values() if v
+        )
+        if has_creative:
+            compact_payload["creative_additions"] = creative_additions
+        continuity_flag = rhythm_result.get("continuity_flag")
+        if continuity_flag:
+            compact_payload["continuity_flag"] = continuity_flag
         prompt = (
             "You are the narrative layer for a TRPG session.\n"
             "Use the structured data below to write one short in-world response and one short summary.\n"
@@ -403,21 +448,30 @@ class NarrativeAI:
             "Keep the response concise and directly answer the player's latest words.\n"
             "Treat recent_dialogue as the authoritative short-term memory.\n"
             "Treat dialogue_memory as already established facts.\n"
-            "Do not ask the exact same question again if the player already answered it in recent_dialogue.\n\n"
+            "Do not ask the exact same question again if the player already answered it in recent_dialogue.\n"
+            "If creative_additions is present, naturally weave the non-null entries into the narrative.\n"
+            "If continuity_flag is present, treat it as the canonical explanation for the improvised details.\n\n"
             f"{json.dumps(compact_payload, ensure_ascii=False, indent=2)}"
         )
         if not compact_payload["current_scene_has_npc"]:
             prompt += (
-                "\n\nNo NPC is present in the player's current location for this turn.\n"
+                "\n\nNo dialogue-capable NPC is present in the player's current location for this turn.\n"
                 "Do not continue dialogue from another room.\n"
                 "Do not write quoted NPC speech or imply that an off-screen NPC immediately answers.\n"
                 "Focus on the player's current room, current action, and immediate sensory feedback."
+            )
+        if compact_payload["threat_entities"]:
+            prompt += (
+                f"\n\nThreat entities are present: {', '.join(compact_payload['threat_entities'])}.\n"
+                "Threat entities are not NPCs and cannot speak.\n"
+                "Describe silent pressure, movement, gaze, posture, distance, or pursuit.\n"
+                "Do not write quoted speech for them."
             )
         if compact_payload["arrival_mode"]:
             prompt += (
                 "\n\nThis turn is scene arrival only.\n"
                 "The player moved into the room and did not say anything.\n"
-                "If an NPC reacts, make it a reaction to presence or footsteps, not a reply to dialogue."
+                "If something reacts, make it a reaction to presence or footsteps, not a reply to dialogue."
             )
         return prompt
 
@@ -436,6 +490,10 @@ class NarrativeAI:
             normalized["npc_action_guide"] = {}
         if not isinstance(normalized.get("atmosphere_guide"), dict):
             normalized["atmosphere_guide"] = {}
+        if not isinstance(normalized.get("creative_additions"), dict):
+            normalized["creative_additions"] = {}
+        cf = normalized.get("continuity_flag")
+        normalized["continuity_flag"] = str(cf).strip() if cf else None
         return normalized
 
     def _build_default_summary(self, player_input: str) -> str:
@@ -446,7 +504,25 @@ class NarrativeAI:
             return f"玩家：{text}"
         return f"玩家：{text[:27]}..."
 
-    def _build_recent_dialogue_messages(self, history: list, limit: int = 6) -> list:
+    def _get_message_kind(self, message: dict) -> str:
+        if not isinstance(message, dict):
+            return ""
+        metadata = message.get("metadata")
+        if isinstance(metadata, dict):
+            kind = str(metadata.get("aitrpg_kind") or "").strip()
+            if kind:
+                return kind
+        return str(message.get("aitrpg_kind") or message.get("kind") or "").strip()
+
+    def _is_opening_turn(self, user_message: dict, assistant_message: dict) -> bool:
+        if self._get_message_kind(user_message) == "opening":
+            return True
+        if self._get_message_kind(assistant_message) == "opening":
+            return True
+        user_content = self._extract_message_text(user_message.get("content"))
+        return user_content == self.OPENING_USER_TEXT
+
+    def _build_recent_dialogue_messages(self, history: list, turn_limit: int = RECENT_DIALOGUE_TURNS) -> list:
         if not isinstance(history, list):
             return []
 
@@ -464,16 +540,33 @@ class NarrativeAI:
             items.append({
                 "role": role,
                 "content": content,
+                "kind": self._get_message_kind(message),
             })
 
-        if not items:
-            return []
-        return items[-limit:]
+        turns = []
+        idx = 0
+        while idx + 1 < len(items):
+            user_message = items[idx]
+            assistant_message = items[idx + 1]
+            if user_message["role"] != "user" or assistant_message["role"] != "assistant":
+                idx += 1
+                continue
+            if self._is_opening_turn(user_message, assistant_message):
+                idx += 2
+                continue
+            turns.append([user_message, assistant_message])
+            idx += 2
 
-    def _build_recent_dialogue_text(self, history: list, limit: int = 6) -> str:
-        recent_messages = self._build_recent_dialogue_messages(history, limit=limit)
+        recent_turns = turns[-turn_limit:]
+        flattened = []
+        for turn in recent_turns:
+            flattened.extend(turn)
+        return flattened
+
+    def _build_recent_dialogue_text(self, history: list, turn_limit: int = RECENT_DIALOGUE_TURNS) -> str:
+        recent_messages = self._build_recent_dialogue_messages(history, turn_limit=turn_limit)
         if not recent_messages:
-            return "暂无最近对话。"
+            return "No recent dialogue."
 
         lines = []
         for message in recent_messages:
@@ -482,7 +575,10 @@ class NarrativeAI:
         return "\n".join(lines)
 
     def _build_dialogue_memory(self, history: list, player_input: str, npc_action_guide: dict) -> dict:
-        recent_messages = self._build_recent_dialogue_messages(history, limit=8)
+        recent_messages = self._build_recent_dialogue_messages(
+            history,
+            turn_limit=self.RECENT_DIALOGUE_TURNS,
+        )
         player_claims = [
             item["content"]
             for item in recent_messages
@@ -636,22 +732,38 @@ class NarrativeAI:
             return False
         if self._is_arrival_mode(normalized_action, {}):
             return False
+
         if isinstance(normalized_action, dict) and normalized_action.get("target_kind") == "npc":
+            target_key = normalized_action.get("target_key")
+            target_data = npc_context.get(target_key, {}) if target_key in npc_context else {}
+            if self._is_nonverbal_npc(target_key, target_data):
+                return False
             return True
+
         focus_npc = npc_guide.get("focus_npc") if isinstance(npc_guide, dict) else None
         if focus_npc and focus_npc in npc_context:
+            if self._is_nonverbal_npc(focus_npc, npc_context.get(focus_npc, {})):
+                return False
             return True
+
         text = str(player_input or "").strip()
         if not text:
             return False
         lowered = text.lower()
-        speech_markers = ["“", "\"", "：", ":", "你好", "我是", "请问", "谁", "hello", "hi", "i am", "i'm"]
+        speech_markers = ["\u201c", "\"", "\uff1a", ":", "\u4f60\u597d", "\u6211\u662f", "\u8bf7\u95ee", "\u8c01", "hello", "hi", "i am", "i'm"]
         return any(marker in text for marker in speech_markers[:8]) or any(marker in lowered for marker in speech_markers[8:])
 
     def _build_local_npc_reply(self, player_input: str, npc_guide: dict, npc_context: dict) -> dict:
         focus_npc = npc_guide.get("focus_npc") if isinstance(npc_guide, dict) else None
         npc_data = npc_context.get(focus_npc, {}) if focus_npc in npc_context else {}
         npc_name = focus_npc or "门后的女人"
+
+        if self._is_nonverbal_npc(npc_name, npc_data):
+            return {
+                "narrative": "你对它开口，但那道笔直的人形没有给出任何回答。它没有语言，只有持续不变的注视与缓慢逼近的存在感。",
+                "summary": self._build_default_summary(player_input),
+            }
+
         attitude = str(npc_guide.get("attitude") or npc_data.get("initial_attitude") or "警惕").strip()
         response_strategy = str(npc_guide.get("response_strategy") or "").strip()
         next_line_goal = str(npc_guide.get("next_line_goal") or "").strip()
@@ -659,7 +771,7 @@ class NarrativeAI:
         revealable_info = npc_guide.get("revealable_info", [])
         revealable_info = revealable_info if isinstance(revealable_info, list) else []
         key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
-        runtime_state = npc_data.get("runtime_state", {}) if isinstance(npc_data.get("runtime_state"), dict) else {}
+        runtime_state = npc_data.get("runtime_state", {}) if isinstance(runtime_state := npc_data.get("runtime_state"), dict) else {}
         npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
         conversation_flags = npc_memory.get("conversation_flags", {}) if isinstance(npc_memory.get("conversation_flags"), dict) else {}
         player_facts = npc_memory.get("player_facts", {}) if isinstance(npc_memory.get("player_facts"), dict) else {}
@@ -678,32 +790,28 @@ class NarrativeAI:
 
         preface = "门后安静了一瞬，像是在判断你这句话值不值得相信。"
         if should_open_door:
-            door_line = "随后门闩轻轻一响，门却只松开一道极窄的缝。"
+            door_line = "随后门锁轻轻一响，门却只松开了一道极窄的缝。"
         else:
-            door_line = "门没有开，只是那道贴在门后的呼吸声变得更清楚了一些。"
+            door_line = "门没有开，只是那道贴在门后的呼吸声变得更清晰了一些。"
 
-        if revealable_info:
-            info_key = next((item for item in revealable_info if item in key_info), None)
-        else:
-            info_key = None
-
+        info_key = next((item for item in revealable_info if item in key_info), None) if revealable_info else None
         if info_key:
             clue_text = self._trim_text(str(key_info.get(info_key) or ""), 80)
-            spoken_line = f"“先听着，{clue_text}”"
+            spoken_line = f"\u201c先听着，{clue_text}\u201d"
         elif "name" in next_line_goal.lower() and not conversation_flags.get("knows_player_name"):
-            spoken_line = "“名字。”"
+            spoken_line = "\u201c名字。\u201d"
         elif ("got here" in next_line_goal.lower() or "origin" in next_line_goal.lower()) and not conversation_flags.get("knows_player_origin_claim"):
-            spoken_line = "“你到底是怎么到这里来的？”"
+            spoken_line = "\u201c你到底是怎么到这里来的？\u201d"
         elif ("evidence" in next_line_goal.lower() or "proof" in next_line_goal.lower()) and not conversation_flags.get("evidence_presented"):
-            spoken_line = "“光靠嘴说不够。你有证据吗？”"
+            spoken_line = "\u201c光靠嘴说不够。你有证据吗？\u201d"
         elif "trust" in next_line_goal.lower() or "verify" in next_line_goal.lower():
-            spoken_line = "“这种话谁都能编。你是谁，为什么会在这里？”"
+            spoken_line = "\u201c这种话谁都能编。你是谁，为什么会在这里？\u201d"
         elif "cooperation" in next_line_goal.lower() or "合作" in next_line_goal:
-            spoken_line = "“如果你不是来找死的，就把你知道的先说清楚，我们再谈怎么合作。”"
+            spoken_line = "\u201c如果你不是来找死的，就把你知道的先说清楚，我们再谈怎么合作。\u201d"
         elif "reveal" in next_line_goal.lower():
-            spoken_line = "“我可以告诉你一点事，但你最好先证明自己不是麻烦。”"
+            spoken_line = "\u201c我可以告诉你一点事，但你最好先证明自己不是麻烦。\u201d"
         else:
-            spoken_line = "“我听见了。继续说。”"
+            spoken_line = "\u201c我听见了。继续说。\u201d"
 
         tone = ""
         trimmed_strategy = self._trim_text(self._strip_trailing_punctuation(response_strategy), 24)
@@ -748,6 +856,24 @@ class NarrativeAI:
             or location_context.get("runtime_description")
             or ""
         ).strip()
+
+        if self._is_nonverbal_npc(npc_name, npc_data):
+            arrival_hint = str(
+                location_context.get("active_npc_present_description")
+                or npc_data.get("current_state")
+                or ""
+            ).strip()
+            parts = [f"你来到了{location_name}。"]
+            if base_description:
+                parts.append(base_description)
+            if arrival_hint:
+                parts.append(arrival_hint)
+            narrative = "\n\n".join(part for part in parts if part)
+            return {
+                "narrative": narrative,
+                "summary": f"移动到{location_name}",
+            }
+
         arrival_hint = str(
             npc_data.get("first_appearance")
             or location_context.get("active_npc_present_description")
@@ -762,7 +888,7 @@ class NarrativeAI:
         if arrival_hint:
             parts.append(arrival_hint)
         elif attitude:
-            parts.append(f"{npc_name}显然已经察觉到你的到来，态度{attitude}。")
+            parts.append(f"{npc_name}显然已经察觉到了你的到来，态度{attitude}。")
 
         narrative = "\n\n".join(part for part in parts if part)
         return {
@@ -770,54 +896,44 @@ class NarrativeAI:
             "summary": f"移动到{location_name}",
         }
 
-    def _trim_text(self, value: str, limit: int) -> str:
-        text = str(value or "").strip()
-        if len(text) <= limit:
-            return text
-        return text[: max(0, limit - 3)] + "..."
-
-    def _strip_trailing_punctuation(self, text: str) -> str:
-        return str(text or "").rstrip("。！？!?；;，,、 ")
-
-    def _compact_location_context(self, location_context: dict) -> dict:
-        if not isinstance(location_context, dict):
+    def _get_dialogue_npc_context(self, npc_context: dict) -> dict:
+        if not isinstance(npc_context, dict):
             return {}
         return {
-            "name": location_context.get("name"),
-            "description": self._trim_text(
-                location_context.get("runtime_description", location_context.get("description", "")),
-                160,
-            ),
-            "base_description": self._trim_text(location_context.get("description", ""), 120),
-            "active_npc_present_description": self._trim_text(
-                location_context.get("active_npc_present_description", ""),
-                120,
-            ),
-            "atmosphere": location_context.get("atmosphere"),
+            name: data
+            for name, data in npc_context.items()
+            if not self._is_nonverbal_npc(name, data)
         }
 
-    def _compact_object_context(self, object_context: dict):
-        if not isinstance(object_context, dict):
-            return None
+    def _get_nonverbal_npc_context(self, npc_context: dict) -> dict:
+        if not isinstance(npc_context, dict):
+            return {}
         return {
-            "name": object_context.get("name"),
-            "type": object_context.get("type"),
-            "used_for": object_context.get("used_for"),
-            "success_result": self._trim_text(object_context.get("success_result", ""), 120),
-            "failure_result": self._trim_text(object_context.get("failure_result", ""), 80),
+            name: data
+            for name, data in npc_context.items()
+            if self._is_nonverbal_npc(name, data)
         }
+
+    def _sanitize_npc_prompt_inputs(self, npc_context: dict, npc_action_guide: dict):
+        dialogue_npcs = self._get_dialogue_npc_context(npc_context)
+        nonverbal_npcs = self._get_nonverbal_npc_context(npc_context)
+        sanitized_guide = npc_action_guide if isinstance(npc_action_guide, dict) else {}
+        focus_npc = sanitized_guide.get("focus_npc")
+        if focus_npc and focus_npc not in dialogue_npcs:
+            sanitized_guide = {}
+        return dialogue_npcs, nonverbal_npcs, sanitized_guide
 
     def _compact_npc_context(self, npc_context: dict, npc_action_guide: dict) -> dict:
-        if not isinstance(npc_context, dict) or not npc_context:
+        dialogue_npcs, _, sanitized_guide = self._sanitize_npc_prompt_inputs(npc_context, npc_action_guide)
+        if not dialogue_npcs:
             return {}
-        focus_npc = None
-        if isinstance(npc_action_guide, dict):
-            focus_npc = npc_action_guide.get("focus_npc")
-        if focus_npc and focus_npc in npc_context:
-            source = {focus_npc: npc_context[focus_npc]}
+
+        focus_npc = sanitized_guide.get("focus_npc") if isinstance(sanitized_guide, dict) else None
+        if focus_npc and focus_npc in dialogue_npcs:
+            source = {focus_npc: dialogue_npcs[focus_npc]}
         else:
-            first_key = next(iter(npc_context))
-            source = {first_key: npc_context[first_key]}
+            first_key = next(iter(dialogue_npcs))
+            source = {first_key: dialogue_npcs[first_key]}
 
         compact = {}
         for name, data in source.items():
@@ -833,6 +949,43 @@ class NarrativeAI:
                 "memory": self._compact_npc_memory(npc_memory),
             }
         return compact
+
+    def _is_nonverbal_npc(self, npc_name: str, npc_data: dict) -> bool:
+        return is_threat_entity(npc_name, npc_data)
+
+    def _compact_location_context(self, location_context: dict) -> dict:
+        if not isinstance(location_context, dict):
+            return {}
+        return {
+            "name": location_context.get("name"),
+            "description": self._trim_text(
+                location_context.get("runtime_description", location_context.get("description", "")),
+                160,
+            ),
+            "base_description": self._trim_text(location_context.get("description", ""), 120),
+            "active_npc_present_description": self._trim_text(
+                location_context.get("active_npc_present_description", ""),
+                120,
+            ),
+            "active_threat_present_description": self._trim_text(
+                location_context.get("active_threat_present_description", ""),
+                120,
+            ),
+            "present_threats": list(location_context.get("present_threats", []) or []),
+            "threat_present": bool(location_context.get("threat_present")),
+            "atmosphere": location_context.get("atmosphere"),
+        }
+
+    def _compact_object_context(self, object_context: dict):
+        if not isinstance(object_context, dict):
+            return None
+        return {
+            "name": object_context.get("name"),
+            "type": object_context.get("type"),
+            "used_for": object_context.get("used_for"),
+            "success_result": self._trim_text(object_context.get("success_result", ""), 120),
+            "failure_result": self._trim_text(object_context.get("failure_result", ""), 80),
+        }
 
     def _compact_npc_memory(self, npc_memory: dict) -> dict:
         if not isinstance(npc_memory, dict):
@@ -868,3 +1021,12 @@ class NarrativeAI:
             "success": rule_result.get("success"),
             "result_description": rule_result.get("result_description"),
         }
+
+    def _trim_text(self, value: str, limit: int) -> str:
+        text = str(value or "").strip()
+        if len(text) <= limit:
+            return text
+        return text[: max(0, limit - 3)] + "..."
+
+    def _strip_trailing_punctuation(self, text: str) -> str:
+        return str(text or "").rstrip("。！？!?；;，,、 ")

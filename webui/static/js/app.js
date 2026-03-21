@@ -893,6 +893,7 @@ function renderMap(mapData) {
         const edges = Array.isArray(mapData.edges) ? mapData.edges : [];
         const currentLoc = mapData.current_location;
         const reachable = new Set(Array.isArray(mapData.reachable) ? mapData.reachable : []);
+        const dangerLocations = new Set(Array.isArray(mapData.danger_locations) ? mapData.danger_locations : []);
 
         const keys = Object.keys(locations);
         if (keys.length === 0) {
@@ -1032,6 +1033,7 @@ function renderMap(mapData) {
             const isReachable = reachable.has(key);
             const isVisited = Boolean(loc.visited);
             const isSelected = key === selectedDestination;
+            const isDanger = dangerLocations.has(key);
 
             let nodeClass = "map-node";
             if (isCurrent) {
@@ -1045,6 +1047,9 @@ function renderMap(mapData) {
             }
             if (isSelected) {
                 nodeClass += " map-node--selected";
+            }
+            if (isDanger) {
+                nodeClass += " map-node--danger";
             }
 
             const g = document.createElementNS(ns, "g");

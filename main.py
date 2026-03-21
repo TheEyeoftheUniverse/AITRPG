@@ -15,6 +15,10 @@ import time
 
 @register("aitrpg", "TheEyeoftheUniverse", "AI驱动TRPG跑团系统", "1.2.0")
 class AITRPGPlugin(Star):
+    OPENING_USER_TEXT = "缓缓苏醒"
+    OPENING_KIND = "opening"
+    SUMMARY_PREFIX = "[摘要] "
+    NARRATIVE_FULL_TURNS = 10
     PROGRESS_STEPS = [
         ("rule_intent", "规则AI · 意图解析", True),
         ("rule_adjudication", "规则AI · 动作裁定", True),
@@ -68,6 +72,83 @@ class AITRPGPlugin(Star):
             start_webui_server(app, webui_port, self._webui_shutdown_event)
         )
 
+    def _build_history_message(self, role: str, content: str, kind: str = None) -> dict:
+        message = {"role": role, "content": content}
+        if kind:
+            message["metadata"] = {"aitrpg_kind": kind}
+            message["aitrpg_kind"] = kind
+        return message
+
+    def _build_opening_history_pair(self, opening: str):
+        return (
+            self._build_history_message("user", self.OPENING_USER_TEXT, kind=self.OPENING_KIND),
+            self._build_history_message("assistant", opening, kind=self.OPENING_KIND),
+        )
+
+    def _get_history_message_kind(self, message: dict) -> str:
+        if not isinstance(message, dict):
+            return ""
+        metadata = message.get("metadata")
+        if isinstance(metadata, dict):
+            kind = str(metadata.get("aitrpg_kind") or "").strip()
+            if kind:
+                return kind
+        return str(message.get("aitrpg_kind") or "").strip()
+
+    def _get_history_message_content(self, message: dict) -> str:
+        if not isinstance(message, dict):
+            return ""
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "".join(
+                str(item.get("text") or "")
+                for item in content
+                if isinstance(item, dict) and item.get("type") == "text"
+            )
+        return str(content or "")
+
+    def _is_opening_history_turn(self, user_message: dict, assistant_message: dict) -> bool:
+        if self._get_history_message_kind(user_message) == self.OPENING_KIND:
+            return True
+        if self._get_history_message_kind(assistant_message) == self.OPENING_KIND:
+            return True
+        return self._get_history_message_content(user_message).strip() == self.OPENING_USER_TEXT
+
+    def _build_play_history_turns(self, history: list) -> list:
+        turns = []
+        if not isinstance(history, list):
+            return turns
+
+        idx = 0
+        formal_turn_index = 0
+        while idx + 1 < len(history):
+            user_message = history[idx]
+            assistant_message = history[idx + 1]
+            if not isinstance(user_message, dict) or not isinstance(assistant_message, dict):
+                idx += 1
+                continue
+            if user_message.get("role") != "user" or assistant_message.get("role") != "assistant":
+                idx += 1
+                continue
+
+            is_opening = self._is_opening_history_turn(user_message, assistant_message)
+            if not is_opening:
+                formal_turn_index += 1
+
+            turns.append({
+                "user_index": idx,
+                "assistant_index": idx + 1,
+                "user_message": user_message,
+                "assistant_message": assistant_message,
+                "is_opening": is_opening,
+                "formal_turn_index": formal_turn_index if not is_opening else None,
+            })
+            idx += 2
+
+        return turns
+
     @filter.command("trpg")
     async def start_game(self, event: AstrMessageEvent):
         """列出模组或开始游戏"""
@@ -100,10 +181,11 @@ class AITRPGPlugin(Star):
 
             # 将开场白作为第一组固定对话写入history
             opening = selected["opening"]
+            opening_user_message, opening_assistant_message = self._build_opening_history_pair(opening)
             await conv_mgr.add_message_pair(
                 cid=conv_id,
-                user_message={"role": "user", "content": "缓缓苏醒"},
-                assistant_message={"role": "assistant", "content": opening}
+                user_message=opening_user_message,
+                assistant_message=opening_assistant_message
             )
 
             yield event.plain_result(f"🎲 {selected['name']}\n\n{opening}\n\n请输入你的行动...")
@@ -223,7 +305,7 @@ class AITRPGPlugin(Star):
                 loc_name = target_loc.get("name", move_to)
                 description = str(target_loc.get("runtime_description") or target_loc.get("description") or "").strip()
 
-                if target_loc.get("npc_present"):
+                if target_loc.get("entity_present"):
                     self._skip_progress_step(session_id, "rule_intent", "纯移动，不解析意图")
                     self._skip_progress_step(session_id, "rule_adjudication", "纯移动，不做动作裁定")
                     self._skip_progress_step(session_id, "rule_check", "纯移动，不触发判定")
@@ -392,8 +474,8 @@ class AITRPGPlugin(Star):
         # 将用户输入和完整文案写入AstrBot对话历史
         await conv_mgr.add_message_pair(
             cid=conv_id,
-            user_message={"role": "user", "content": player_input},
-            assistant_message={"role": "assistant", "content": narrative_result["narrative"]}
+            user_message=self._build_history_message("user", player_input),
+            assistant_message=self._build_history_message("assistant", narrative_result["narrative"])
         )
 
         # 超过10轮后，将最老的一轮assistant内容替换为对应的小总结
@@ -469,11 +551,45 @@ class AITRPGPlugin(Star):
             "success": True,
             "result_description": "移动到新场景",
         }
-        rhythm_result = self.rhythm_ai._build_base_result("", rule_plan, state, module_data)
+        use_rhythm_arrival_judgement = self.session_manager.should_use_butler_arrival_judgement(session_id, move_to)
+        if use_rhythm_arrival_judgement:
+            self._start_progress_step(session_id, "rhythm", "鑺傚AI 姝ｅ湪鍒ゆ柇濞佽儊瀹炰綋鐨勫埌鍦哄弽搴?")
+            rhythm_trace_id = f"{session_id}:rhythm"
+            rhythm_result = await self.rhythm_ai.process(
+                intent={
+                    "intent": "move",
+                    "target_kind": "location",
+                    "target_key": move_to,
+                },
+                player_input="",
+                rule_plan=rule_plan,
+                rule_result=rule_result,
+                game_state=state,
+                module_data=module_data,
+                history=history,
+                trace_id=rhythm_trace_id,
+            )
+            self._finish_progress_step(
+                session_id,
+                "rhythm",
+                self.rhythm_ai.pop_call_metric(rhythm_trace_id),
+                "濞佽儊瀹炰綋鍒板満鍒ゆ柇瀹屾垚",
+            )
+            rhythm_result = rhythm_result if isinstance(rhythm_result, dict) else {}
+            soft_changes = rhythm_result.get("world_changes", {})
+            soft_changes = soft_changes if isinstance(soft_changes, dict) else {}
+            rhythm_result["soft_world_changes"] = soft_changes
+            if soft_changes:
+                self.session_manager.update_state(session_id, rhythm_result)
+                state = self.session_manager.get_session(session_id)
+            self._refresh_rhythm_runtime_context(session_id, rhythm_result, module_data)
+        else:
+            rhythm_result = self.rhythm_ai._build_base_result("", rule_plan, state, module_data)
+            rhythm_result["location_context"] = target_loc
+            rhythm_result["world_changes"] = {}
+            rhythm_result["soft_world_changes"] = {}
+
         rhythm_result["arrival_mode"] = True
-        rhythm_result["location_context"] = target_loc
-        rhythm_result["world_changes"] = {}
-        rhythm_result["soft_world_changes"] = {}
 
         self._start_progress_step(session_id, "narrative", "文案AI 正在生成到场叙述")
         narrative_trace_id = f"{session_id}:narrative"
@@ -508,31 +624,43 @@ class AITRPGPlugin(Star):
         history = json.loads(conversation.history)
 
         # 统计assistant消息索引
-        assistant_idxs = [i for i, m in enumerate(history) if m.get("role") == "assistant"]
-        if len(assistant_idxs) <= 10:
+        turns = [turn for turn in self._build_play_history_turns(history) if not turn.get("is_opening")]
+        if len(turns) <= self.NARRATIVE_FULL_TURNS:
+            return
+
+        compressible_turns = turns[:-self.NARRATIVE_FULL_TURNS]
+        target_turn = None
+        for turn in compressible_turns:
+            assistant_message = turn.get("assistant_message") or {}
+            current_content = self._get_history_message_content(assistant_message).strip()
+            if not current_content.startswith(self.SUMMARY_PREFIX):
+                target_turn = turn
+                break
+
+        if not target_turn:
             return
 
         # 找到最老的尚未压缩的轮次
-        oldest_idx = assistant_idxs[0]
-        current_content = history[oldest_idx].get("content", "")
-        if current_content.startswith("[摘要]"):
-            return
+        assistant_index = target_turn["assistant_index"]
+        current_content = self._get_history_message_content(history[assistant_index]).strip()
+        round_index = int(target_turn["formal_turn_index"] or 0) - 1
 
         # 从session_manager的narrative_history中取对应轮次的summary
         state = self.session_manager.get_session(session_id)
         narrative_history = list(state.get("narrative_history", []))
-        # assistant_idxs[0]对应第1轮，narrative_history[0]对应第1轮
-        round_index = 0  # 第一条未压缩的assistant消息对应第0个记录
         if round_index < len(narrative_history):
             entry = narrative_history[round_index]
             summary = entry.get("summary", "") if isinstance(entry, dict) else str(entry)
         else:
             summary = current_content[:30]
 
-        history[oldest_idx]["content"] = f"[摘要] {summary}"
+        summary = str(summary or "").strip() or current_content[:30]
+        history[assistant_index]["content"] = f"{self.SUMMARY_PREFIX}{summary}"
         conversation.history = json.dumps(history, ensure_ascii=False)
         await conv_mgr.update_conversation(conv_id, conversation)
-        logger.info(f"[AITRPG] 已压缩第{oldest_idx}条历史记录为摘要")
+        logger.info(
+            f"[AITRPG] compressed assistant turn={target_turn['formal_turn_index']} to summary, history_index={assistant_index}"
+        )
 
     def _begin_action_progress(self, session_id: str, player_input: str, move_to: str = None):
         started_at = time.perf_counter()
@@ -854,6 +982,14 @@ class AITRPGPlugin(Star):
                 lines.append(f"  • {clue}")
 
         return "\n".join(lines)
+
+    def _refresh_rhythm_runtime_context(self, session_id: str, rhythm_result: dict, module_data: dict):
+        state = self.session_manager.get_session(session_id) or {}
+        if not isinstance(rhythm_result, dict):
+            return state
+        rhythm_result["location_context"] = self.session_manager.get_location_context(session_id)
+        rhythm_result["npc_context"] = self.rhythm_ai._build_scene_npc_context(state, module_data)
+        return state
 
     async def terminate(self):
         """插件销毁"""

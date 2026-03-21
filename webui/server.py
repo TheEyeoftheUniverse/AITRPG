@@ -284,6 +284,7 @@ def create_trpg_app(plugin):
                 plugin.session_manager.create_session(session_id, selected["filename"])
 
                 opening = selected["opening"]
+                opening_user_message, opening_assistant_message = plugin._build_opening_history_pair(opening)
 
                 # 尝试在 AstrBot 中创建新对话并写入开场白；失败时降级为仅Web会话
                 conv_id = None
@@ -293,8 +294,8 @@ def create_trpg_app(plugin):
                     await conv_mgr.switch_conversation(session_id, conv_id)
                     await conv_mgr.add_message_pair(
                         cid=conv_id,
-                        user_message={"role": "user", "content": "缓缓苏醒"},
-                        assistant_message={"role": "assistant", "content": opening}
+                        user_message=opening_user_message,
+                        assistant_message=opening_assistant_message
                     )
                 except Exception as e:
                     logger.warning(f"[AITRPG WebUI] 初始化 AstrBot 对话失败，将继续使用仅 Web 会话模式: {e}")
@@ -303,10 +304,7 @@ def create_trpg_app(plugin):
                 web_session["game_started"] = True
                 web_session["module_index"] = module_index
                 web_session["conv_id"] = conv_id
-                web_session["history"] = [
-                    {"role": "user", "content": "缓缓苏醒"},
-                    {"role": "assistant", "content": opening}
-                ]
+                web_session["history"] = [opening_user_message, opening_assistant_message]
                 web_session["chat_messages"] = [
                     {"role": "assistant", "content": opening}
                 ]
@@ -370,15 +368,20 @@ def create_trpg_app(plugin):
                         conv_mgr = plugin.context.conversation_manager
                         await conv_mgr.add_message_pair(
                             cid=conv_id,
-                            user_message={"role": "user", "content": display_input},
-                            assistant_message={"role": "assistant", "content": narrative}
+                            user_message=plugin._build_history_message("user", display_input),
+                            assistant_message=plugin._build_history_message("assistant", narrative)
+                        )
+                        await plugin._compress_history_if_needed(
+                            conv_mgr=conv_mgr,
+                            session_id=session_id,
+                            conv_id=conv_id,
                         )
                     except Exception as e:
                         logger.warning(f"[AITRPG WebUI] 同步对话记录失败: {e}")
 
                 # 更新 web 会话历史
-                web_session["history"].append({"role": "user", "content": display_input})
-                web_session["history"].append({"role": "assistant", "content": narrative})
+                web_session["history"].append(plugin._build_history_message("user", display_input))
+                web_session["history"].append(plugin._build_history_message("assistant", narrative))
 
                 # 限制历史长度（保留最近 20 条对话）
                 if len(web_session["history"]) > 40:

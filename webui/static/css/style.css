@@ -803,6 +803,16 @@ html, body {
     filter: drop-shadow(0 0 4px var(--accent));
 }
 
+.map-node--danger rect {
+    fill: #7a1f1f;
+    stroke: #ff5c5c;
+    stroke-width: 2;
+}
+
+.map-node--danger text {
+    fill: #fff5f5;
+}
+
 /* Move indicator */
 .move-indicator {
     display: flex;

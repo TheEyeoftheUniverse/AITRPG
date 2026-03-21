@@ -1,6 +1,6 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
-from ..game_state.location_context import build_runtime_location_context
+from ..game_state.location_context import build_runtime_location_context, is_threat_entity
 from .usage_metrics import extract_usage_metrics
 
 import json
@@ -358,10 +358,20 @@ class RuleAI:
                     "skill": None,
                     "difficulty": "无需判定",
                 }
+            access_block_reason = self._get_object_access_block_reason(normalized["object_context"], game_state)
+            if access_block_reason:
+                feasibility["ok"] = False
+                feasibility["reason"] = feasibility["reason"] or access_block_reason
+                normalized["check"] = {
+                    "required": False,
+                    "skill": None,
+                    "difficulty": "无需判定",
+                }
 
         if isinstance(normalized.get("object_context"), dict) and not (
-            normalized["object_context"].get("requires")
-            and not self._requirements_met(normalized["object_context"].get("requires"), game_state)
+            (normalized["object_context"].get("requires")
+             and not self._requirements_met(normalized["object_context"].get("requires"), game_state))
+            or self._get_object_access_block_reason(normalized["object_context"], game_state)
         ):
             normalized["check"] = self._build_object_check(normalized["object_context"])
 
@@ -481,6 +491,15 @@ class RuleAI:
                 plan["check"]["difficulty"] = "无需判定"
                 return plan
 
+            access_block_reason = self._get_object_access_block_reason(object_context, game_state)
+            if access_block_reason:
+                plan["feasibility"]["ok"] = False
+                plan["feasibility"]["reason"] = access_block_reason
+                plan["check"]["required"] = False
+                plan["check"]["skill"] = None
+                plan["check"]["difficulty"] = "无需判定"
+                return plan
+
             if object_data.get("type") == "clue":
                 plan["on_success"]["discover_clues"].append(object_key)
             if object_data.get("can_take") and verb in {"take", "pickup", "obtain", "loot"}:
@@ -510,6 +529,30 @@ class RuleAI:
             return False
         return True
 
+    def _get_object_access_block_reason(self, object_context: dict, game_state: dict) -> str:
+        if not isinstance(object_context, dict):
+            return None
+
+        object_location = str(object_context.get("location") or "").strip()
+        object_name = str(object_context.get("name") or "目标物品").strip()
+
+        if object_context.get("requires_butler_gone"):
+            butler_location = self._get_npc_location("管家", game_state)
+            if object_location and butler_location == object_location:
+                return f"{object_name}还在管家的看守范围内，你现在无法靠近"
+
+        requires_npc_absent = self._ensure_list(object_context.get("requires_npc_absent"))
+        for npc_name in requires_npc_absent:
+            if self._get_npc_location(str(npc_name), game_state) == object_location:
+                return f"{npc_name}还在这里，你暂时无法接近{object_name}"
+
+        return None
+
+    def _get_npc_location(self, npc_name: str, game_state: dict) -> str:
+        world_npcs = game_state.get("world_state", {}).get("npcs", {})
+        npc_state = world_npcs.get(npc_name, {}) if isinstance(world_npcs, dict) else {}
+        return str(npc_state.get("location") or "").strip()
+
     def _get_scene_objects(self, game_state: dict, module_data: dict) -> Dict[str, Dict[str, Any]]:
         current_location = game_state.get("current_location", "master_bedroom")
         location_data = module_data.get("locations", {}).get(current_location, {})
@@ -526,6 +569,8 @@ class RuleAI:
         npc_states = game_state.get("world_state", {}).get("npcs", {})
         scene_npcs = {}
         for npc_name, npc_data in module_data.get("npcs", {}).items():
+            if is_threat_entity(npc_name, npc_data):
+                continue
             runtime_state = npc_states.get(npc_name, {})
             npc_location = runtime_state.get("location", npc_data.get("location"))
             if npc_location != current_location:
