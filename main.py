@@ -402,12 +402,21 @@ class AITRPGPlugin(Star):
                     message="场景移动完成",
                 )
 
+            # === 输入分类：对话 vs 行动 ===
+            is_dialogue = self.rule_ai.is_dialogue_input(player_input)
+
             # === 第一步：规则AI - 意图解析 ===
-            logger.info("[AITRPG] 调用规则AI进行意图解析...")
-            self._start_progress_step(session_id, "rule_intent", "规则AI 正在解析意图")
-            intent_trace_id = f"{session_id}:rule_intent"
-            intent = await self.rule_ai.parse_intent(player_input, trace_id=intent_trace_id)
-            self._finish_progress_step(session_id, "rule_intent", self.rule_ai.pop_call_metric(intent_trace_id), "意图解析完成")
+            if is_dialogue:
+                # 硬编码：带引号 → 对话意图，跳过LLM意图解析
+                logger.info("[AITRPG] 检测到引号，硬编码为对话意图")
+                self._skip_progress_step(session_id, "rule_intent", "引号输入 → 对话（硬编码）")
+                intent = {"intent": "talk", "target": None, "category": "对话"}
+            else:
+                logger.info("[AITRPG] 调用规则AI进行意图解析...")
+                self._start_progress_step(session_id, "rule_intent", "规则AI 正在解析意图")
+                intent_trace_id = f"{session_id}:rule_intent"
+                intent = await self.rule_ai.parse_intent(player_input, trace_id=intent_trace_id)
+                self._finish_progress_step(session_id, "rule_intent", self.rule_ai.pop_call_metric(intent_trace_id), "意图解析完成")
             logger.info(f"[AITRPG] 意图解析结果: {intent}")
 
             # === 第二步：规则AI - 动作裁定与硬变化规划 ===
@@ -422,6 +431,7 @@ class AITRPGPlugin(Star):
                 trace_id=adjudication_trace_id,
             )
             self._finish_progress_step(session_id, "rule_adjudication", self.rule_ai.pop_call_metric(adjudication_trace_id), "动作裁定完成")
+            rule_plan["input_classification"] = "dialogue" if is_dialogue else "action"
             logger.info(f"[AITRPG] 动作裁定结果: {rule_plan}")
 
             # === 第三步：规则AI - 执行检定 ===

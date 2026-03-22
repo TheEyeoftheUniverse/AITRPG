@@ -310,9 +310,16 @@ class NarrativeAI:
         creative_additions = rhythm_result.get("creative_additions", {})
         continuity_flag = rhythm_result.get("continuity_flag")
 
+        input_classification = rule_plan.get("input_classification", "action")
+        if input_classification == "dialogue":
+            classification_note = "dialogue（系统识别：引号内是玩家角色的台词，不是行动）"
+        else:
+            classification_note = "action（系统识别：玩家在执行行动）"
+
         player_block = (
             "Player turn input:\n"
             f"- raw_input: {self._trim_text(player_input, 120)}\n"
+            f"- input_type: {classification_note}\n"
             f"- normalized_action: {json.dumps(normalized_action, ensure_ascii=False)}"
         )
 

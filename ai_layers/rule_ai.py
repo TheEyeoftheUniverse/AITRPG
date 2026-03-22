@@ -17,6 +17,9 @@ from typing import Any, Dict
 class RuleAI:
     """Rule layer: action parsing, feasibility, checks, and hard outcomes."""
 
+    # 引号字符集：中文引号、日式方框引号、ASCII双引号
+    DIALOGUE_QUOTE_CHARS = set('\u201c\u201d\u2018\u2019\u300c\u300d\u300e\u300f\u0022')
+
     def __init__(self, context: Context, provider_name: str = None, config: dict = None):
         self.context = context
         self.provider_name = provider_name
@@ -29,6 +32,11 @@ class RuleAI:
         if not trace_id:
             return {}
         return self._call_metrics.pop(trace_id, {})
+
+    def is_dialogue_input(self, text: str) -> bool:
+        """检测玩家输入是否包含引号（中文引号、日式方框引号、ASCII双引号），
+        如果包含则硬编码判定为"对话"，防止AI将台词误判为实际行动。"""
+        return any(ch in self.DIALOGUE_QUOTE_CHARS for ch in (text or ""))
 
     def _load_rules(self):
         return """
@@ -307,6 +315,18 @@ class RuleAI:
             "- normalized_action.target_kind 可使用 threat_entity。\n"
             "- 输出JSON时，请在顶层加入 threat_entity_context 字段。\n"
         )
+        if self.is_dialogue_input(player_input):
+            prompt += (
+                "\n# 输入分类：对话\n"
+                "系统检测到玩家输入包含引号，判定为【对话】。"
+                "引号内的文字是玩家角色说出的台词，不是实际行动。"
+                "请将 normalized_action.verb 设为 \"talk\"，不要将台词内容理解为行动指令。\n"
+            )
+        else:
+            prompt += (
+                "\n# 输入分类：行动\n"
+                "系统判定玩家输入为【行动】。请将其作为玩家角色的实际动作或行为处理。\n"
+            )
         return prompt
 
     def _normalize_action_plan(
@@ -735,6 +755,10 @@ class RuleAI:
         lowered = text.lower()
         intent_name = str((intent or {}).get("intent") or "").lower()
 
+        # 硬编码：带引号 → 对话
+        if self.is_dialogue_input(text):
+            return "talk"
+
         if any(keyword in text for keyword in ["拿", "捡", "拾取", "带走"]) or any(keyword in lowered for keyword in ["take", "pick", "grab", "loot"]):
             return "take"
         if any(keyword in text for keyword in ["烧", "点燃", "焚毁"]) or "burn" in lowered:
@@ -768,6 +792,9 @@ class RuleAI:
         text = str(player_input or "").strip()
         if not text:
             return False
+        # 硬编码：带引号 → 对话
+        if self.is_dialogue_input(text):
+            return True
         lowered = text.lower()
         speech_markers = [
             "“", "\"", "：", ":", "你好", "您好", "我是", "我叫", "请问", "谁在里面",

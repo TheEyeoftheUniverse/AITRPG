@@ -162,6 +162,14 @@ class RhythmAI:
             "# Output note\n"
             "You may add npc_action_guide alongside the existing JSON fields."
         )
+        input_classification = (rule_plan or {}).get("input_classification", "action")
+        if input_classification == "dialogue":
+            prompt += (
+                "\n\n# 输入分类：对话\n"
+                "系统检测到玩家输入包含引号，判定为【对话】。"
+                "引号内是玩家角色的台词，不是实际行动。"
+                "请基于对话内容评估NPC反应和节奏推进。\n"
+            )
         return prompt
 
     def _should_suppress_npc_dialogue(self, npc_name: str, npc_data: dict) -> bool:
