@@ -4,10 +4,14 @@ import copy
 import random
 from collections import deque
 from typing import Dict, Any, List, Set
-from .location_context import build_runtime_location_context, get_module_all_entities
+from .location_context import build_runtime_location_context, get_module_all_entities, get_module_npcs
 
 
 BUTLER_NPC_NAME = "管家"
+LIVING_ROOM_FIRST_ENTRY_WARNING_MESSAGE = (
+    "你刚想踏进客厅深处，那道背对入口的人形便极轻地调整了站姿，像是已经把你的存在纳入了视野。"
+    "直觉告诉你，现在贸然进去只会立刻引来它的注意。你暂时退了回来，也许该先想办法把它引开。"
+)
 OUTSIDE_LOST_WARNING_MESSAGE = (
     "你刚想推开厨房的后门，门外那片灰蒙蒙的平原便先一步压进了你的视野。"
     "那里没有道路，没有参照物，也看不出任何尽头。直觉告诉你，从这里逃走绝不是正确的选择。"
@@ -171,6 +175,7 @@ class SessionManager:
     def _build_initial_npc_state(self, module_data: Dict[str, Any]) -> Dict[str, Any]:
         """根据模组NPC定义生成初始世界状态"""
         npc_states = {}
+        module_npcs = get_module_npcs(module_data)
         for npc_name, npc_data in get_module_all_entities(module_data).items():
             npc_states[npc_name] = {
                 "attitude": npc_data.get("initial_attitude", "中立"),
@@ -181,16 +186,20 @@ class SessionManager:
                 npc_states[npc_name]["location"] = npc_data["location"]
             if npc_name == BUTLER_NPC_NAME:
                 npc_states[npc_name]["chase_state"] = self._build_default_butler_chase_state()
+            # 非威胁NPC初始化同伴状态
+            if npc_name in module_npcs:
+                npc_states[npc_name]["companion_state"] = "inactive"
         return npc_states
 
     def _build_initial_npc_memory(self) -> Dict[str, Any]:
         return {
             "player_facts": {},
-            "evidence_seen": [],
-            "promises": [],
             "topics_discussed": [],
             "pending_questions": [],
-            "conversation_flags": {},
+            "answered_questions": [],
+            "promises": [],
+            "evidence_seen": [],
+            "trust_signals": [],
             "last_impression": {},
         }
 
@@ -234,9 +243,10 @@ class SessionManager:
         module_data = module_data or state.get("module_data") or self.default_module_data
         world_state = state.setdefault("world_state", {})
         npc_states = world_state.setdefault("npcs", {})
-        module_npcs = get_module_all_entities(module_data) if isinstance(module_data, dict) else {}
+        module_npcs_map = get_module_all_entities(module_data) if isinstance(module_data, dict) else {}
+        friendly_npcs = set(get_module_npcs(module_data).keys()) if isinstance(module_data, dict) else set()
 
-        for npc_name, npc_data in module_npcs.items():
+        for npc_name, npc_data in module_npcs_map.items():
             runtime_state = npc_states.setdefault(npc_name, {})
             if not isinstance(runtime_state, dict):
                 runtime_state = {}
@@ -246,6 +256,8 @@ class SessionManager:
             runtime_state.setdefault("memory", self._build_initial_npc_memory())
             if npc_data.get("location"):
                 runtime_state.setdefault("location", npc_data.get("location"))
+            if npc_name in friendly_npcs:
+                runtime_state.setdefault("companion_state", "inactive")
             if npc_name == BUTLER_NPC_NAME:
                 chase_state = runtime_state.setdefault("chase_state", {})
                 if not isinstance(chase_state, dict):
@@ -278,6 +290,22 @@ class SessionManager:
         self._ensure_runtime_defaults(state)
         npc_states = state.setdefault("world_state", {}).setdefault("npcs", {})
         return npc_states.setdefault(BUTLER_NPC_NAME, {})
+
+    def _get_module_special_message(self, session_id: str, key: str, default: str = "") -> str:
+        module_data = self.get_module_data(session_id)
+        if not isinstance(module_data, dict):
+            return default
+
+        special_messages = module_data.get("special_messages", {})
+        if not isinstance(special_messages, dict):
+            return default
+
+        message = special_messages.get(key)
+        if isinstance(message, str):
+            message = message.strip()
+            if message:
+                return message
+        return default
 
     def get_butler_state(self, session_id: str) -> Dict[str, Any]:
         state = self.sessions.get(session_id)
@@ -312,6 +340,107 @@ class SessionManager:
         if target_key != self.get_butler_location(session_id):
             return False
         return target_key == "living_room"
+
+    # ── 同伴状态管理 ──
+
+    def set_companion_state(self, session_id: str, npc_name: str, target_state: str) -> Dict[str, Any]:
+        """设置NPC同伴状态。需要信任达到高信任门阈值。"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return {"success": False, "message": "会话不存在"}
+
+        npc_state = state["world_state"].get("npcs", {}).get(npc_name)
+        if not npc_state or not isinstance(npc_state, dict):
+            return {"success": False, "message": f"NPC {npc_name} 不存在"}
+
+        current_companion = npc_state.get("companion_state")
+        if current_companion is None:
+            return {"success": False, "message": f"{npc_name} 不是可同伴化的NPC"}
+
+        # 检查信任门阈值
+        module_data = self.get_module_data(session_id)
+        npc_module = (module_data or {}).get("npcs", {}).get(npc_name, {})
+        trust_gates = npc_module.get("trust_gates", {})
+        high_min = float(trust_gates.get("high", {}).get("min", npc_module.get("trust_threshold", 0.5)))
+        trust_level = float(npc_state.get("trust_level", 0.0))
+
+        if trust_level < high_min:
+            return {"success": False, "message": f"{npc_name}的信任不足，拒绝了你的请求"}
+
+        # 首次解锁
+        if current_companion == "inactive":
+            npc_state["companion_state"] = target_state
+        else:
+            npc_state["companion_state"] = target_state
+
+        # follow时同步位置
+        if target_state == "follow":
+            npc_state["location"] = state["current_location"]
+
+        return {"success": True, "message": f"{npc_name}状态变更为{target_state}", "new_state": target_state}
+
+    def get_companion_state(self, session_id: str, npc_name: str) -> str:
+        """获取NPC同伴状态。"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return "inactive"
+        return state["world_state"].get("npcs", {}).get(npc_name, {}).get("companion_state", "inactive")
+
+    def get_following_companions(self, session_id: str) -> list:
+        """获取所有处于follow状态的NPC名列表。"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return []
+        companions = []
+        for npc_name, npc_data in state["world_state"].get("npcs", {}).items():
+            if isinstance(npc_data, dict) and npc_data.get("companion_state") == "follow":
+                companions.append(npc_name)
+        return companions
+
+    def execute_bait_action(self, session_id: str, bait_entity: str, target_room: str = None) -> Dict[str, Any]:
+        """执行诱饵行动：将管家引到有门房间，然后关门阻隔。"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return {"success": False, "message": "会话不存在"}
+
+        module_data = self.get_module_data(session_id)
+        locations = module_data.get("locations", {})
+
+        # 确定诱饵位置
+        if bait_entity == "player":
+            bait_location = state["current_location"]
+        else:
+            npc_state = state["world_state"].get("npcs", {}).get(bait_entity, {})
+            bait_location = npc_state.get("location")
+
+        if not bait_location:
+            return {"success": False, "message": "无法确定诱饵位置"}
+
+        room = target_room or bait_location
+        room_data = locations.get(room, {})
+        if not room_data.get("has_door"):
+            return {"success": False, "message": "这个房间没有门可以关"}
+
+        # 管家追踪目标切换到诱饵
+        butler_state = self._get_butler_runtime_state(state)
+        chase_state = butler_state.get("chase_state", {})
+        chase_state["target"] = bait_entity
+        chase_state["last_target_location"] = room
+        chase_state["active"] = True
+
+        return {"success": True, "butler_target": bait_entity, "bait_room": room}
+
+    def unblock_butler(self, session_id: str, new_target: str = "player"):
+        """当新活物进入管家视野时，解除管家的blocked状态。"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return
+        butler_state = self._get_butler_runtime_state(state)
+        chase_state = butler_state.get("chase_state", {})
+        if chase_state.get("status") == "blocked":
+            chase_state["status"] = "pursuing"
+            chase_state["target"] = new_target
+            chase_state.pop("blocked_at", None)
 
     def has_butler_living_room_warning(self, session_id: str) -> bool:
         state = self.sessions.get(session_id)
@@ -722,25 +851,46 @@ class SessionManager:
             chase_state["last_target_location"] = None
             return {}
 
+        # 管家被门阻隔时不移动
+        if chase_state.get("status") == "blocked":
+            return {}
+
         chase_state["status"] = "pursuing"
-        chase_state["target"] = "player"
+        target = chase_state.get("target", "player")
 
         current_round = int(state.get("round_count", 0) or 0)
-        current_player_location = state.get("current_location")
+        if target == "player":
+            target_location = state.get("current_location")
+        else:
+            # 追踪NPC诱饵
+            target_npc_state = state.get("world_state", {}).get("npcs", {}).get(target, {})
+            target_location = target_npc_state.get("location", state.get("current_location"))
+
         activation_round = chase_state.get("activation_round")
         if activation_round is None:
             chase_state["activation_round"] = current_round
-            chase_state["last_target_location"] = current_player_location
+            chase_state["last_target_location"] = target_location
             return {}
 
         if activation_round == current_round:
-            chase_state["last_target_location"] = current_player_location
+            chase_state["last_target_location"] = target_location
             return {}
 
-        destination = chase_state.get("last_target_location") or current_player_location
+        destination = chase_state.get("last_target_location") or target_location
         previous_butler_location = butler_state.get("location")
+
+        # 检查目标是否在有门房间内 - 管家被门阻隔
+        module_data = state.get("module_data", {})
+        dest_location_data = module_data.get("locations", {}).get(destination, {})
+        if dest_location_data.get("has_door") and destination != previous_butler_location:
+            # 目标进入了有门的房间，管家被阻隔在门外
+            chase_state["status"] = "blocked"
+            chase_state["blocked_at"] = destination
+            chase_state["last_target_location"] = target_location
+            return {}
+
         butler_state["location"] = destination
-        chase_state["last_target_location"] = current_player_location
+        chase_state["last_target_location"] = target_location
 
         if destination and destination != previous_butler_location:
             return {
@@ -918,10 +1068,28 @@ class SessionManager:
                     if npc_name not in npc_state:
                         npc_state[npc_name] = {}
                     if isinstance(update, dict):
+                        # 提取trust_delta（瞬态字段，不存入状态）
+                        trust_delta = update.pop("trust_delta", None)
                         self._deep_merge_dict(npc_state[npc_name], update)
                         npc_state[npc_name].setdefault("memory", self._build_initial_npc_memory())
+                        # 应用信任增量
+                        if isinstance(trust_delta, (int, float)):
+                            current_trust = float(npc_state[npc_name].get("trust_level", 0.0))
+                            npc_state[npc_name]["trust_level"] = round(
+                                max(0.0, min(1.0, current_trust + trust_delta)), 2
+                            )
                     elif isinstance(update, str):
                         npc_state[npc_name]["location"] = update
+
+                # 自动清除已回答的pending_questions
+                for npc_name, npc_data in npc_state.items():
+                    memory = npc_data.get("memory")
+                    if not isinstance(memory, dict):
+                        continue
+                    answered = set(memory.get("answered_questions", []))
+                    if answered:
+                        pending = memory.get("pending_questions", [])
+                        memory["pending_questions"] = [q for q in pending if q not in answered]
 
             if "threat_entity_updates" in changes and isinstance(changes["threat_entity_updates"], dict):
                 npc_state = state["world_state"].setdefault("npcs", {})
@@ -1214,7 +1382,11 @@ class SessionManager:
             return {
                 "success": False,
                 "warning_blocked": True,
-                "message": "你刚想踏进客厅深处，那道背对入口的人形便极轻地调整了站姿，像是已经把你的存在纳入了视野。直觉告诉你，现在贸然进去只会立刻引来它的注意。你暂时退了回来，也许该先想办法把它引开。",
+                "message": self._get_module_special_message(
+                    session_id,
+                    "first_living_room_entry_blocked",
+                    LIVING_ROOM_FIRST_ENTRY_WARNING_MESSAGE,
+                ),
             }
 
         if self.should_warn_on_outside_entry(session_id, current, target_key):
@@ -1222,7 +1394,11 @@ class SessionManager:
             return {
                 "success": False,
                 "warning_blocked": True,
-                "message": OUTSIDE_LOST_WARNING_MESSAGE,
+                "message": self._get_module_special_message(
+                    session_id,
+                    "first_outside_entry_blocked",
+                    OUTSIDE_LOST_WARNING_MESSAGE,
+                ),
             }
 
         dodge_result = None
@@ -1244,6 +1420,11 @@ class SessionManager:
 
         previous_location = current
         state["current_location"] = target_key
+
+        # 跟随状态的NPC一起移动
+        for npc_name, npc_data in state["world_state"].get("npcs", {}).items():
+            if isinstance(npc_data, dict) and npc_data.get("companion_state") == "follow":
+                npc_data["location"] = target_key
 
         # 标记已访问
         if target_key not in state["visited_locations"]:
@@ -1347,6 +1528,12 @@ class SessionManager:
                 "visited": is_visited,
             }
 
+        # 应用持久化的地图腐蚀
+        corrupt_map = state.get("world_state", {}).get("corrupt_map", {})
+        for key, corrupted_name in corrupt_map.items():
+            if key in visible_locations:
+                visible_locations[key]["display_name"] = corrupted_name
+
         # 构建可见边
         edges = []
         visible_keys = set(visible_locations.keys())
@@ -1366,6 +1553,16 @@ class SessionManager:
                             "locked": is_locked,
                         })
 
+        # 收集NPC位置（非威胁实体，仅玩家已访问过的位置）
+        npc_marker_locations = set()
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        module_npcs = get_module_npcs(module_data)
+        for npc_name in module_npcs:
+            npc_runtime = npc_states.get(npc_name, {})
+            npc_loc = npc_runtime.get("location", module_npcs[npc_name].get("location"))
+            if npc_loc and npc_loc in visible_locations and npc_loc in visited_locations:
+                npc_marker_locations.add(npc_loc)
+
         return {
             "locations": visible_locations,
             "edges": edges,
@@ -1373,6 +1570,10 @@ class SessionManager:
             "reachable": list(reachable),
             "danger_locations": [
                 location_key for location_key in danger_locations
+                if location_key in visible_locations
+            ],
+            "npc_locations": [
+                location_key for location_key in npc_marker_locations
                 if location_key in visible_locations
             ],
         }

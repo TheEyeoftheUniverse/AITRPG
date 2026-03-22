@@ -183,6 +183,9 @@ async function startGame(moduleIndex) {
         showGameUI(() => {
             try {
                 addMessage("assistant", data.opening || "");
+                // 处理内联标记 (glitch/echo-text → span)
+                const lastMsg = document.getElementById("chat-messages").lastElementChild;
+                processInlineMarkers(lastMsg);
             } catch (messageErr) {
                 console.error("Failed to render opening message:", messageErr);
             }
@@ -193,6 +196,11 @@ async function startGame(moduleIndex) {
                 } catch (mapErr) {
                     console.error("Failed to render map:", mapErr, currentMapData);
                 }
+            }
+
+            // 开场白演出效果
+            if (data.theatrical_effects && data.theatrical_effects.length) {
+                setTimeout(() => processTheatricalEffects(data.theatrical_effects), 500);
             }
         });
     } catch (uiErr) {
@@ -601,6 +609,15 @@ async function sendAction() {
             // 显示叙述
             addMessage("assistant", data.narrative);
 
+            // 处理内联标记 (glitch/echo-text → span)
+            const lastNarrMsg = document.getElementById("chat-messages").lastElementChild;
+            processInlineMarkers(lastNarrMsg);
+
+            // 执行演出效果
+            if (data.theatrical_effects && data.theatrical_effects.length) {
+                await processTheatricalEffects(data.theatrical_effects);
+            }
+
             // 更新左侧面板
             updateRulePanel(data.rule_plan, data.rule_result, data.hard_changes);
             updateRhythmPanel(data.rhythm_result);
@@ -915,6 +932,161 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// ─── 演出效果系统 ───
+
+function theatricalSleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 将内联标记 (%%GLITCH:n%% / %%ECHO:n%%) 转换为可动画的 span
+function processInlineMarkers(msgElement) {
+    const bubble = msgElement.querySelector(".message-bubble");
+    if (!bubble) return;
+    let html = bubble.innerHTML;
+    html = html.replace(/%%GLITCH:(\d+)%%([\s\S]*?)%%\/GLITCH%%/g,
+        '<span class="glitch-inline" data-inline-id="$1">$2</span>');
+    html = html.replace(/%%ECHO:(\d+)%%([\s\S]*?)%%\/ECHO%%/g,
+        '<span class="echo-inline" data-inline-id="$1">$2</span>');
+    bubble.innerHTML = html;
+}
+
+async function processTheatricalEffects(effects) {
+    if (!effects || !effects.length) return;
+    let prevType = null;
+    let i = 0;
+    while (i < effects.length) {
+        const effect = effects[i];
+
+        // 连续 map_corrupt 批量执行：收集后一次性闪烁+替换
+        if (effect.type === "map_corrupt") {
+            const batch = [];
+            while (i < effects.length && effects[i].type === "map_corrupt") {
+                batch.push(effects[i]);
+                i++;
+            }
+            const delay = (prevType === "paragraph" && batch[0].type === "paragraph") ? 500 : 800;
+            await theatricalSleep(delay);
+            await effectMapCorruptBatch(batch);
+            prevType = "map_corrupt";
+            continue;
+        }
+
+        // 连续 paragraph 之间只等 500ms，其他情况等 800ms
+        const delay = (prevType === "paragraph" && effect.type === "paragraph") ? 500 : 800;
+        await theatricalSleep(delay);
+        switch (effect.type) {
+            case "paragraph":
+                await effectParagraph(effect.content);
+                break;
+            case "system_echo":
+                await effectSystemEcho(effect.content);
+                break;
+            case "inject_input":
+                await effectInjectInput(effect.content);
+                break;
+            case "glitch":
+                await effectGlitch(effect.inline_id, effect.content);
+                break;
+            case "echo_text":
+                await effectEchoText(effect.inline_id, effect.phases);
+                break;
+        }
+        prevType = effect.type;
+        i++;
+    }
+}
+
+// 1. paragraph — 额外独立消息
+async function effectParagraph(content) {
+    if (!content) return;
+    addMessage("assistant", content);
+    await theatricalSleep(100);
+}
+
+// 2. system-echo — 伪系统消息 (红色)
+async function effectSystemEcho(content) {
+    if (!content) return;
+    const container = document.getElementById("chat-messages");
+    const msg = document.createElement("div");
+    msg.className = "message system-echo";
+    msg.innerHTML = `<div class="system-echo-bubble">${escapeHtml(content)}</div>`;
+    container.appendChild(msg);
+    scrollToBottom();
+    await theatricalSleep(300);
+}
+
+// 3. inject-input — 幽灵打字
+async function effectInjectInput(content) {
+    if (!content) return;
+    const input = document.getElementById("chat-input");
+    for (let i = 0; i < content.length; i++) {
+        input.value += content[i];
+        input.style.height = "auto";
+        input.style.height = Math.min(input.scrollHeight, 120) + "px";
+        await theatricalSleep(50 + Math.random() * 80);
+    }
+}
+
+// 4. glitch — 原文内联乱码闪烁
+async function effectGlitch(inlineId, content) {
+    const span = document.querySelector(`.glitch-inline[data-inline-id="${inlineId}"]`);
+    if (!span || !content) return;
+
+    span.classList.add("glitching");
+    const glitchChars = "█▓▒░╫╬╪╩╦╠╣╚╗╔║═─│┤┐└┘┌├";
+    const cycles = 6;
+    for (let c = 0; c < cycles; c++) {
+        let corrupted = "";
+        for (let i = 0; i < content.length; i++) {
+            if (Math.random() < 0.3) {
+                corrupted += glitchChars[Math.floor(Math.random() * glitchChars.length)];
+            } else {
+                corrupted += content[i];
+            }
+        }
+        span.textContent = corrupted;
+        await theatricalSleep(100 + Math.random() * 100);
+    }
+    span.textContent = content;
+    span.classList.remove("glitching");
+    await theatricalSleep(200);
+}
+
+// 5. echo-text — 原文内联渐进展示
+async function effectEchoText(inlineId, phases) {
+    const span = document.querySelector(`.echo-inline[data-inline-id="${inlineId}"]`);
+    if (!span || !phases || !phases.length) return;
+
+    for (let i = 0; i < phases.length; i++) {
+        span.classList.add("echo-fading");
+        await theatricalSleep(250);
+        span.textContent = phases[i];
+        span.classList.remove("echo-fading");
+        if (i < phases.length - 1) {
+            await theatricalSleep(1500);
+        }
+    }
+    await theatricalSleep(300);
+}
+
+// 6. map-corrupt — 地图节点批量污染（一次闪烁，全部替换）
+async function effectMapCorruptBatch(batch) {
+    if (!currentMapData || !currentMapData.locations) return;
+    const svg = document.getElementById("map-svg");
+    if (svg) {
+        svg.classList.add("map-corrupt-flash");
+        await theatricalSleep(350);
+        svg.classList.remove("map-corrupt-flash");
+    }
+    for (const effect of batch) {
+        if (currentMapData.locations[effect.target]) {
+            currentMapData.locations[effect.target].display_name = effect.content;
+        }
+    }
+    renderMap(currentMapData);
+    await theatricalSleep(300);
+}
+
 // ─── 地图渲染与交互 ───
 
 function renderMap(mapData) {
@@ -935,6 +1107,7 @@ function renderMap(mapData) {
         const currentLoc = mapData.current_location;
         const reachable = new Set(Array.isArray(mapData.reachable) ? mapData.reachable : []);
         const dangerLocations = new Set(Array.isArray(mapData.danger_locations) ? mapData.danger_locations : []);
+        const npcLocations = new Set(Array.isArray(mapData.npc_locations) ? mapData.npc_locations : []);
 
         const keys = Object.keys(locations);
         if (keys.length === 0) {
@@ -1075,6 +1248,7 @@ function renderMap(mapData) {
             const isVisited = Boolean(loc.visited);
             const isSelected = key === selectedDestination;
             const isDanger = dangerLocations.has(key);
+            const isNpc = npcLocations.has(key);
 
             let nodeClass = "map-node";
             if (isCurrent) {
@@ -1091,6 +1265,9 @@ function renderMap(mapData) {
             }
             if (isDanger) {
                 nodeClass += " map-node--danger";
+            }
+            if (isNpc) {
+                nodeClass += " map-node--npc";
             }
 
             const g = document.createElementNS(ns, "g");

@@ -147,6 +147,14 @@ html, body {
     font-size: 15px;
 }
 
+.overlay-hint {
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.7;
+    margin: -20px auto 24px;
+    max-width: 520px;
+}
+
 .module-list {
     display: flex;
     flex-direction: column;
@@ -813,6 +821,23 @@ html, body {
     fill: #fff5f5;
 }
 
+.map-node--npc rect {
+    fill: #1f4a1f;
+    stroke: #4caf50;
+    stroke-width: 2;
+}
+
+.map-node--npc text {
+    fill: #e8f5e9;
+}
+
+.map-node--danger.map-node--npc rect {
+    fill: #4a1f1f;
+    stroke: #4caf50;
+    stroke-width: 2;
+    outline: 2px solid #ff5c5c;
+}
+
 /* Move indicator */
 .move-indicator {
     display: flex;
@@ -965,4 +990,57 @@ html, body {
     .side-panel.collapsed {
         box-shadow: none;
     }
+}
+
+/* ═══════════════════════════════════════
+   演出效果 (Theatrical Effects)
+   ═══════════════════════════════════════ */
+
+/* system-echo: 居中伪系统消息 (红色恐怖风格) */
+.message.system-echo {
+    align-self: center;
+    max-width: 70%;
+}
+.system-echo-bubble {
+    padding: 8px 16px;
+    background: rgba(220, 53, 69, 0.06);
+    border: 1px solid rgba(220, 53, 69, 0.18);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    color: #dc3545;
+    text-align: center;
+    font-style: italic;
+    white-space: pre-wrap;
+    animation: fadeIn 0.5s ease;
+}
+
+/* glitch-inline: 原文内联乱码闪烁 */
+.glitch-inline {
+}
+.glitch-inline.glitching {
+    font-family: "Courier New", Consolas, monospace;
+    animation: glitchFlicker 0.12s infinite alternate;
+}
+@keyframes glitchFlicker {
+    0%   { opacity: 1; text-shadow: none; }
+    50%  { opacity: 0.88; }
+    100% { opacity: 1; text-shadow: 2px 0 #e05c6c, -2px 0 #6c7ee1; }
+}
+
+/* echo-inline: 原文内联渐进展示 */
+.echo-inline {
+    transition: opacity 0.3s ease;
+}
+.echo-inline.echo-fading {
+    opacity: 0.15;
+}
+
+/* map-corrupt: 地图闪烁 */
+.map-corrupt-flash {
+    animation: mapCorruptFlash 0.35s ease;
+}
+@keyframes mapCorruptFlash {
+    0%   { filter: none; }
+    40%  { filter: brightness(1.8) hue-rotate(180deg); }
+    100% { filter: none; }
 }

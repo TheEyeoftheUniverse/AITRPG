@@ -253,18 +253,6 @@ class RuleAI:
             changes["inventory_remove"] = inventory_remove
         if isinstance(flags, dict) and flags:
             changes["flags"] = flags
-        memory_update = self._build_npc_memory_update(
-            player_input=player_input,
-            adjudication_result=adjudication_result,
-            rule_result=rule_result,
-            game_state=game_state or {},
-        )
-        if memory_update:
-            for npc_name, update in memory_update.items():
-                existing = npc_updates.get(npc_name, {})
-                if not isinstance(existing, dict):
-                    existing = {}
-                npc_updates[npc_name] = self._merge_nested_dict(existing, update)
         if isinstance(npc_updates, dict) and npc_updates:
             pure_npc = {}
             threat_updates = {}
@@ -816,244 +804,6 @@ class RuleAI:
             "difficulty": self._normalize_difficulty(object_context.get("difficulty")),
         }
 
-    def _build_npc_memory_update(
-        self,
-        player_input: str,
-        adjudication_result: dict,
-        rule_result: dict,
-        game_state: dict
-    ) -> dict:
-        adjudication_result = adjudication_result if isinstance(adjudication_result, dict) else {}
-        normalized_action = adjudication_result.get("normalized_action", {})
-        if not isinstance(normalized_action, dict):
-            return {}
-        if normalized_action.get("target_kind") != "npc":
-            return {}
-        if rule_result and rule_result.get("success") is False:
-            return {}
-
-        target_npc = normalized_action.get("target_key")
-        npc_context = adjudication_result.get("npc_context", {})
-        if not target_npc or target_npc not in npc_context:
-            return {}
-
-        existing_memory = {}
-        npc_data = npc_context.get(target_npc, {}) if isinstance(npc_context, dict) else {}
-        if isinstance(npc_data, dict):
-            runtime_state = npc_data.get("runtime_state", {})
-            if isinstance(runtime_state, dict) and isinstance(runtime_state.get("memory"), dict):
-                existing_memory = runtime_state.get("memory", {})
-
-        round_num = int((game_state or {}).get("round_count", 0)) + 1
-        memory_delta = {
-            "player_facts": {},
-            "evidence_seen": [],
-            "promises": [],
-            "topics_discussed": [],
-            "pending_questions": [],
-            "conversation_flags": {},
-            "last_impression": {},
-        }
-
-        facts = self._extract_player_fact_entries(player_input, round_num)
-        memory_delta["player_facts"].update(facts)
-        if "name" in facts:
-            memory_delta["conversation_flags"]["knows_player_name"] = True
-            memory_delta["conversation_flags"]["identity_discussed"] = True
-            memory_delta["topics_discussed"].append("identity")
-        if "origin" in facts:
-            memory_delta["conversation_flags"]["knows_player_origin_claim"] = True
-            memory_delta["conversation_flags"]["origin_discussed"] = True
-            memory_delta["topics_discussed"].append("origin")
-        if "goal" in facts:
-            memory_delta["conversation_flags"]["knows_player_goal"] = True
-            memory_delta["conversation_flags"]["goal_discussed"] = True
-            memory_delta["topics_discussed"].append("goal")
-
-        promises = self._extract_promises(player_input, round_num)
-        if promises:
-            memory_delta["promises"].extend(promises)
-            memory_delta["topics_discussed"].append("cooperation")
-
-        evidence_seen = self._extract_evidence_seen(player_input, adjudication_result, round_num)
-        if evidence_seen:
-            memory_delta["evidence_seen"].extend(evidence_seen)
-            memory_delta["conversation_flags"]["evidence_presented"] = True
-            memory_delta["topics_discussed"].append("evidence")
-
-        preview_memory = self._merge_nested_dict(
-            existing_memory,
-            {
-                key: value
-                for key, value in memory_delta.items()
-                if key != "pending_questions"
-            },
-        )
-        pending_questions = self._derive_pending_questions(preview_memory)
-        memory_delta["pending_questions"] = pending_questions
-
-        trust_shift = 0.0
-        if facts:
-            trust_shift += 0.05
-        if promises:
-            trust_shift += 0.05
-        if evidence_seen:
-            trust_shift += 0.1
-        if trust_shift:
-            memory_delta["last_impression"] = {
-                "trust_shift": round(trust_shift, 2),
-                "reason": "player_shared_verifiable_or_personal_information",
-                "source_round": round_num,
-            }
-
-        memory_delta["topics_discussed"] = list(dict.fromkeys(memory_delta["topics_discussed"]))
-        explicit_updates = {"pending_questions"}
-        memory_delta = {
-            key: value
-            for key, value in memory_delta.items()
-            if value or key in explicit_updates
-        }
-        if not memory_delta:
-            return {}
-
-        return {
-            target_npc: {
-                "memory": memory_delta,
-            }
-        }
-
-    def _extract_player_fact_entries(self, player_input: str, round_num: int) -> dict:
-        text = str(player_input or "").strip()
-        if not text:
-            return {}
-
-        facts = {}
-        name_value = self._extract_name_claim(text)
-        if name_value:
-            facts["name"] = {
-                "value": name_value,
-                "status": "claimed",
-                "source_round": round_num,
-            }
-
-        origin_value = self._extract_origin_claim(text)
-        if origin_value:
-            facts["origin"] = {
-                "value": origin_value,
-                "status": "claimed",
-                "source_round": round_num,
-            }
-
-        goal_value = self._extract_goal_claim(text)
-        if goal_value:
-            facts["goal"] = {
-                "value": goal_value,
-                "status": "claimed",
-                "source_round": round_num,
-            }
-
-        return facts
-
-    def _extract_name_claim(self, text: str) -> str:
-        markers = ["我叫", "叫我", "我的名字是", "你可以叫我", "i am ", "i'm ", "my name is "]
-        lowered = text.lower()
-        if any(marker in lowered for marker in ["i am ", "i'm ", "my name is "]):
-            return text
-        if any(marker in text for marker in markers[:4]):
-            return text
-        return ""
-
-    def _extract_origin_claim(self, text: str) -> str:
-        markers = [
-            "不知道怎么来",
-            "不知道为什么在这里",
-            "来到这里",
-            "醒来就在这里",
-            "被困在这里",
-            "莫名其妙来到",
-            "how i got here",
-            "woke up here",
-        ]
-        lowered = text.lower()
-        if any(marker in text for marker in markers[:6]) or any(marker in lowered for marker in markers[6:]):
-            return text
-        return ""
-
-    def _extract_goal_claim(self, text: str) -> str:
-        markers = [
-            "想离开",
-            "想出去",
-            "想搞清楚",
-            "要离开",
-            "要调查",
-            "想合作",
-            "help you",
-            "work together",
-            "leave here",
-            "find out",
-        ]
-        lowered = text.lower()
-        if any(marker in text for marker in markers[:6]) or any(marker in lowered for marker in markers[6:]):
-            return text
-        return ""
-
-    def _extract_promises(self, text: str, round_num: int) -> list:
-        text = str(text or "").strip()
-        if not text:
-            return []
-        promise_markers = ["我会", "我可以帮", "一起离开", "一起合作", "我会帮你", "我来引开", "i can help", "we can work together"]
-        lowered = text.lower()
-        if any(marker in text for marker in promise_markers[:6]) or any(marker in lowered for marker in promise_markers[6:]):
-            return [{
-                "content": text,
-                "source_round": round_num,
-            }]
-        return []
-
-    def _extract_evidence_seen(self, text: str, adjudication_result: dict, round_num: int) -> list:
-        text = str(text or "").strip()
-        if not text:
-            return []
-
-        known_objects = []
-        npc_context = adjudication_result.get("npc_context", {})
-        if isinstance(npc_context, dict):
-            for npc_data in npc_context.values():
-                if not isinstance(npc_data, dict):
-                    continue
-                trust_actions = npc_data.get("trust_actions", {})
-                if isinstance(trust_actions, dict):
-                    known_objects.extend(trust_actions.keys())
-
-        candidate_markers = [
-            "房产广告",
-            "广告",
-            "蓝图",
-            "笔记",
-            "证据",
-            "照片",
-        ]
-        for marker in candidate_markers:
-            if marker in text:
-                return [{
-                    "key": marker,
-                    "source_round": round_num,
-                }]
-        return []
-
-    def _derive_pending_questions(self, memory_delta: dict) -> list:
-        flags = memory_delta.get("conversation_flags", {})
-        questions = []
-        if not flags.get("knows_player_name"):
-            questions.append("player_name")
-        if not flags.get("knows_player_origin_claim"):
-            questions.append("player_origin")
-        if flags.get("knows_player_name") and flags.get("knows_player_origin_claim") and not flags.get("evidence_presented"):
-            questions.append("supporting_evidence")
-        if flags.get("knows_player_origin_claim") and not flags.get("knows_player_goal"):
-            questions.append("player_goal")
-        return questions
-
     def _merge_nested_dict(self, base: dict, incoming: dict) -> dict:
         merged = dict(base or {})
         for key, value in (incoming or {}).items():
@@ -1104,3 +854,30 @@ class RuleAI:
         if success:
             return "成功"
         return "失败"
+
+    def resolve_assist_check(self, player_result: dict, npc_name: str, npc_skills: dict, skill: str, difficulty: str) -> dict:
+        """NPC协助检定：NPC独立投骰，任一成功则整体成功。"""
+        npc_skill_value = int(npc_skills.get(skill, 30))
+        threshold = self._get_threshold(npc_skill_value, difficulty)
+        roll = random.randint(1, 100)
+        npc_success = roll <= threshold
+
+        npc_roll = {
+            "npc_name": npc_name,
+            "skill": skill,
+            "npc_skill": npc_skill_value,
+            "threshold": threshold,
+            "roll": roll,
+            "success": npc_success,
+        }
+
+        combined_success = player_result.get("success", False) or npc_success
+        logger.info(f"[RuleAI] assist_check: {npc_name} {skill} {roll}/{threshold} {'成功' if npc_success else '失败'}, 综合: {'成功' if combined_success else '失败'}")
+
+        result = dict(player_result)
+        result["success"] = combined_success
+        result["assist"] = True
+        result["npc_roll"] = npc_roll
+        if not player_result.get("success") and npc_success:
+            result["result_description"] = f"{npc_name}协助成功"
+        return result

@@ -159,8 +159,35 @@ class RhythmAI:
             '  "revealable_info": ["keys that may be naturally revealed this turn"],\n'
             '  "should_open_door": false\n'
             "}\n\n"
+            "# NPC记忆更新任务\n"
+            "当场景中有可交互NPC，且玩家本轮行动涉及NPC互动（对话、展示证据、做出承诺等）时，你必须输出 npc_memory_updates。\n"
+            "如果本轮没有NPC互动，不输出此字段。\n\n"
+            "## 记忆更新规则\n"
+            "- 仅基于本轮玩家实际说了什么/做了什么来提取事实，不要推测。\n"
+            "- player_facts: 玩家明确声称或展示的具体信息。key为类别（name/origin/goal/identity等），value为 {\"value\": \"具体内容\", \"status\": \"claimed\", \"source_round\": 当前轮次}。\n"
+            "- topics_discussed: 本轮涉及的话题关键词列表（如 [\"identity\", \"origin\"]）。\n"
+            "- answered_questions: 如果NPC之前有 pending_questions（见NPC记忆），且玩家本轮回答了其中某个问题，将该问题key移入此列表。这会自动从pending_questions中清除。\n"
+            "- promises: 玩家做出的承诺 [{\"content\": \"承诺内容\", \"source_round\": 当前轮次}]。\n"
+            "- evidence_seen: 玩家展示的证据 [{\"key\": \"证据名\", \"source_round\": 当前轮次}]。\n"
+            "- trust_signals: 描述本轮信任变化信号 [{\"signal\": \"信号描述\", \"round\": 当前轮次, \"direction\": \"+\"或\"-\"}]。\n"
+            "- last_impression: {\"focus\": \"NPC本轮关注重点\", \"attitude_snapshot\": \"当前态度\", \"source_round\": 当前轮次}\n"
+            "- trust_change_reason: 一个字符串key，必须来自NPC数据中的 available_trust_reasons 列表。如果本轮没有值得改变信任的行为，不输出此字段。\n"
+            "- 只输出有内容的字段，空列表/空对象的字段可以省略。\n\n"
+            "## npc_memory_updates schema\n"
+            "{\n"
+            '  "NPC名": {\n'
+            '    "player_facts": {},\n'
+            '    "topics_discussed": [],\n'
+            '    "answered_questions": [],\n'
+            '    "promises": [],\n'
+            '    "evidence_seen": [],\n'
+            '    "trust_signals": [],\n'
+            '    "last_impression": {},\n'
+            '    "trust_change_reason": "available_trust_reasons中的key"\n'
+            "  }\n"
+            "}\n\n"
             "# Output note\n"
-            "You may add npc_action_guide alongside the existing JSON fields."
+            "You may add npc_action_guide and npc_memory_updates alongside the existing JSON fields."
         )
         input_classification = (rule_plan or {}).get("input_classification", "action")
         if input_classification == "dialogue":
@@ -208,12 +235,9 @@ class RhythmAI:
         attitude = runtime_state.get("attitude", npc_data.get("initial_attitude", "neutral"))
         raw_trust = runtime_state.get("trust_level", 0.0)
         trust_level = float(raw_trust) if isinstance(raw_trust, (int, float, str)) else 0.0
-        raw_threshold = npc_data.get("trust_threshold", 0.5)
-        trust_threshold = float(raw_threshold) if isinstance(raw_threshold, (int, float, str)) else 0.5
-        npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
-        player_facts = npc_memory.get("player_facts", {}) if isinstance(npc_memory.get("player_facts"), dict) else {}
-        conversation_flags = npc_memory.get("conversation_flags", {}) if isinstance(npc_memory.get("conversation_flags"), dict) else {}
-        pending_questions = npc_memory.get("pending_questions", []) if isinstance(npc_memory.get("pending_questions"), list) else []
+        trust_gates = npc_data.get("trust_gates", {})
+        high_min = float(trust_gates.get("high", {}).get("min", npc_data.get("trust_threshold", 0.5)))
+        medium_min = float(trust_gates.get("medium", {}).get("min", 0.2))
         dialogue_guide = (
             npc_data.get("dialogue_guide", {})
             if isinstance(npc_data.get("dialogue_guide"), dict)
@@ -221,9 +245,8 @@ class RhythmAI:
         )
         key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
         lower_input = str(player_input or "").lower()
-        next_line_goal = self._derive_next_line_goal(conversation_flags, pending_questions, player_facts, trust_level, trust_threshold)
 
-        if trust_level >= trust_threshold:
+        if trust_level >= high_min:
             response_strategy = (
                 dialogue_guide.get("high_trust")
                 or dialogue_guide.get("cooperation")
@@ -232,9 +255,7 @@ class RhythmAI:
             )
             revealable_info = list(key_info.keys())
             should_open_door = "open" in lower_input or "cooperate" in lower_input
-            if not next_line_goal:
-                next_line_goal = "Confirm the cooperation plan and share key information."
-        elif trust_level >= max(0.2, trust_threshold / 2):
+        elif trust_level >= medium_min:
             response_strategy = (
                 dialogue_guide.get("medium_trust")
                 or npc_data.get("current_state")
@@ -242,8 +263,6 @@ class RhythmAI:
             )
             revealable_info = list(key_info.keys())[:1]
             should_open_door = False
-            if not next_line_goal:
-                next_line_goal = "Test the player's intent and maybe reveal one useful clue."
         else:
             response_strategy = (
                 dialogue_guide.get("low_trust")
@@ -252,14 +271,12 @@ class RhythmAI:
             )
             revealable_info = []
             should_open_door = False
-            if not next_line_goal:
-                next_line_goal = "Verify who the player is and whether they can be trusted."
 
         return {
             "focus_npc": focused_npc,
             "attitude": attitude,
             "response_strategy": response_strategy,
-            "next_line_goal": next_line_goal,
+            "next_line_goal": "",
             "revealable_info": revealable_info,
             "should_open_door": should_open_door,
         }
@@ -311,6 +328,9 @@ class RhythmAI:
         npc_context = normalized.get("npc_context", {})
         if focus_npc and self._should_suppress_npc_dialogue(focus_npc, npc_context.get(focus_npc, {})):
             normalized["npc_action_guide"] = {}
+
+        if not isinstance(normalized.get("npc_memory_updates"), dict):
+            normalized["npc_memory_updates"] = {}
 
         return normalized
 
@@ -370,7 +390,11 @@ class RhythmAI:
                 "attitude": runtime_state.get("attitude", npc_data.get("initial_attitude", "neutral")),
                 "trust_level": runtime_state.get("trust_level", 0.0),
                 "memory": runtime_state.get("memory", {}),
+                "companion_state": runtime_state.get("companion_state", "inactive"),
             }
+            trust_map = npc_data.get("trust_map", {})
+            if isinstance(trust_map, dict) and trust_map:
+                merged_npc["available_trust_reasons"] = list(trust_map.keys())
             scene_npcs[npc_name] = merged_npc
 
         return scene_npcs
@@ -433,65 +457,10 @@ class RhythmAI:
             "npc_action_guide": npc_action_guide,
             "atmosphere_guide": atmosphere_guide if isinstance(atmosphere_guide, dict) else {},
             "stage_assessment": "Stable pacing",
-            "world_changes": self._build_npc_soft_memory_changes(npc_action_guide),
+            "world_changes": {},
             "creative_additions": {},
             "continuity_flag": None,
-        }
-
-    def _derive_next_line_goal(
-        self,
-        conversation_flags: dict,
-        pending_questions: list,
-        player_facts: dict,
-        trust_level: float,
-        trust_threshold: float,
-    ) -> str:
-        if pending_questions:
-            mapping = {
-                "player_name": "Confirm the player's name.",
-                "player_origin": "Confirm how the player got here.",
-                "supporting_evidence": "Ask the player for evidence that supports their story.",
-                "player_goal": "Confirm what the player wants to do next.",
-            }
-            first_pending = pending_questions[0]
-            return mapping.get(first_pending, str(first_pending))
-
-        if not conversation_flags.get("knows_player_name"):
-            return "Confirm the player's name."
-        if not conversation_flags.get("knows_player_origin_claim"):
-            return "Confirm how the player got here."
-        if not conversation_flags.get("evidence_presented") and trust_level < trust_threshold:
-            return "Ask the player for proof before trusting them."
-        if not conversation_flags.get("knows_player_goal"):
-            return "Ask what the player wants from the NPC."
-        if player_facts and trust_level >= max(0.2, trust_threshold / 2):
-            return "React to the player's known story and move the exchange forward."
-        return ""
-
-    def _build_npc_soft_memory_changes(self, npc_action_guide: dict) -> dict:
-        if not isinstance(npc_action_guide, dict):
-            return {}
-        focus_npc = npc_action_guide.get("focus_npc")
-        if not focus_npc:
-            return {}
-
-        next_line_goal = str(npc_action_guide.get("next_line_goal") or "").strip()
-        memory_update = {
-            "last_impression": {
-                "focus": next_line_goal,
-            } if next_line_goal else {},
-        }
-        memory_update = {key: value for key, value in memory_update.items() if value}
-        if not memory_update:
-            return {}
-
-        update_key = "threat_entity_updates" if is_threat_entity(focus_npc) else "npc_updates"
-        return {
-            update_key: {
-                focus_npc: {
-                    "memory": memory_update,
-                }
-            }
+            "npc_memory_updates": {},
         }
 
     def _merge_world_changes(self, base_changes: dict, result_changes: dict) -> dict:

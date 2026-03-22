@@ -14,6 +14,10 @@
     "target_rounds": 30,
     "description": "模组简介"
   },
+  "special_messages": {
+    "first_living_room_entry_blocked": "首次尝试进入客厅深处时的阻挡提示",
+    "first_outside_entry_blocked": "首次尝试从后门离开时的阻挡提示"
+  },
   "locations": {
     "location_id": {
       "name": "地点名称",
@@ -79,6 +83,10 @@
 4. 在AstrBot的WebUI中，将配置项 `module_name` 设置为你的模组名称（不含.json后缀）
 
 ## 字段说明
+
+### special_messages（特殊提示）
+- `first_living_room_entry_blocked`: 可选。玩家第一次试图进入客厅深处、但尚未正式闯入时显示的阻挡提示
+- `first_outside_entry_blocked`: 可选。玩家第一次试图从厨房后门进入室外时显示的阻挡提示
 
 ### locations（地点）
 - `location_id`: 地点的唯一标识符（用于代码引用）

@@ -441,6 +441,24 @@ class AITRPGPlugin(Star):
                 adjudication_result=rule_plan,
                 player_state=state["player"]
             )
+
+            # 协助检定：如果场景中有follow状态的NPC且本轮需要检定
+            check_data = (rule_plan or {}).get("check", {})
+            if check_data.get("required") and check_data.get("skill"):
+                following = self.session_manager.get_following_companions(session_id)
+                for companion_name in following:
+                    npc_module = module_data.get("npcs", {}).get(companion_name, {})
+                    npc_skills = npc_module.get("skills", {})
+                    if npc_skills:
+                        rule_result = self.rule_ai.resolve_assist_check(
+                            player_result=rule_result,
+                            npc_name=companion_name,
+                            npc_skills=npc_skills,
+                            skill=check_data["skill"],
+                            difficulty=self.rule_ai._normalize_difficulty(check_data.get("difficulty")),
+                        )
+                        break  # 当前只支持一个NPC协助
+
             self._finish_progress_step(session_id, "rule_check", {}, "规则判定完成")
             logger.info(f"[AITRPG] 规则判定结果: {rule_result}")
 
@@ -459,6 +477,21 @@ class AITRPGPlugin(Star):
                     ),
                 )
             logger.info(f"[AITRPG] 规则层硬变化: {hard_changes}")
+
+            # === 处理同伴指令 ===
+            companion_cmd = (rule_plan or {}).get("companion_command", {})
+            if isinstance(companion_cmd, dict) and companion_cmd.get("command") and companion_cmd.get("target_npc"):
+                cmd_target = companion_cmd["target_npc"]
+                cmd_action = companion_cmd["command"]
+                if cmd_action in ("follow", "wait", "bait"):
+                    companion_result = self.session_manager.set_companion_state(session_id, cmd_target, cmd_action)
+                    logger.info(f"[AITRPG] 同伴指令: {cmd_target} -> {cmd_action}, 结果: {companion_result}")
+                    if companion_result.get("success"):
+                        hard_changes.setdefault("npc_updates", {}).setdefault(cmd_target, {})["companion_state"] = cmd_action
+                        # 诱饵指令：执行诱饵行动
+                        if cmd_action == "bait":
+                            bait_result = self.session_manager.execute_bait_action(session_id, cmd_target)
+                            logger.info(f"[AITRPG] 诱饵行动结果: {bait_result}")
 
             # === 第四步：节奏AI - 节奏评估与软变化补充 ===
             logger.info("[AITRPG] 调用节奏AI进行节奏评估...")
@@ -481,6 +514,11 @@ class AITRPGPlugin(Star):
             soft_changes = rhythm_result.get("world_changes", {})
             soft_changes = soft_changes if isinstance(soft_changes, dict) else {}
             merged_changes = self._merge_world_changes(hard_changes, soft_changes)
+
+            # 将RhythmAI的npc_memory_updates合并到world_changes中
+            self._apply_memory_updates(rhythm_result, merged_changes)
+            # 根据trust_change_reason查模组trust_map，计算信任增量
+            self._apply_trust_changes(rhythm_result, module_data, merged_changes)
 
             rhythm_result["feasible"] = bool(rule_plan.get("feasibility", {}).get("ok", True))
             if not rhythm_result.get("hint"):
@@ -1097,6 +1135,74 @@ class AITRPGPlugin(Star):
         finalized = dict(result or {})
         finalized["telemetry"] = self.get_action_progress(session_id)
         return finalized
+
+    def _apply_memory_updates(self, rhythm_result: dict, merged_changes: dict):
+        """将RhythmAI输出的npc_memory_updates合并到merged_changes的npc_updates中。"""
+        memory_updates = rhythm_result.get("npc_memory_updates", {})
+        if not isinstance(memory_updates, dict):
+            return
+
+        npc_updates = merged_changes.setdefault("npc_updates", {})
+
+        for npc_name, updates in memory_updates.items():
+            if not isinstance(updates, dict):
+                continue
+
+            npc_entry = npc_updates.setdefault(npc_name, {})
+            if not isinstance(npc_entry, dict):
+                npc_entry = {}
+                npc_updates[npc_name] = npc_entry
+            memory_entry = npc_entry.setdefault("memory", {})
+
+            # Merge player_facts
+            if isinstance(updates.get("player_facts"), dict):
+                memory_entry.setdefault("player_facts", {}).update(updates["player_facts"])
+
+            # Merge list fields (append, deduplicate)
+            for list_key in ("topics_discussed", "promises", "evidence_seen", "trust_signals"):
+                items = updates.get(list_key, [])
+                if isinstance(items, list) and items:
+                    existing = memory_entry.setdefault(list_key, [])
+                    for item in items:
+                        if item not in existing:
+                            existing.append(item)
+
+            # Pass through answered_questions for pending_questions cleanup in session_manager
+            answered = updates.get("answered_questions", [])
+            if isinstance(answered, list) and answered:
+                existing_answered = memory_entry.setdefault("answered_questions", [])
+                for item in answered:
+                    if item not in existing_answered:
+                        existing_answered.append(item)
+
+            # last_impression (overwrite)
+            if isinstance(updates.get("last_impression"), dict) and updates["last_impression"]:
+                memory_entry["last_impression"] = updates["last_impression"]
+
+    def _apply_trust_changes(self, rhythm_result: dict, module_data: dict, merged_changes: dict):
+        """根据RhythmAI输出的trust_change_reason查模组trust_map，写入trust_delta。"""
+        memory_updates = rhythm_result.get("npc_memory_updates", {})
+        if not isinstance(memory_updates, dict):
+            return
+
+        npc_updates = merged_changes.setdefault("npc_updates", {})
+        npcs_module = (module_data or {}).get("npcs", {})
+
+        for npc_name, updates in memory_updates.items():
+            if not isinstance(updates, dict):
+                continue
+            reason = updates.get("trust_change_reason")
+            if not reason or not isinstance(reason, str):
+                continue
+            trust_map = npcs_module.get(npc_name, {}).get("trust_map", {})
+            delta = trust_map.get(reason)
+            if delta is None:
+                continue
+            npc_entry = npc_updates.setdefault(npc_name, {})
+            if not isinstance(npc_entry, dict):
+                npc_entry = {}
+                npc_updates[npc_name] = npc_entry
+            npc_entry["trust_delta"] = delta
 
     def _merge_world_changes(self, hard_changes: dict, soft_changes: dict) -> dict:
         """合并规则层硬变化与节奏层软变化，避免状态更新分散在多处。"""

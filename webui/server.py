@@ -10,6 +10,7 @@ from quart import Quart, render_template, request, jsonify, make_response
 
 from astrbot.api import logger
 from ..game_state.save_store import JsonSaveStore
+from ..theatrical_parser import parse_theatrical_tags
 
 
 async def _is_port_available(port: int) -> bool:
@@ -283,7 +284,21 @@ def create_trpg_app(plugin):
                 # 创建会话并加载模组
                 plugin.session_manager.create_session(session_id, selected["filename"])
 
+                # 预清洗所有地点描述中的演出标签，防止AI看到原始标签
+                module_data = plugin.session_manager.get_module_data(session_id)
+                location_theatrical = {}
+                for loc_key, loc_data in module_data.get("locations", {}).items():
+                    desc = loc_data.get("description", "")
+                    if desc:
+                        parsed_desc = parse_theatrical_tags(desc)
+                        if parsed_desc["effects"]:
+                            location_theatrical[loc_key] = parsed_desc["effects"]
+                            loc_data["description"] = parsed_desc["clean_text"]
+
                 opening = selected["opening"]
+                parsed_opening = parse_theatrical_tags(opening)
+                opening = parsed_opening["clean_text"]
+                opening_effects = parsed_opening["effects"]
                 opening_user_message, opening_assistant_message = plugin._build_opening_history_pair(opening)
 
                 # 尝试在 AstrBot 中创建新对话并写入开场白；失败时降级为仅Web会话
@@ -304,6 +319,8 @@ def create_trpg_app(plugin):
                 web_session["game_started"] = True
                 web_session["module_index"] = module_index
                 web_session["conv_id"] = conv_id
+                web_session["location_theatrical"] = location_theatrical
+                web_session["theatrical_played_locations"] = []
                 web_session["history"] = [opening_user_message, opening_assistant_message]
                 web_session["chat_messages"] = [
                     {"role": "assistant", "content": opening}
@@ -317,6 +334,7 @@ def create_trpg_app(plugin):
                 return jsonify({
                     "success": True,
                     "opening": opening,
+                    "theatrical_effects": opening_effects,
                     "module_name": selected["name"],
                     "game_state": _serialize_state(state),
                     "map_data": map_data
@@ -360,6 +378,11 @@ def create_trpg_app(plugin):
                 narrative = result["narrative_result"]["narrative"]
                 summary = result["narrative_result"]["summary"]
 
+                # 解析演出效果标签
+                parsed = parse_theatrical_tags(narrative)
+                narrative = parsed["clean_text"]
+                theatrical_effects = parsed["effects"]
+
                 # 同步到 AstrBot 对话记录
                 conv_id = web_session.get("conv_id")
                 display_input = player_input or (f"[移动到{move_to}]" if move_to else "")
@@ -396,7 +419,24 @@ def create_trpg_app(plugin):
                 plugin.session_manager.add_narrative_summary(session_id, display_input, narrative, summary)
 
                 state = plugin.session_manager.get_session(session_id)
+
+                # 持久化 map_corrupt 效果到会话状态
+                corrupt_entries = {e["target"]: e["content"] for e in theatrical_effects if e.get("type") == "map_corrupt"}
+                if corrupt_entries:
+                    ws = state.setdefault("world_state", {})
+                    ws.setdefault("corrupt_map", {}).update(corrupt_entries)
+
                 map_data = plugin.session_manager.get_map_data(session_id)
+
+                # 地点描述中的演出效果（首次访问时触发，效果已在游戏启动时预提取）
+                if move_to and state and state.get("current_location") == move_to:
+                    played = web_session.setdefault("theatrical_played_locations", [])
+                    if move_to not in played:
+                        loc_effects = web_session.get("location_theatrical", {}).get(move_to, [])
+                        if loc_effects:
+                            theatrical_effects.extend(loc_effects)
+                        played.append(move_to)
+
                 web_session["last_workflow"] = {
                     "rule_plan": result.get("rule_plan", {}),
                     "rule_result": result.get("rule_result", {}),
@@ -409,6 +449,7 @@ def create_trpg_app(plugin):
                 return jsonify({
                     "success": True,
                     "narrative": narrative,
+                    "theatrical_effects": theatrical_effects,
                     "rule_plan": result.get("rule_plan", {}),
                     "rule_result": result["rule_result"],
                     "hard_changes": result.get("hard_changes", {}),
