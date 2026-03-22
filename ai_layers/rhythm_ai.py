@@ -1,6 +1,10 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
-from ..game_state.location_context import build_runtime_location_context
+from ..game_state.location_context import (
+    build_runtime_location_context,
+    get_module_npcs,
+    get_module_threat_entities,
+)
 from .usage_metrics import extract_usage_metrics
 
 import json
@@ -264,6 +268,8 @@ class RhythmAI:
             normalized["location_context"] = base_result["location_context"]
         if normalized.get("object_context") is not None and not isinstance(normalized.get("object_context"), dict):
             normalized["object_context"] = base_result["object_context"]
+        if normalized.get("threat_entity_context") is not None and not isinstance(normalized.get("threat_entity_context"), dict):
+            normalized["threat_entity_context"] = base_result["threat_entity_context"]
         if not isinstance(normalized.get("npc_context"), dict):
             normalized["npc_context"] = base_result["npc_context"]
         if not isinstance(normalized.get("npc_action_guide"), dict):
@@ -301,6 +307,7 @@ class RhythmAI:
         current_location = game_state.get("current_location", "master_bedroom")
         location_context = build_runtime_location_context(game_state, module_data, current_location)
         npc_context = self._build_scene_npc_context(game_state, module_data)
+        threat_entity_context = self._build_scene_threat_entity_context(game_state, module_data)
         atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
         object_context = (rule_plan or {}).get("object_context")
 
@@ -320,6 +327,12 @@ class RhythmAI:
                 "Current NPC context:",
                 json.dumps(npc_context, ensure_ascii=False, indent=2),
             ])
+        if threat_entity_context:
+            parts.extend([
+                "",
+                "Current threat entity context:",
+                json.dumps(threat_entity_context, ensure_ascii=False, indent=2),
+            ])
         if atmosphere_guide:
             parts.extend([
                 "",
@@ -333,7 +346,7 @@ class RhythmAI:
         npc_states = game_state.get("world_state", {}).get("npcs", {})
         scene_npcs = {}
 
-        for npc_name, npc_data in module_data.get("npcs", {}).items():
+        for npc_name, npc_data in get_module_npcs(module_data).items():
             runtime_state = npc_states.get(npc_name, {})
             npc_location = runtime_state.get("location", npc_data.get("location"))
             if npc_location != current_location:
@@ -350,6 +363,29 @@ class RhythmAI:
             scene_npcs[npc_name] = merged_npc
 
         return scene_npcs
+
+    def _build_scene_threat_entity_context(self, game_state: dict, module_data: dict) -> dict:
+        current_location = game_state.get("current_location", "master_bedroom")
+        npc_states = game_state.get("world_state", {}).get("npcs", {})
+        scene_threat_entities = {}
+
+        for entity_name, entity_data in get_module_threat_entities(module_data).items():
+            runtime_state = npc_states.get(entity_name, {})
+            entity_location = runtime_state.get("location", entity_data.get("location"))
+            if entity_location != current_location:
+                continue
+
+            merged_entity = dict(entity_data)
+            merged_entity.setdefault("name", entity_name)
+            merged_entity["runtime_state"] = {
+                "location": entity_location,
+                "attitude": runtime_state.get("attitude", entity_data.get("initial_attitude", "neutral")),
+                "trust_level": runtime_state.get("trust_level", 0.0),
+                "memory": runtime_state.get("memory", {}),
+            }
+            scene_threat_entities[entity_name] = merged_entity
+
+        return scene_threat_entities
 
     def _build_history_summaries(self, game_state: dict) -> str:
         narrative_history = list(game_state.get("narrative_history", []))
@@ -373,6 +409,7 @@ class RhythmAI:
         atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
         feasibility = (rule_plan or {}).get("feasibility", {})
         npc_context = self._build_scene_npc_context(game_state, module_data)
+        threat_entity_context = self._build_scene_threat_entity_context(game_state, module_data)
         npc_action_guide = self._build_npc_action_guide(player_input, rule_plan, npc_context)
 
         return {
@@ -380,6 +417,7 @@ class RhythmAI:
             "hint": feasibility.get("reason"),
             "location_context": location_context if isinstance(location_context, dict) else {},
             "object_context": (rule_plan or {}).get("object_context"),
+            "threat_entity_context": threat_entity_context,
             "npc_context": npc_context,
             "npc_action_guide": npc_action_guide,
             "atmosphere_guide": atmosphere_guide if isinstance(atmosphere_guide, dict) else {},

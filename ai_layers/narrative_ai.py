@@ -286,6 +286,7 @@ class NarrativeAI:
         normalized_action = rule_plan.get("normalized_action", {})
         location_context = rhythm_result.get("location_context", {})
         object_context = rhythm_result.get("object_context")
+        threat_entity_context = rhythm_result.get("threat_entity_context", {})
         raw_npc_context = rhythm_result.get("npc_context", {})
         raw_npc_action_guide = rhythm_result.get("npc_action_guide", {})
         dialogue_npcs, _, npc_action_guide = self._sanitize_npc_prompt_inputs(raw_npc_context, raw_npc_action_guide)
@@ -303,6 +304,7 @@ class NarrativeAI:
         compact_location = self._compact_location_context(location_context)
         compact_object = self._compact_object_context(object_context)
         compact_npc = self._compact_npc_context(dialogue_npcs, npc_action_guide)
+        compact_threats = self._compact_threat_entity_context(threat_entity_context)
         compact_check = self._compact_check_result(rule_result)
         has_current_scene_npc = bool(compact_npc)
         creative_additions = rhythm_result.get("creative_additions", {})
@@ -330,6 +332,7 @@ class NarrativeAI:
             f"- location_context: {json.dumps(compact_location, ensure_ascii=False)}\n"
             f"- object_context: {json.dumps(compact_object, ensure_ascii=False) if compact_object else 'none'}\n"
             f"- npc_context: {json.dumps(compact_npc, ensure_ascii=False) if compact_npc else 'none'}\n"
+            f"- threat_entity_context: {json.dumps(compact_threats, ensure_ascii=False) if compact_threats else 'none'}\n"
             f"- npc_action_guide: {json.dumps(npc_action_guide, ensure_ascii=False) if npc_action_guide else 'none'}\n"
             f"- dialogue_memory: {json.dumps(dialogue_memory, ensure_ascii=False)}\n"
             f"- atmosphere_guide: {json.dumps(atmosphere_guide, ensure_ascii=False)}"
@@ -421,6 +424,7 @@ class NarrativeAI:
             "location": self._compact_location_context(rhythm_result.get("location_context", {})),
             "object": self._compact_object_context(rhythm_result.get("object_context")),
             "npc": self._compact_npc_context(dialogue_npcs, npc_action_guide),
+            "threat_entity_context": self._compact_threat_entity_context(rhythm_result.get("threat_entity_context")),
             "npc_action_guide": npc_action_guide,
             "threat_entities": threat_entities,
             "recent_dialogue": self._build_recent_dialogue_messages(history),
@@ -484,6 +488,8 @@ class NarrativeAI:
             normalized["location_context"] = {}
         if normalized.get("object_context") is not None and not isinstance(normalized.get("object_context"), dict):
             normalized["object_context"] = None
+        if not isinstance(normalized.get("threat_entity_context"), dict):
+            normalized["threat_entity_context"] = {}
         if not isinstance(normalized.get("npc_context"), dict):
             normalized["npc_context"] = {}
         if not isinstance(normalized.get("npc_action_guide"), dict):
@@ -669,6 +675,7 @@ class NarrativeAI:
         normalized_action = rule_plan.get("normalized_action", {}) if isinstance(rule_plan.get("normalized_action"), dict) else {}
         npc_guide = rhythm_result.get("npc_action_guide", {}) if isinstance(rhythm_result.get("npc_action_guide"), dict) else {}
         npc_context = rhythm_result.get("npc_context", {}) if isinstance(rhythm_result.get("npc_context"), dict) else {}
+        threat_entity_context = rhythm_result.get("threat_entity_context", {}) if isinstance(rhythm_result.get("threat_entity_context"), dict) else {}
         object_context = rhythm_result.get("object_context") if isinstance(rhythm_result.get("object_context"), dict) else None
         location_context = rhythm_result.get("location_context", {}) if isinstance(rhythm_result.get("location_context"), dict) else {}
         feasible = bool(rhythm_result.get("feasible", True))
@@ -680,8 +687,14 @@ class NarrativeAI:
                 "summary": self._build_default_summary(player_input),
             }
 
+        if self._is_arrival_mode(normalized_action, rhythm_result) and threat_entity_context:
+            return self._build_local_threat_arrival_narrative(threat_entity_context, location_context)
+
         if self._is_arrival_mode(normalized_action, rhythm_result) and npc_context:
             return self._build_local_npc_arrival_narrative(npc_guide, npc_context, location_context)
+
+        if isinstance(normalized_action, dict) and normalized_action.get("target_kind") == "threat_entity" and threat_entity_context:
+            return self._build_local_threat_response(player_input, normalized_action, threat_entity_context, location_context)
 
         if self._is_talking_to_npc(player_input, normalized_action, npc_guide, npc_context):
             return self._build_local_npc_reply(player_input, npc_guide, npc_context)
@@ -896,6 +909,67 @@ class NarrativeAI:
             "summary": f"移动到{location_name}",
         }
 
+    def _build_local_threat_arrival_narrative(self, threat_entity_context: dict, location_context: dict) -> dict:
+        threat_name = next(iter(threat_entity_context))
+        threat_data = threat_entity_context.get(threat_name, {})
+        location_name = location_context.get("name") or "当前地点"
+        base_description = str(
+            location_context.get("description")
+            or location_context.get("runtime_description")
+            or ""
+        ).strip()
+        behavior = threat_data.get("behavior", {}) if isinstance(threat_data.get("behavior"), dict) else {}
+        arrival_hint = str(
+            location_context.get("active_threat_present_description")
+            or threat_data.get("current_state")
+            or behavior.get("default")
+            or threat_data.get("appearance")
+            or ""
+        ).strip()
+
+        parts = [f"你来到了{location_name}。"]
+        if base_description:
+            parts.append(base_description)
+        if arrival_hint:
+            parts.append(arrival_hint)
+        narrative = "\n\n".join(part for part in parts if part)
+        return {
+            "narrative": narrative,
+            "summary": f"移动到{location_name}",
+        }
+
+    def _build_local_threat_response(
+        self,
+        player_input: str,
+        normalized_action: dict,
+        threat_entity_context: dict,
+        location_context: dict,
+    ) -> dict:
+        threat_name = next(iter(threat_entity_context))
+        threat_data = threat_entity_context.get(threat_name, {})
+        action_verb = str((normalized_action or {}).get("verb") or "").lower()
+
+        if action_verb == "talk":
+            return {
+                "narrative": f"你对{threat_name}开口，但它没有任何语言上的回应。那道近似人形的存在只是维持着原本的姿态，把沉默本身压得更沉。",
+                "summary": self._build_default_summary(player_input),
+            }
+
+        behavior = threat_data.get("behavior", {}) if isinstance(threat_data.get("behavior"), dict) else {}
+        focus_text = str(
+            threat_data.get("current_state")
+            or behavior.get("default")
+            or threat_data.get("appearance")
+            or location_context.get("active_threat_present_description")
+            or ""
+        ).strip()
+        if not focus_text:
+            focus_text = f"{threat_name}依旧沉默地停在那里，没有给出任何像是交流的反应。"
+        return {
+            "narrative": focus_text,
+            "summary": self._build_default_summary(player_input),
+        }
+
     def _get_dialogue_npc_context(self, npc_context: dict) -> dict:
         if not isinstance(npc_context, dict):
             return {}
@@ -947,6 +1021,32 @@ class NarrativeAI:
                 "attitude": runtime_state.get("attitude"),
                 "trust_level": runtime_state.get("trust_level"),
                 "memory": self._compact_npc_memory(npc_memory),
+            }
+        return compact
+
+    def _compact_threat_entity_context(self, threat_entity_context: dict) -> dict:
+        if not isinstance(threat_entity_context, dict) or not threat_entity_context:
+            return {}
+
+        compact = {}
+        for name, data in threat_entity_context.items():
+            if not isinstance(data, dict):
+                continue
+            behavior = data.get("behavior", {}) if isinstance(data.get("behavior"), dict) else {}
+            runtime_state = data.get("runtime_state", {}) if isinstance(data.get("runtime_state"), dict) else {}
+            compact[name] = {
+                "name": data.get("name", name),
+                "appearance": self._trim_text(data.get("appearance", ""), 100),
+                "appearance_warning": self._trim_text(data.get("appearance_warning", ""), 120),
+                "current_state": self._trim_text(data.get("current_state", ""), 120),
+                "behavior": {
+                    key: self._trim_text(value, 100)
+                    for key, value in behavior.items()
+                    if value
+                },
+                "runtime_state": {
+                    "location": str(runtime_state.get("location") or "").strip(),
+                },
             }
         return compact
 

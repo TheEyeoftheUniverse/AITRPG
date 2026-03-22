@@ -415,7 +415,10 @@ def create_trpg_app(plugin):
                     "rhythm_result": result["rhythm_result"],
                     "telemetry": result.get("telemetry", {}),
                     "game_state": _serialize_state(state),
-                    "map_data": map_data
+                    "map_data": map_data,
+                    "ending_phase": plugin.session_manager.get_ending_phase(session_id),
+                    "ending_id": plugin.session_manager.get_ending_id(session_id),
+                    "game_over": plugin.session_manager.is_game_over(session_id),
                 })
 
             except Exception as e:
@@ -461,7 +464,10 @@ def create_trpg_app(plugin):
             "game_state": _serialize_state(state),
             "chat_messages": web_session["chat_messages"],
             "last_workflow": web_session.get("last_workflow"),
-            "map_data": map_data
+            "map_data": map_data,
+            "ending_phase": plugin.session_manager.get_ending_phase(session_id),
+            "ending_id": plugin.session_manager.get_ending_id(session_id),
+            "game_over": plugin.session_manager.is_game_over(session_id),
         })
 
     @app.route("/trpg/api/reset", methods=["POST"])

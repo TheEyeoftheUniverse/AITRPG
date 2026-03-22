@@ -110,6 +110,10 @@
                             <span class="mdi mdi-close"></span>
                         </button>
                     </div>
+                    <div id="ending-indicator" class="move-indicator ending-indicator hidden">
+                        <span class="mdi mdi-flag-checkered"></span>
+                        <span id="ending-indicator-text"></span>
+                    </div>
                     <div class="input-wrapper">
                         <textarea id="chat-input" placeholder="输入你的行动..." rows="1"></textarea>
                         <button id="btn-send" class="btn-send" onclick="sendAction()" title="发送">
@@ -207,6 +211,23 @@
             <button id="right-expand" class="btn-expand right-expand hidden" onclick="togglePanel('right')" title="展开玩家状态">
                 <span class="mdi mdi-chevron-left"></span>
             </button>
+        </div>
+
+        <!-- 结局总结遮罩 -->
+        <div id="ending-overlay" class="ending-overlay hidden">
+            <div class="ending-overlay-content">
+                <span class="mdi mdi-flag-checkered ending-overlay-icon"></span>
+                <h2 id="ending-overlay-title" class="ending-overlay-title">结局</h2>
+                <p id="ending-overlay-desc" class="ending-overlay-desc"></p>
+                <div class="ending-overlay-actions">
+                    <button class="ending-overlay-btn ending-overlay-btn--secondary" onclick="dismissEndingOverlay()">
+                        <span class="mdi mdi-book-open-page-variant"></span> 回顾历程
+                    </button>
+                    <button class="ending-overlay-btn" onclick="resetGame()">
+                        <span class="mdi mdi-restart"></span> 重新开始
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 

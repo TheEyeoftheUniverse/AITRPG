@@ -9,13 +9,72 @@ def is_threat_entity(npc_name: str, npc_data: dict = None) -> bool:
     if npc_name in THREAT_ENTITY_NAMES:
         return True
     npc_data = npc_data if isinstance(npc_data, dict) else {}
-    return bool(npc_data.get("is_threat_entity"))
+    return bool(
+        npc_data.get("is_threat_entity")
+        or npc_data.get("entity_type") == "threat_entity"
+    )
+
+
+def _normalize_entity_record(entity_name: str, entity_data: dict, is_threat: bool = False) -> dict:
+    if not isinstance(entity_data, dict):
+        return {}
+
+    normalized = copy.deepcopy(entity_data)
+    normalized.setdefault("name", entity_name)
+    if is_threat:
+        normalized["is_threat_entity"] = True
+        normalized.setdefault("entity_type", "threat_entity")
+    elif is_threat_entity(entity_name, normalized):
+        normalized["is_threat_entity"] = True
+        normalized.setdefault("entity_type", "threat_entity")
+    return normalized
+
+
+def get_module_npcs(module_data: dict) -> Dict[str, Dict[str, Any]]:
+    npcs = (module_data or {}).get("npcs", {})
+    if not isinstance(npcs, dict):
+        return {}
+
+    normalized_npcs = {}
+    for npc_name, npc_data in npcs.items():
+        normalized = _normalize_entity_record(npc_name, npc_data)
+        if not normalized or is_threat_entity(npc_name, normalized):
+            continue
+        normalized_npcs[npc_name] = normalized
+    return normalized_npcs
+
+
+def get_module_threat_entities(module_data: dict) -> Dict[str, Dict[str, Any]]:
+    threat_entities = {}
+
+    legacy_npcs = (module_data or {}).get("npcs", {})
+    if isinstance(legacy_npcs, dict):
+        for entity_name, entity_data in legacy_npcs.items():
+            normalized = _normalize_entity_record(entity_name, entity_data)
+            if normalized and is_threat_entity(entity_name, normalized):
+                threat_entities[entity_name] = normalized
+
+    explicit_threats = (module_data or {}).get("threat_entities", {})
+    if isinstance(explicit_threats, dict):
+        for entity_name, entity_data in explicit_threats.items():
+            normalized = _normalize_entity_record(entity_name, entity_data, is_threat=True)
+            if normalized:
+                threat_entities[entity_name] = normalized
+
+    return threat_entities
+
+
+def get_module_all_entities(module_data: dict) -> Dict[str, Dict[str, Any]]:
+    merged = {}
+    merged.update(get_module_npcs(module_data))
+    merged.update(get_module_threat_entities(module_data))
+    return merged
 
 
 def _get_npc_runtime_location(npc_name: str, game_state: dict, module_data: dict) -> str:
     npc_states = (game_state or {}).get("world_state", {}).get("npcs", {})
     runtime_state = npc_states.get(npc_name, {}) if isinstance(npc_states, dict) else {}
-    npc_data = (module_data or {}).get("npcs", {}).get(npc_name, {})
+    npc_data = get_module_all_entities(module_data).get(npc_name, {})
     return runtime_state.get("location", npc_data.get("location"))
 
 
@@ -23,11 +82,8 @@ def get_present_npcs_for_location(game_state: dict, module_data: dict, location_
     if not location_key:
         return []
 
-    npcs = (module_data or {}).get("npcs", {})
     present_npcs = []
-    for npc_name, npc_data in npcs.items():
-        if is_threat_entity(npc_name, npc_data):
-            continue
+    for npc_name, npc_data in get_module_npcs(module_data).items():
         if _get_npc_runtime_location(npc_name, game_state, module_data) == location_key:
             present_npcs.append(npc_name)
     return present_npcs
@@ -37,11 +93,8 @@ def get_present_threats_for_location(game_state: dict, module_data: dict, locati
     if not location_key:
         return []
 
-    npcs = (module_data or {}).get("npcs", {})
     present_threats = []
-    for npc_name, npc_data in npcs.items():
-        if not is_threat_entity(npc_name, npc_data):
-            continue
+    for npc_name, npc_data in get_module_threat_entities(module_data).items():
         if _get_npc_runtime_location(npc_name, game_state, module_data) == location_key:
             present_threats.append(npc_name)
     return present_threats
@@ -75,15 +128,26 @@ def build_runtime_location_context(
     present_npcs = get_present_npcs_for_location(game_state, module_data, current_location)
     present_threats = get_present_threats_for_location(game_state, module_data, current_location)
     npc_present_description = str(raw_location_context.get("npc_present_description") or "").strip()
-    active_presence_description = npc_present_description if (present_npcs or present_threats) else ""
+    threat_present_description = str(
+        raw_location_context.get("threat_present_description")
+        or raw_location_context.get("entity_present_description")
+        or npc_present_description
+        or ""
+    ).strip()
+    active_npc_present_description = npc_present_description if present_npcs else ""
+    active_threat_present_description = threat_present_description if present_threats else ""
+    active_presence_description = _join_descriptions(
+        active_npc_present_description,
+        active_threat_present_description,
+    )
 
     # Keep the original module field untouched. Runtime-only assembled text lives in a separate field.
     location_context["runtime_description"] = _join_descriptions(
         raw_location_context.get("description", ""),
         active_presence_description,
     )
-    location_context["active_npc_present_description"] = active_presence_description
-    location_context["active_threat_present_description"] = active_presence_description if present_threats else ""
+    location_context["active_npc_present_description"] = active_npc_present_description
+    location_context["active_threat_present_description"] = active_threat_present_description
     location_context["present_npcs"] = present_npcs
     location_context["present_threats"] = present_threats
     location_context["npc_present"] = bool(present_npcs)

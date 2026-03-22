@@ -1,6 +1,10 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
-from ..game_state.location_context import build_runtime_location_context, is_threat_entity
+from ..game_state.location_context import (
+    build_runtime_location_context,
+    get_module_npcs,
+    get_module_threat_entities,
+)
 from .usage_metrics import extract_usage_metrics
 
 import json
@@ -269,6 +273,7 @@ class RuleAI:
         location_context = build_runtime_location_context(game_state, module_data, current_location)
         scene_objects = self._get_scene_objects(game_state, module_data)
         scene_npcs = self._get_scene_npcs(game_state, module_data)
+        scene_threat_entities = self._get_scene_threat_entities(game_state, module_data)
         inventory = game_state.get("player", {}).get("inventory", [])
         clues_found = game_state.get("world_state", {}).get("clues_found", [])
         reachable = sorted(self._get_reachable_locations(game_state, module_data))
@@ -282,6 +287,15 @@ class RuleAI:
         prompt = prompt.replace("{inventory}", json.dumps(inventory, ensure_ascii=False))
         prompt = prompt.replace("{clues_found}", json.dumps(clues_found, ensure_ascii=False))
         prompt = prompt.replace("{reachable_locations}", json.dumps(reachable, ensure_ascii=False))
+        prompt += (
+            "\n\n# 当前场景威胁实体字段\n"
+            f"{json.dumps(scene_threat_entities, ensure_ascii=False, indent=2)}\n\n"
+            "# 额外约束\n"
+            "- threat_entity_context 必须是当前场景威胁实体的原始字段；若没有命中则为 null。\n"
+            "- threat entity 不是 NPC。它不能说话，不能被当作普通对话对象。\n"
+            "- normalized_action.target_kind 可使用 threat_entity。\n"
+            "- 输出JSON时，请在顶层加入 threat_entity_context 字段。\n"
+        )
         return prompt
 
     def _normalize_action_plan(
@@ -296,6 +310,7 @@ class RuleAI:
         location_context = build_runtime_location_context(game_state, module_data, current_location)
         scene_objects = self._get_scene_objects(game_state, module_data)
         scene_npcs = self._get_scene_npcs(game_state, module_data)
+        scene_threat_entities = self._get_scene_threat_entities(game_state, module_data)
         all_objects = module_data.get("objects", {})
 
         normalized = self._get_fallback_action_plan(player_input, intent, game_state, module_data)
@@ -335,6 +350,13 @@ class RuleAI:
         elif not isinstance(object_context, dict):
             normalized["object_context"] = None
 
+        threat_entity_context = normalized.get("threat_entity_context")
+        if isinstance(threat_entity_context, str):
+            threat_entity_context = scene_threat_entities.get(threat_entity_context)
+        elif not isinstance(threat_entity_context, dict):
+            threat_entity_context = None
+        normalized["threat_entity_context"] = threat_entity_context
+
         target_key = normalized_action.get("target_key")
 
         if isinstance(normalized["object_context"], dict):
@@ -342,11 +364,32 @@ class RuleAI:
         elif target_key and normalized_action.get("target_kind") == "object" and target_key in scene_objects:
             normalized["object_context"] = {"name": target_key, **scene_objects[target_key]}
 
+        if isinstance(normalized["threat_entity_context"], dict):
+            normalized["threat_entity_context"].setdefault("name", target_key)
+        elif target_key and normalized_action.get("target_kind") == "threat_entity" and target_key in scene_threat_entities:
+            normalized["threat_entity_context"] = {"name": target_key, **scene_threat_entities[target_key]}
+
         if target_key and normalized_action.get("target_kind") == "object" and target_key not in scene_objects:
             if target_key in all_objects:
                 feasibility["ok"] = False
                 feasibility["reason"] = feasibility["reason"] or "目标物品不在当前场景"
             normalized["object_context"] = None if target_key not in scene_objects else normalized["object_context"]
+
+        if target_key and normalized_action.get("target_kind") == "threat_entity" and target_key not in scene_threat_entities:
+            feasibility["ok"] = False
+            feasibility["reason"] = feasibility["reason"] or "目标威胁实体不在当前场景"
+            normalized["threat_entity_context"] = None
+
+        if normalized_action.get("target_kind") == "threat_entity" and isinstance(normalized["threat_entity_context"], dict):
+            action_verb = str(normalized_action.get("verb") or "").lower()
+            if action_verb == "talk":
+                feasibility["ok"] = False
+                feasibility["reason"] = feasibility["reason"] or "威胁实体不是可对话NPC，它不会回应你的交谈"
+                normalized["check"] = {
+                    "required": False,
+                    "skill": None,
+                    "difficulty": "无需判定",
+                }
 
         if isinstance(normalized.get("object_context"), dict):
             requires = normalized["object_context"].get("requires")
@@ -418,6 +461,7 @@ class RuleAI:
         location_context = build_runtime_location_context(game_state, module_data, current_location)
         scene_objects = self._get_scene_objects(game_state, module_data)
         scene_npcs = self._get_scene_npcs(game_state, module_data)
+        scene_threat_entities = self._get_scene_threat_entities(game_state, module_data)
         all_objects = module_data.get("objects", {})
 
         raw_target = str((intent or {}).get("target") or "").strip()
@@ -435,6 +479,7 @@ class RuleAI:
             },
             "location_context": location_context if isinstance(location_context, dict) else {},
             "object_context": None,
+            "threat_entity_context": None,
             "npc_context": scene_npcs,
             "check": {
                 "required": False,
@@ -463,6 +508,7 @@ class RuleAI:
         object_key = self._match_target(raw_target or player_input, scene_objects)
         global_object_key = self._match_target(raw_target or player_input, all_objects)
         npc_key = self._match_target(raw_target or player_input, scene_npcs)
+        threat_key = self._match_target(raw_target or player_input, scene_threat_entities)
         if not npc_key and self._should_default_to_scene_npc(player_input, plan["normalized_action"], scene_npcs):
             npc_key = next(iter(scene_npcs))
 
@@ -471,6 +517,17 @@ class RuleAI:
             plan["normalized_action"]["target_key"] = npc_key
             if not plan["normalized_action"].get("raw_target_text"):
                 plan["normalized_action"]["raw_target_text"] = npc_key
+            return plan
+
+        if threat_key:
+            plan["normalized_action"]["target_kind"] = "threat_entity"
+            plan["normalized_action"]["target_key"] = threat_key
+            plan["threat_entity_context"] = {"name": threat_key, **scene_threat_entities[threat_key]}
+            if not plan["normalized_action"].get("raw_target_text"):
+                plan["normalized_action"]["raw_target_text"] = threat_key
+            if verb == "talk":
+                plan["feasibility"]["ok"] = False
+                plan["feasibility"]["reason"] = "威胁实体不是可对话NPC，它不会回应你的交谈"
             return plan
 
         if object_key:
@@ -568,9 +625,7 @@ class RuleAI:
         current_location = game_state.get("current_location", "master_bedroom")
         npc_states = game_state.get("world_state", {}).get("npcs", {})
         scene_npcs = {}
-        for npc_name, npc_data in module_data.get("npcs", {}).items():
-            if is_threat_entity(npc_name, npc_data):
-                continue
+        for npc_name, npc_data in get_module_npcs(module_data).items():
             runtime_state = npc_states.get(npc_name, {})
             npc_location = runtime_state.get("location", npc_data.get("location"))
             if npc_location != current_location:
@@ -586,6 +641,27 @@ class RuleAI:
             }
             scene_npcs[npc_name] = merged_npc
         return scene_npcs
+
+    def _get_scene_threat_entities(self, game_state: dict, module_data: dict) -> Dict[str, Dict[str, Any]]:
+        current_location = game_state.get("current_location", "master_bedroom")
+        npc_states = game_state.get("world_state", {}).get("npcs", {})
+        scene_threat_entities = {}
+        for entity_name, entity_data in get_module_threat_entities(module_data).items():
+            runtime_state = npc_states.get(entity_name, {})
+            entity_location = runtime_state.get("location", entity_data.get("location"))
+            if entity_location != current_location:
+                continue
+
+            merged_entity = dict(entity_data)
+            merged_entity.setdefault("name", entity_name)
+            merged_entity["runtime_state"] = {
+                "location": entity_location,
+                "attitude": runtime_state.get("attitude", entity_data.get("initial_attitude", "中立")),
+                "trust_level": runtime_state.get("trust_level", 0.0),
+                "memory": runtime_state.get("memory", {}),
+            }
+            scene_threat_entities[entity_name] = merged_entity
+        return scene_threat_entities
 
     def _get_reachable_locations(self, game_state: dict, module_data: dict):
         current_location = game_state.get("current_location", "master_bedroom")

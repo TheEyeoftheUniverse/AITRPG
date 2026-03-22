@@ -7,6 +7,7 @@ let selectedDestination = null;   // 待移动的目标location key
 let currentMapData = null;        // 缓存的地图数据
 let progressPollTimer = null;
 let processingStatusCollapsed = true;
+let endingPhase = null;           // null | "triggered" | "concluded"
 
 const PROCESSING_STAGE_GROUPS = [
     {
@@ -119,6 +120,8 @@ async function checkExistingSession() {
                 currentMapData = data.map_data;
                 renderMap(data.map_data);
             }
+            // 恢复结局阶段
+            handleEndingPhase(data.ending_phase, data.game_over, data.ending_id);
         }
     } catch (err) {
         // 首次访问，正常显示模组选择
@@ -521,8 +524,13 @@ async function sendAction() {
     const text = input.value.trim();
     const moveTo = selectedDestination;
 
-    // 需要有文字输入或移动目标
-    if (!text && !moveTo) return;
+    // In ending phase, allow sending even with empty text
+    if (endingPhase === "triggered") {
+        // Player can type additional text or just click send
+    } else {
+        // 需要有文字输入或移动目标
+        if (!text && !moveTo) return;
+    }
 
     // 清空输入
     input.value = "";
@@ -530,7 +538,9 @@ async function sendAction() {
 
     // 构建显示文本
     let displayText = text;
-    if (moveTo && !text) {
+    if (endingPhase === "triggered") {
+        displayText = text ? `[进入结局] ${text}` : "[进入结局]";
+    } else if (moveTo && !text) {
         const locData = currentMapData && currentMapData.locations[moveTo];
         const locName = locData ? locData.display_name : moveTo;
         displayText = `[移动到${locName}]`;
@@ -555,8 +565,13 @@ async function sendAction() {
 
     try {
         const body = {};
-        if (text) body.input = text;
-        if (moveTo) body.move_to = moveTo;
+        if (endingPhase === "triggered") {
+            body.input = text || "[进入结局]";
+            // Don't send move_to in ending phase
+        } else {
+            if (text) body.input = text;
+            if (moveTo) body.move_to = moveTo;
+        }
 
         const resp = await fetch("/trpg/api/action", {
             method: "POST",
@@ -602,6 +617,9 @@ async function sendAction() {
             }
 
             renderProcessingStatus(data.telemetry || null, { forceCollapsed: true });
+
+            // 处理结局阶段
+            handleEndingPhase(data.ending_phase, data.game_over, data.ending_id);
         }
     } catch (err) {
         loadingEl.remove();
@@ -622,8 +640,13 @@ async function sendAction() {
     } finally {
         stopProgressPolling();
         isProcessing = false;
-        setInputEnabled(true);
-        document.getElementById("chat-input").focus();
+        // Don't re-enable input if game is concluded
+        if (endingPhase === "concluded") {
+            // Everything stays disabled
+        } else {
+            setInputEnabled(true);
+            document.getElementById("chat-input").focus();
+        }
     }
 }
 
@@ -839,6 +862,24 @@ async function resetGame() {
 
     try {
         await fetch("/trpg/api/reset", { method: "POST" });
+
+        // 重置结局状态
+        endingPhase = null;
+        const input = document.getElementById("chat-input");
+        input.disabled = false;
+        input.placeholder = "输入你的行动...";
+        document.getElementById("btn-send").disabled = false;
+
+        // 隐藏结局相关UI
+        document.getElementById("ending-indicator").classList.add("hidden");
+        document.getElementById("ending-overlay").classList.add("hidden");
+
+        // 重置地图样式
+        const svg = document.getElementById("map-svg");
+        if (svg) {
+            svg.style.pointerEvents = "";
+            svg.style.opacity = "";
+        }
 
         // 清空聊天
         document.getElementById("chat-messages").innerHTML = "";
@@ -1124,4 +1165,80 @@ function cancelMoveSelection() {
 
     // 重新渲染地图以清除选中样式
     if (currentMapData) renderMap(currentMapData);
+}
+
+// ─── 结局阶段处理 ───
+
+const ENDING_NAMES = {
+    insane: "疯狂结局",
+    escaped: "逃脱结局",
+    getlost: "迷失结局",
+    amnesia: "失忆结局",
+};
+
+function getEndingDisplayName(endingId) {
+    return ENDING_NAMES[endingId] || "结局";
+}
+
+function handleEndingPhase(phase, gameOver, endingId) {
+    endingPhase = phase || null;
+
+    if (phase === "triggered") {
+        showEndingIndicator(endingId);
+        disableMapInteraction();
+    } else if (phase === "concluded" || gameOver) {
+        hideEndingIndicator();
+        disableAllGameInput();
+        showEndingOverlay(endingId);
+    }
+}
+
+function showEndingIndicator(endingId) {
+    const indicator = document.getElementById("ending-indicator");
+    const indicatorText = document.getElementById("ending-indicator-text");
+    const endingName = getEndingDisplayName(endingId);
+    indicatorText.textContent = `即将进入：${endingName}`;
+    indicator.classList.remove("hidden");
+
+    // Hide move indicator if visible
+    document.getElementById("move-indicator").classList.add("hidden");
+    selectedDestination = null;
+}
+
+function hideEndingIndicator() {
+    const indicator = document.getElementById("ending-indicator");
+    indicator.classList.add("hidden");
+}
+
+function disableMapInteraction() {
+    const svg = document.getElementById("map-svg");
+    if (svg) {
+        svg.style.pointerEvents = "none";
+        svg.style.opacity = "0.5";
+    }
+}
+
+function disableAllGameInput() {
+    const input = document.getElementById("chat-input");
+    input.disabled = true;
+    input.value = "";
+    input.placeholder = "游戏已结束";
+    document.getElementById("btn-send").disabled = true;
+    disableMapInteraction();
+    cancelMoveSelection();
+}
+
+function showEndingOverlay(endingId) {
+    const overlay = document.getElementById("ending-overlay");
+    const title = document.getElementById("ending-overlay-title");
+    const desc = document.getElementById("ending-overlay-desc");
+    const endingName = getEndingDisplayName(endingId);
+
+    title.textContent = endingName;
+    desc.textContent = "你的冒险到此结束了。";
+    overlay.classList.remove("hidden");
+}
+
+function dismissEndingOverlay() {
+    document.getElementById("ending-overlay").classList.add("hidden");
 }

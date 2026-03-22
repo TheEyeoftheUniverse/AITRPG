@@ -43,6 +43,16 @@
       "description": "NPC描述"
     }
   },
+  "threat_entities": {
+    "威胁实体名称": {
+      "name": "显示名称",
+      "location": "初始地点",
+      "appearance": "外观描述",
+      "behavior": {
+        "default": "默认状态"
+      }
+    }
+  },
   "escape_conditions": {
     "minimum_progress": 0.6,
     "required_items": ["必需物品"],
@@ -65,7 +75,7 @@
 
 1. 复制 `default_module.json` 文件
 2. 重命名为你的模组名称（如 `my_module.json`）
-3. 编辑JSON内容，修改地点、物品、NPC等
+3. 编辑JSON内容，修改地点、物品、NPC、威胁实体等
 4. 在AstrBot的WebUI中，将配置项 `module_name` 设置为你的模组名称（不含.json后缀）
 
 ## 字段说明
@@ -74,7 +84,9 @@
 - `location_id`: 地点的唯一标识符（用于代码引用）
 - `name`: 显示给玩家的地点名称
 - `description`: 地点的基础描述。应只写场景本身稳定存在的信息
-- `npc_present_description`: 可选。仅当该地点当前确实有NPC在场时，才会附加到 `description` 后面的额外描述
+- `npc_present_description`: 可选。仅当该地点当前确实有可对话 NPC 在场时，才会附加到 `description` 后面的额外描述
+- `threat_present_description`: 可选。仅当该地点当前确实有威胁实体在场时，才会附加到 `description` 后面的额外描述
+- `entity_present_description`: 可选。通用兼容字段；若未单独提供 `threat_present_description`，威胁实体也会回退使用它
 - `objects`: 该地点可交互的物品列表
 - `exits`: 可以前往的其他地点
 - `danger_level`: 危险等级（1-5），影响AI的叙述风格
@@ -95,6 +107,11 @@
 - `can_escape_together`: 是否可以一起逃离
 - `key_info`: NPC掌握的关键信息
 - `trust_threshold`: 信任阈值（0-1），达到后可获得关键信息
+
+### threat_entities（威胁实体）
+- 用于存放不可按普通 NPC 处理的危险存在
+- 威胁实体不会被当作可对话 NPC，不应依赖 `dialogue_guide`、`trust_actions` 这类对话字段
+- 推荐填写 `appearance`、`appearance_warning`、`behavior`、`current_state` 等字段，供文案层和节奏层使用
 
 ### endings（结局）
 - `conditions`: 触发条件（可以是进度、标志位等）

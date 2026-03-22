@@ -4,10 +4,15 @@ import copy
 import random
 from collections import deque
 from typing import Dict, Any, List, Set
-from .location_context import build_runtime_location_context
+from .location_context import build_runtime_location_context, get_module_all_entities
 
 
 BUTLER_NPC_NAME = "管家"
+OUTSIDE_LOST_WARNING_MESSAGE = (
+    "你刚想推开厨房的后门，门外那片灰蒙蒙的平原便先一步压进了你的视野。"
+    "那里没有道路，没有参照物，也看不出任何尽头。直觉告诉你，从这里逃走绝不是正确的选择。"
+    "你停在门边，没有真正踏出去。"
+)
 
 
 PRESET_PLAYER_PROFILE = {
@@ -166,7 +171,7 @@ class SessionManager:
     def _build_initial_npc_state(self, module_data: Dict[str, Any]) -> Dict[str, Any]:
         """根据模组NPC定义生成初始世界状态"""
         npc_states = {}
-        for npc_name, npc_data in module_data.get("npcs", {}).items():
+        for npc_name, npc_data in get_module_all_entities(module_data).items():
             npc_states[npc_name] = {
                 "attitude": npc_data.get("initial_attitude", "中立"),
                 "trust_level": 0.0,
@@ -196,6 +201,7 @@ class SessionManager:
             "target": None,
             "activation_round": None,
             "last_target_location": None,
+            "same_location_rounds": 0,
         }
 
     def _build_default_influence_dimensions(self) -> Dict[str, Any]:
@@ -208,6 +214,19 @@ class SessionManager:
             "rounds_used": 0,
         }
 
+    def _get_insane_ending_description(self, state: Dict[str, Any]) -> str:
+        module_data = (state or {}).get("module_data", {}) if isinstance(state, dict) else {}
+        ending_conditions = (
+            module_data.get("endings", {}).get("ending_conditions", {})
+            if isinstance(module_data.get("endings"), dict)
+            else {}
+        )
+        insane = ending_conditions.get("insane", {}) if isinstance(ending_conditions, dict) else {}
+        description = str(insane.get("description") or "").strip()
+        if description:
+            return description
+        return "疯狂结局：你永久疯狂了，彻底迷失在了这个世界，再也无人知晓你的下落。"
+
     def _ensure_runtime_defaults(self, state: Dict[str, Any], module_data: Dict[str, Any] = None):
         if not isinstance(state, dict):
             return
@@ -215,7 +234,7 @@ class SessionManager:
         module_data = module_data or state.get("module_data") or self.default_module_data
         world_state = state.setdefault("world_state", {})
         npc_states = world_state.setdefault("npcs", {})
-        module_npcs = module_data.get("npcs", {}) if isinstance(module_data, dict) else {}
+        module_npcs = get_module_all_entities(module_data) if isinstance(module_data, dict) else {}
 
         for npc_name, npc_data in module_npcs.items():
             runtime_state = npc_states.setdefault(npc_name, {})
@@ -294,6 +313,151 @@ class SessionManager:
             return False
         return target_key == "living_room"
 
+    def has_butler_living_room_warning(self, session_id: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+        flags = state.get("world_state", {}).get("flags", {})
+        return bool(flags.get("butler_living_room_warning_shown"))
+
+    def _set_butler_living_room_warning_state(self, state: Dict[str, Any], reason: str):
+        if not isinstance(state, dict):
+            return
+
+        world_state = state.setdefault("world_state", {})
+        flags = world_state.setdefault("flags", {})
+        flags["butler_living_room_warning_shown"] = True
+        flags["butler_living_room_warning_reason"] = reason
+
+        butler_state = self._get_butler_runtime_state(state)
+        chase_state = butler_state.setdefault("chase_state", self._build_default_butler_chase_state())
+        if not isinstance(chase_state, dict):
+            chase_state = self._build_default_butler_chase_state()
+            butler_state["chase_state"] = chase_state
+        chase_state["active"] = False
+        chase_state["status"] = "waiting"
+        chase_state["target"] = None
+        chase_state["activation_round"] = None
+        chase_state["last_target_location"] = state.get("current_location")
+
+    def trigger_butler_living_room_warning(self, session_id: str, reason: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+        self._set_butler_living_room_warning_state(state, reason)
+        self._sync_influence_dimensions(state)
+        return copy.deepcopy(state)
+
+    def should_warn_on_living_room_entry(self, session_id: str, target_key: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state or self.is_butler_active(session_id):
+            return False
+        if target_key != "living_room" or target_key != self.get_butler_location(session_id):
+            return False
+        return not self.has_butler_living_room_warning(session_id)
+
+    def should_activate_butler_on_entry(self, session_id: str, target_key: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state or self.is_butler_active(session_id):
+            return False
+        if not self.has_butler_living_room_warning(session_id):
+            return False
+        return bool(target_key) and target_key == self.get_butler_location(session_id) == "living_room"
+
+    def has_outside_lost_warning(self, session_id: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+        flags = state.get("world_state", {}).get("flags", {})
+        return bool(flags.get("outside_lost_warning_shown"))
+
+    def _set_outside_lost_warning_state(self, state: Dict[str, Any], reason: str):
+        if not isinstance(state, dict):
+            return
+
+        world_state = state.setdefault("world_state", {})
+        flags = world_state.setdefault("flags", {})
+        flags["outside_lost_warning_shown"] = True
+        flags["outside_lost_warning_reason"] = reason
+
+        # Reveal "outside" on the map as "后门" (via hidden_name)
+        visited = state.setdefault("visited_locations", [])
+        if "outside" not in visited:
+            visited.append("outside")
+
+    def trigger_outside_lost_warning(self, session_id: str, reason: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+        self._set_outside_lost_warning_state(state, reason)
+        self._sync_influence_dimensions(state)
+        return copy.deepcopy(state)
+
+    def should_warn_on_outside_entry(self, session_id: str, current_key: str, target_key: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state or self.get_ending_phase(session_id):
+            return False
+        if target_key != "outside":
+            return False
+        return not self.has_outside_lost_warning(session_id)
+
+    def should_activate_butler_for_action(self, session_id: str, player_input: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state or self.is_butler_active(session_id):
+            return False
+        if state.get("current_location") != self.get_butler_location(session_id):
+            return False
+
+        text = str(player_input or "").strip()
+        if not text:
+            return False
+
+        direct_keywords = [
+            "深入客厅",
+            "进入客厅深处",
+            "往里走",
+            "继续深入",
+            "靠近",
+            "接近",
+            "逼近",
+            "走近",
+            "上前",
+            "往前",
+            "向前",
+            "深入",
+        ]
+        lowered = text.lower()
+        if any(keyword in text for keyword in direct_keywords):
+            return True
+        return any(keyword in lowered for keyword in ["move closer", "approach", "go deeper", "step forward"])
+
+    def build_butler_activation_changes(self, session_id: str, reason: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state or self.is_butler_active(session_id):
+            return {}
+
+        butler_location = self.get_butler_location(session_id)
+        current_location = state.get("current_location")
+        return {
+            "flags": {
+                "butler_activated": True,
+                "butler_activation_reason": reason,
+            },
+            "npc_updates": {
+                BUTLER_NPC_NAME: {
+                    "location": butler_location or current_location,
+                    "chase_state": {
+                        "active": True,
+                        "status": "alerted",
+                        "target": "player",
+                        "activation_round": None,
+                        "last_target_location": current_location,
+                        "same_location_rounds": 0,
+                    },
+                }
+            },
+        }
+
     def _get_check_threshold(self, player_skill: int, difficulty: str) -> int:
         difficulty = str(difficulty or "").strip()
         if difficulty == "困难":
@@ -327,6 +491,9 @@ class SessionManager:
         influence["butler_gaze"] = True
         world_flags = state.setdefault("world_state", {}).setdefault("flags", {})
         world_flags["butler_capture_reason"] = reason
+        # Use two-phase ending: trigger first, conclude after LLM generates ending
+        hardcoded_text = self._get_ending_hardcoded_text(state, "insane", "butler_gaze")
+        self._trigger_ending_state(state, "insane", hardcoded_text)
         self._sync_influence_dimensions(state)
 
     def capture_player_by_butler(self, session_id: str, reason: str) -> Dict[str, Any]:
@@ -337,6 +504,209 @@ class SessionManager:
         state["round_count"] = int(state.get("round_count", 0) or 0) + 1
         self._sync_influence_dimensions(state)
         return copy.deepcopy(state)
+
+    def is_game_over(self, session_id: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+        flags = state.get("world_state", {}).get("flags", {})
+        return bool(flags.get("game_over"))
+
+    def get_game_over_message(self, session_id: str) -> str:
+        state = self.sessions.get(session_id)
+        if not state:
+            return "结局已触发。"
+        flags = state.get("world_state", {}).get("flags", {})
+        return str(flags.get("ending_text") or self._get_insane_ending_description(state)).strip()
+
+    # ─── Two-phase ending system ───
+
+    def _get_ending_hardcoded_text(self, state: Dict[str, Any], ending_id: str, sub_type: str = "") -> str:
+        """Get hardcoded ending text from module data."""
+        module_data = (state or {}).get("module_data", {}) if isinstance(state, dict) else {}
+        ending_conditions = (
+            module_data.get("endings", {}).get("ending_conditions", {})
+            if isinstance(module_data.get("endings"), dict)
+            else {}
+        )
+        ending = ending_conditions.get(ending_id, {}) if isinstance(ending_conditions, dict) else {}
+
+        # Check for sub-type specific text (e.g., insane has butler_gaze vs san_zero)
+        if sub_type:
+            sub_text = str(ending.get(f"hardcoded_text_{sub_type}") or "").strip()
+            if sub_text:
+                return sub_text
+
+        # Check for general hardcoded_text
+        text = str(ending.get("hardcoded_text") or "").strip()
+        if text:
+            return text
+
+        # Fallback to description
+        return str(ending.get("description") or "结局已触发。").strip()
+
+    def _trigger_ending_state(self, state: Dict[str, Any], ending_id: str, hardcoded_text: str):
+        """Phase 1: Set ending_phase to 'triggered'. Game is NOT over yet - allows one more LLM call."""
+        if not isinstance(state, dict):
+            return
+        world_flags = state.setdefault("world_state", {}).setdefault("flags", {})
+        world_flags["ending_phase"] = "triggered"
+        world_flags["ending_id"] = ending_id
+        world_flags["ending_hardcoded_text"] = hardcoded_text
+        # Do NOT set game_over here - that happens in conclude
+
+    def trigger_ending(self, session_id: str, ending_id: str, sub_type: str = "") -> str:
+        """Trigger an ending (phase 1). Returns the hardcoded text to display."""
+        state = self.sessions.get(session_id)
+        if not state:
+            return "结局已触发。"
+        hardcoded_text = self._get_ending_hardcoded_text(state, ending_id, sub_type)
+        self._trigger_ending_state(state, ending_id, hardcoded_text)
+        self._sync_influence_dimensions(state)
+        return hardcoded_text
+
+    def conclude_ending(self, session_id: str):
+        """Phase 2: Conclude the ending. Sets game_over = True."""
+        state = self.sessions.get(session_id)
+        if not state:
+            return
+        world_flags = state.setdefault("world_state", {}).setdefault("flags", {})
+        world_flags["ending_phase"] = "concluded"
+        world_flags["game_over"] = True
+
+    def is_ending_triggered(self, session_id: str) -> bool:
+        """Check if an ending has been triggered but not yet concluded."""
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+        flags = state.get("world_state", {}).get("flags", {})
+        return flags.get("ending_phase") == "triggered"
+
+    def get_ending_phase(self, session_id: str) -> str:
+        """Get current ending phase: None, 'triggered', or 'concluded'."""
+        state = self.sessions.get(session_id)
+        if not state:
+            return None
+        flags = state.get("world_state", {}).get("flags", {})
+        return flags.get("ending_phase") or None
+
+    def get_ending_id(self, session_id: str) -> str:
+        """Get the current ending type identifier."""
+        state = self.sessions.get(session_id)
+        if not state:
+            return None
+        flags = state.get("world_state", {}).get("flags", {})
+        return flags.get("ending_id") or None
+
+    def get_ending_context(self, session_id: str) -> Dict[str, Any]:
+        """Build context for NarrativeAI ending generation."""
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+        module_data = state.get("module_data", {})
+        flags = state.get("world_state", {}).get("flags", {})
+        ending_id = flags.get("ending_id", "")
+        endings = module_data.get("endings", {})
+        ending_conditions = endings.get("ending_conditions", {})
+        ending_data = ending_conditions.get(ending_id, {})
+        influence_dims = endings.get("influence_dimensions", {}).get("dimensions", {})
+
+        return {
+            "ending_id": ending_id,
+            "ending_description": ending_data.get("description", ""),
+            "hardcoded_text": flags.get("ending_hardcoded_text", ""),
+            "influence_dimensions": state.get("influence_dimensions", {}),
+            "influence_descriptions": influence_dims,
+            "player_state": {
+                "san": state.get("player", {}).get("san", 0),
+                "hp": state.get("player", {}).get("hp", 0),
+                "inventory": state.get("player", {}).get("inventory", []),
+            },
+            "clues_found": state.get("world_state", {}).get("clues_found", []),
+            "round_count": state.get("round_count", 0),
+        }
+
+    def check_san_ending(self, session_id: str) -> bool:
+        """Check if SAN <= 0 and trigger insane ending if so. Returns True if ending triggered."""
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+        # Don't re-trigger if already in ending phase
+        if self.get_ending_phase(session_id):
+            return False
+        san = state.get("player", {}).get("san", 65)
+        if san <= 0:
+            self.trigger_ending(session_id, "insane", "san_zero")
+            return True
+        return False
+
+    def check_ritual_destruction_ending(self, session_id: str) -> bool:
+        """Check if ritual has been destroyed and trigger escape ending if so."""
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+        if self.get_ending_phase(session_id):
+            return False
+        flags = state.get("world_state", {}).get("flags", {})
+        clues = state.get("world_state", {}).get("clues_found", [])
+        inventory = state.get("player", {}).get("inventory", [])
+        # Check multiple possible flag names the RuleAI might use
+        ritual_destroyed = (
+            flags.get("ritual_destroyed")
+            or flags.get("仪式已破坏")
+            or "已破坏仪式" in clues
+            or "已破坏仪式" in inventory
+            or flags.get("carpet_burned")
+            or flags.get("符咒地毯已焚毁")
+        )
+        if ritual_destroyed:
+            influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions())
+            influence["escape_success"] = True
+            self.trigger_ending(session_id, "escaped")
+            return True
+        return False
+
+    def check_location_ending(self, session_id: str) -> bool:
+        """Check if current location triggers an ending (e.g., outside → lost)."""
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+        if self.get_ending_phase(session_id):
+            return False
+        current = state.get("current_location", "")
+        module_data = state.get("module_data", {})
+        loc_data = module_data.get("locations", {}).get(current, {})
+        if loc_data.get("is_ending_location"):
+            ending_id = loc_data.get("ending_id", "getlost")
+            self.trigger_ending(session_id, ending_id)
+            return True
+        return False
+
+    def _evaluate_butler_exposure(self, state: Dict[str, Any]) -> bool:
+        if not isinstance(state, dict):
+            return False
+        if bool(state.get("world_state", {}).get("flags", {}).get("game_over")):
+            return True
+
+        butler_state = self._get_butler_runtime_state(state)
+        chase_state = butler_state.setdefault("chase_state", self._build_default_butler_chase_state())
+        if not isinstance(chase_state, dict):
+            chase_state = self._build_default_butler_chase_state()
+            butler_state["chase_state"] = chase_state
+
+        if not chase_state.get("active"):
+            chase_state["same_location_rounds"] = 0
+            return False
+
+        if state.get("current_location") == butler_state.get("location"):
+            chase_state["same_location_rounds"] = int(chase_state.get("same_location_rounds", 0) or 0) + 1
+            if chase_state["same_location_rounds"] >= 3:
+                self._capture_player_by_butler_state(state, "stayed_with_butler_too_long")
+                return True
+            return False
+
+        chase_state["same_location_rounds"] = 0
+        return False
 
     def _advance_butler_chase(self, state: Dict[str, Any]) -> Dict[str, Any]:
         butler_state = self._get_butler_runtime_state(state)
@@ -398,6 +768,7 @@ class SessionManager:
         runtime_changes = {}
         if not bool(state.get("influence_dimensions", {}).get("butler_gaze")):
             runtime_changes = self._advance_butler_chase(state)
+            self._evaluate_butler_exposure(state)
 
         self._sync_influence_dimensions(state)
         return runtime_changes
@@ -561,6 +932,7 @@ class SessionManager:
         runtime_changes = {}
         if not bool(state.get("influence_dimensions", {}).get("butler_gaze")):
             runtime_changes = self._advance_butler_chase(state)
+            self._evaluate_butler_exposure(state)
         self._sync_influence_dimensions(state)
         return runtime_changes
 
@@ -827,6 +1199,22 @@ class SessionManager:
                 return {"success": False, "message": "管家已被激活。现在你只能逐格移动到相邻场景。"}
             return {"success": False, "message": "目标位置不可达（路径被锁定）"}
 
+        if self.should_warn_on_living_room_entry(session_id, target_key):
+            self.trigger_butler_living_room_warning(session_id, "player_attempted_first_entry_to_living_room")
+            return {
+                "success": False,
+                "warning_blocked": True,
+                "message": "你刚想踏进客厅深处，那道背对入口的人形便极轻地调整了站姿，像是已经把你的存在纳入了视野。直觉告诉你，现在贸然进去只会立刻引来它的注意。你暂时退了回来，也许该先想办法把它引开。",
+            }
+
+        if self.should_warn_on_outside_entry(session_id, current, target_key):
+            self.trigger_outside_lost_warning(session_id, "player_attempted_first_exit_through_kitchen_backdoor")
+            return {
+                "success": False,
+                "warning_blocked": True,
+                "message": OUTSIDE_LOST_WARNING_MESSAGE,
+            }
+
         dodge_result = None
         movement_note = None
         if self.is_butler_active(session_id):
@@ -907,6 +1295,11 @@ class SessionManager:
         reachable = self._get_available_moves(session_id)
         locked_exits = self._get_locked_exits(session_id)
         name_to_key = self._build_name_to_key_map(module_data)
+        danger_locations = set()
+        if self.is_butler_active(session_id) or self.has_butler_living_room_warning(session_id):
+            butler_location = self.get_butler_location(session_id)
+            if butler_location:
+                danger_locations.add(butler_location)
 
         # 构建可见节点
         visible_locations = {}
@@ -968,6 +1361,10 @@ class SessionManager:
             "edges": edges,
             "current_location": state["current_location"],
             "reachable": list(reachable),
+            "danger_locations": [
+                location_key for location_key in danger_locations
+                if location_key in visible_locations
+            ],
         }
 
     def get_module_data(self, session_id: str = None):
@@ -1023,4 +1420,3 @@ class SessionManager:
                 continue
 
             base[key] = value
-
