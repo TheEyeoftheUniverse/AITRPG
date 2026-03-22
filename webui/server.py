@@ -448,6 +448,22 @@ def create_trpg_app(plugin):
 
                 # 构建骰子演出数据
                 dice_rolls = []
+
+                # 移动闪避检定（优先展示，因为移动先于行动）
+                move_check = result.get("move_check_result")
+                if isinstance(move_check, dict) and move_check.get("check_type") == "skill_check":
+                    dice_rolls.append({
+                        "type": "skill_check",
+                        "label": f"{move_check['skill']}检定（{move_check['difficulty']}）",
+                        "roll": move_check["roll"],
+                        "threshold": move_check["threshold"],
+                        "success": move_check["success"],
+                        "critical_success": move_check.get("critical_success", False),
+                        "critical_failure": move_check.get("critical_failure", False),
+                        "description": move_check.get("result_description", ""),
+                    })
+
+                # 技能检定
                 rule_result_data = result.get("rule_result", {})
                 if rule_result_data.get("check_type") == "skill_check":
                     dice_rolls.append({

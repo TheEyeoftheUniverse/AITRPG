@@ -306,8 +306,10 @@ class AITRPGPlugin(Star):
 
             # === 移动处理 ===
             move_result = None
+            move_check_result = None  # 移动时的闪避检定结果
             if move_to:
                 move_result = self.session_manager.move_player(session_id, move_to)
+                move_check_result = move_result.get("check_result")
                 if not move_result["success"]:
                     state = self.session_manager.get_session(session_id)
                     for step_key, _, _ in self.PROGRESS_STEPS:
@@ -378,6 +380,7 @@ class AITRPGPlugin(Star):
                         module_data=module_data,
                         history=history,
                     )
+                    result["move_check_result"] = move_check_result
                     return self._finalize_action_result(session_id, result, message="到场叙述完成")
 
                 # 纯移动不应被伪造成“我前往某处”再交给三层AI，否则会被误判成
@@ -397,6 +400,7 @@ class AITRPGPlugin(Star):
                         "hard_changes": {},
                         "rhythm_result": {"feasible": True, "hint": None, "stage_assessment": "", "world_changes": {}, "soft_world_changes": {}},
                         "narrative_result": {"narrative": narrative, "summary": f"移动到{loc_name}"},
+                        "move_check_result": move_check_result,
                         "game_state": state
                     },
                     message="场景移动完成",
@@ -652,6 +656,7 @@ class AITRPGPlugin(Star):
                     "rhythm_result": rhythm_result,
                     "narrative_result": narrative_result,
                     "sancheck_result": sancheck_result,
+                    "move_check_result": move_check_result,
                     "game_state": state
                 },
                 message="三层 AI 处理完成",
