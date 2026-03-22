@@ -462,11 +462,26 @@ class AITRPGPlugin(Star):
             self._finish_progress_step(session_id, "rule_check", {}, "规则判定完成")
             logger.info(f"[AITRPG] 规则判定结果: {rule_result}")
 
+            # === SAN检定 ===
+            sancheck_result = None
+            if rule_result.get("success"):  # 技能检定成功才触发sancheck
+                entity_ctx = (rule_plan or {}).get("object_context") or (rule_plan or {}).get("threat_entity_context")
+                if entity_ctx:
+                    sancheck_result = self.rule_ai.resolve_sancheck(
+                        entity_context=entity_ctx,
+                        player_san=state["player"]["san"],
+                        session_manager=self.session_manager,
+                        session_id=session_id,
+                    )
+                    if sancheck_result:
+                        logger.info(f"[AITRPG] SAN检定: {sancheck_result}")
+
             hard_changes = self.rule_ai.build_hard_changes(
                 player_input=player_input,
                 adjudication_result=rule_plan,
                 rule_result=rule_result,
                 game_state=state,
+                sancheck_result=sancheck_result,
             )
             if self.session_manager.should_activate_butler_for_action(session_id, player_input):
                 hard_changes = self._merge_world_changes(
@@ -550,6 +565,7 @@ class AITRPGPlugin(Star):
                         "hard_changes": hard_changes,
                         "rhythm_result": rhythm_result,
                         "narrative_result": {"narrative": ending_text, "summary": "结局触发"},
+                        "sancheck_result": sancheck_result,
                         "game_state": state,
                     },
                     message="结局触发",
@@ -569,6 +585,7 @@ class AITRPGPlugin(Star):
                         "hard_changes": hard_changes,
                         "rhythm_result": rhythm_result,
                         "narrative_result": {"narrative": ending_text, "summary": "结局触发"},
+                        "sancheck_result": sancheck_result,
                         "game_state": state,
                     },
                     message="结局触发",
@@ -588,6 +605,7 @@ class AITRPGPlugin(Star):
                         "hard_changes": hard_changes,
                         "rhythm_result": rhythm_result,
                         "narrative_result": {"narrative": ending_text, "summary": "结局触发"},
+                        "sancheck_result": sancheck_result,
                         "game_state": state,
                     },
                     message="结局触发",
@@ -603,6 +621,7 @@ class AITRPGPlugin(Star):
                         "hard_changes": hard_changes,
                         "rhythm_result": rhythm_result,
                         "narrative_result": {"narrative": ending_text, "summary": "结局"},
+                        "sancheck_result": sancheck_result,
                         "game_state": state,
                     },
                     message="结局触发",
@@ -632,6 +651,7 @@ class AITRPGPlugin(Star):
                     "hard_changes": hard_changes,
                     "rhythm_result": rhythm_result,
                     "narrative_result": narrative_result,
+                    "sancheck_result": sancheck_result,
                     "game_state": state
                 },
                 message="三层 AI 处理完成",
@@ -822,7 +842,6 @@ class AITRPGPlugin(Star):
                 "remove_inventory": [],
                 "set_flags": {},
                 "npc_updates": {},
-                "san_effect": 0,
             },
             "on_failure": {
                 "discover_clues": [],
@@ -830,9 +849,7 @@ class AITRPGPlugin(Star):
                 "remove_inventory": [],
                 "set_flags": {},
                 "npc_updates": {},
-                "san_effect": 0,
             },
-            "san_effect": 0,
         }
         rule_result = {
             "check_type": None,

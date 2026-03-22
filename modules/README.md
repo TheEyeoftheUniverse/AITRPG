@@ -32,7 +32,7 @@
       "type": "clue/danger/item",
       "check_required": "侦查/图书馆/聆听/意志/null",
       "difficulty": "普通/困难/极难",
-      "san_cost": -2,
+      "sancheck": "0/2",
       "success_result": "成功时的描述",
       "failure_result": "失败时的描述"
     }
@@ -106,7 +106,7 @@
   - `item`: 普通物品，可以拾取使用
 - `check_required`: 需要的技能检定（null表示无需检定）
 - `difficulty`: 检定难度
-- `san_cost`: SAN值损失（负数）
+- `sancheck`: SAN检定配置（格式: "成功损失/失败损失"，如 "0/3"），可选
 - `success_result`: 检定成功时的结果描述
 - `failure_result`: 检定失败时的结果描述
 

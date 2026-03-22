@@ -142,6 +142,7 @@ class SessionManager:
             "world_state": {
                 "clues_found": [],
                 "npcs": self._build_initial_npc_state(module_data),
+                "triggered_sanchecks": [],
                 "flags": {
                     "door_unlocked": False,
                     "truth_revealed": False
@@ -768,6 +769,20 @@ class SessionManager:
             self.trigger_ending(session_id, "insane", "san_zero")
             return True
         return False
+
+    def is_sancheck_triggered(self, session_id: str, entity_name: str) -> bool:
+        """检查某实体的 sancheck 是否已触发过。"""
+        state = self.sessions.get(session_id, {})
+        return entity_name in state.get("world_state", {}).get("triggered_sanchecks", [])
+
+    def record_sancheck(self, session_id: str, entity_name: str):
+        """记录某实体的 sancheck 已触发，防止重复触发。"""
+        state = self.sessions.get(session_id)
+        if not state:
+            return
+        triggered = state.get("world_state", {}).setdefault("triggered_sanchecks", [])
+        if entity_name not in triggered:
+            triggered.append(entity_name)
 
     def check_ritual_destruction_ending(self, session_id: str) -> bool:
         """Check if ritual has been destroyed and trigger escape ending if so."""

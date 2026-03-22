@@ -720,6 +720,31 @@ html, body {
     overflow: auto;
 }
 
+.map-help {
+    margin-top: 10px;
+}
+
+.map-help-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.map-help-list {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.map-help-list li + li {
+    margin-top: 4px;
+}
+
 #map-svg {
     display: block;
     width: 100%;
@@ -991,6 +1016,73 @@ html, body {
         box-shadow: none;
     }
 }
+
+/* ═══════════════════════════════════════
+   骰子演出面板 (Dice Roll Panel)
+   ═══════════════════════════════════════ */
+
+.dice-roll-panel {
+    margin: 8px 48px;
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    text-align: center;
+    animation: fadeIn 0.3s ease;
+}
+.dice-roll--sancheck {
+    border-color: var(--san-color);
+}
+.dice-roll--skill {
+    border-color: var(--accent);
+}
+.dice-roll-header {
+    font-weight: 600;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+.dice-roll--sancheck .dice-roll-header {
+    color: var(--san-color);
+}
+.dice-roll-threshold {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+.dice-roll-number {
+    font-size: 36px;
+    font-weight: 700;
+    font-family: "Courier New", Consolas, monospace;
+    margin: 8px 0;
+    min-height: 44px;
+    line-height: 44px;
+    color: var(--text-primary);
+}
+.dice-roll-btn {
+    padding: 6px 28px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: white;
+    cursor: pointer;
+    font-size: 13px;
+    transition: opacity 0.2s;
+}
+.dice-roll-btn:hover:not(:disabled) {
+    opacity: 0.85;
+}
+.dice-roll-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+.dice-roll-result {
+    margin-top: 8px;
+    font-weight: 600;
+    font-size: 14px;
+}
+.dice-success { color: #4caf50; }
+.dice-failure { color: #e05c6c; }
 
 /* ═══════════════════════════════════════
    演出效果 (Theatrical Effects)

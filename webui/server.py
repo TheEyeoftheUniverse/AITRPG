@@ -446,10 +446,37 @@ def create_trpg_app(plugin):
                 }
                 _persist_web_session(cookie_id)
 
+                # 构建骰子演出数据
+                dice_rolls = []
+                rule_result_data = result.get("rule_result", {})
+                if rule_result_data.get("check_type") == "skill_check":
+                    dice_rolls.append({
+                        "type": "skill_check",
+                        "label": f"{rule_result_data['skill']}检定（{rule_result_data['difficulty']}）",
+                        "roll": rule_result_data["roll"],
+                        "threshold": rule_result_data["threshold"],
+                        "success": rule_result_data["success"],
+                        "critical_success": rule_result_data.get("critical_success", False),
+                        "critical_failure": rule_result_data.get("critical_failure", False),
+                        "description": rule_result_data.get("result_description", ""),
+                    })
+                sancheck_data = result.get("sancheck_result")
+                if sancheck_data:
+                    dice_rolls.append({
+                        "type": "sancheck",
+                        "label": f"SAN检定（{sancheck_data['entity_name']}）",
+                        "roll": sancheck_data["roll"],
+                        "threshold": sancheck_data["threshold"],
+                        "success": sancheck_data["success"],
+                        "san_loss": sancheck_data["san_loss"],
+                        "description": f"{'成功' if sancheck_data['success'] else '失败'}, SAN {'不变' if sancheck_data['san_loss'] == 0 else str(sancheck_data['san_loss'])}",
+                    })
+
                 return jsonify({
                     "success": True,
                     "narrative": narrative,
                     "theatrical_effects": theatrical_effects,
+                    "dice_rolls": dice_rolls,
                     "rule_plan": result.get("rule_plan", {}),
                     "rule_result": result["rule_result"],
                     "hard_changes": result.get("hard_changes", {}),

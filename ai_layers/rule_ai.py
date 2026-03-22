@@ -196,12 +196,57 @@ class RuleAI:
         logger.info(f"[RuleAI] resolve_check: {skill_name} {roll}/{threshold} {'成功' if success else '失败'}")
         return result
 
+    def resolve_sancheck(self, entity_context: dict, player_san: int, session_manager, session_id: str):
+        """执行 SAN 检定。返回 sancheck_result dict 或 None（无需检定）。"""
+        if not isinstance(entity_context, dict):
+            return None
+        sancheck_spec = entity_context.get("sancheck")
+        if not sancheck_spec:
+            return None
+
+        entity_name = entity_context.get("name", "unknown")
+
+        # 已触发过则不重复
+        if session_manager.is_sancheck_triggered(session_id, entity_name):
+            return None
+
+        # 解析 "0/3" 格式
+        success_loss, fail_loss = self._parse_sancheck_spec(sancheck_spec)
+
+        # 1d100 检定，阈值 = 当前 SAN
+        threshold = player_san
+        roll = random.randint(1, 100)
+        success = roll <= threshold
+        san_loss = success_loss if success else fail_loss
+
+        # 记录已触发
+        session_manager.record_sancheck(session_id, entity_name)
+
+        logger.info(f"[RuleAI] resolve_sancheck: {entity_name} {roll}/{threshold} {'成功' if success else '失败'} SAN{san_loss}")
+        return {
+            "check_type": "sancheck",
+            "entity_name": entity_name,
+            "sancheck_spec": sancheck_spec,
+            "threshold": threshold,
+            "roll": roll,
+            "success": success,
+            "san_loss": san_loss,
+        }
+
+    def _parse_sancheck_spec(self, spec: str):
+        """解析 '0/3' → (0, -3)。返回 (success_loss, fail_loss) 均为负数或0。"""
+        parts = str(spec).split("/")
+        success_val = int(parts[0]) if len(parts) > 0 else 0
+        fail_val = int(parts[1]) if len(parts) > 1 else 0
+        return (-abs(success_val), -abs(fail_val))
+
     def build_hard_changes(
         self,
         player_input: str,
         adjudication_result: dict,
         rule_result: dict,
-        game_state: dict = None
+        game_state: dict = None,
+        sancheck_result: dict = None
     ) -> dict:
         if not isinstance(adjudication_result, dict):
             return {}
@@ -232,18 +277,15 @@ class RuleAI:
             object_type = object_context.get("type")
             action_verb = str(normalized_action.get("verb") or "").lower()
             can_take = bool(object_context.get("can_take"))
-            san_effect = int(effect_plan.get("san_effect", adjudication_result.get("san_effect", object_context.get("san_cost", 0)) or 0))
 
             if object_type == "clue" and object_name and object_name not in clues:
                 clues.append(object_name)
             if can_take and object_name and action_verb in {"take", "pickup", "obtain", "loot"} and object_name not in inventory_add:
                 inventory_add.append(object_name)
-            if san_effect:
-                changes["san_delta"] = san_effect
-        else:
-            san_effect = int(effect_plan.get("san_effect", 0) or 0)
-            if san_effect:
-                changes["san_delta"] = san_effect
+
+        # SAN 变化由 sancheck 系统驱动
+        if sancheck_result and sancheck_result.get("san_loss"):
+            changes["san_delta"] = sancheck_result["san_loss"]
 
         if clues:
             changes["clues"] = clues
@@ -454,7 +496,6 @@ class RuleAI:
 
         normalized["on_success"] = self._normalize_effect_plan(normalized.get("on_success"))
         normalized["on_failure"] = self._normalize_effect_plan(normalized.get("on_failure"))
-        normalized["san_effect"] = int(normalized.get("san_effect", 0) or 0)
 
         return normalized
 
@@ -466,7 +507,6 @@ class RuleAI:
             "remove_inventory": self._ensure_list(effect_plan.get("remove_inventory")),
             "set_flags": effect_plan.get("set_flags") if isinstance(effect_plan.get("set_flags"), dict) else {},
             "npc_updates": effect_plan.get("npc_updates") if isinstance(effect_plan.get("npc_updates"), dict) else {},
-            "san_effect": int(effect_plan.get("san_effect", 0) or 0),
         }
 
     def _get_fallback_action_plan(
@@ -511,7 +551,6 @@ class RuleAI:
                 "remove_inventory": [],
                 "set_flags": {},
                 "npc_updates": {},
-                "san_effect": 0,
             },
             "on_failure": {
                 "discover_clues": [],
@@ -519,9 +558,7 @@ class RuleAI:
                 "remove_inventory": [],
                 "set_flags": {},
                 "npc_updates": {},
-                "san_effect": 0,
             },
-            "san_effect": 0,
         }
 
         object_key = self._match_target(raw_target or player_input, scene_objects)
@@ -556,7 +593,6 @@ class RuleAI:
             plan["normalized_action"]["target_key"] = object_key
             plan["object_context"] = object_context
             plan["check"] = self._build_object_check(object_context)
-            plan["san_effect"] = int(object_data.get("san_cost", 0) or 0)
 
             requires = object_data.get("requires")
             if requires and not self._requirements_met(requires, game_state):

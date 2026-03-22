@@ -606,6 +606,15 @@ async function sendAction() {
             }, { forceCollapsed: true });
             addMessage("assistant", "处理出错: " + data.error);
         } else {
+            // 骰子演出：先展示检定，再展示叙述
+            if (data.dice_rolls && data.dice_rolls.length > 0) {
+                for (const diceRoll of data.dice_rolls) {
+                    await showDiceRollPanel(diceRoll);
+                }
+                // 等待后再展示叙述
+                await theatricalSleep(3000);
+            }
+
             // 显示叙述
             addMessage("assistant", data.narrative);
 
@@ -689,6 +698,61 @@ function addMessage(role, content, animate = true) {
     `;
     container.appendChild(msg);
     scrollToBottom();
+}
+
+// ─── 骰子演出面板 ───
+
+async function showDiceRollPanel(diceRoll) {
+    return new Promise((resolve) => {
+        const container = document.getElementById("chat-messages");
+        const panel = document.createElement("div");
+        panel.className = "dice-roll-panel";
+
+        const isSancheck = diceRoll.type === "sancheck";
+        panel.classList.add(isSancheck ? "dice-roll--sancheck" : "dice-roll--skill");
+
+        panel.innerHTML = `
+            <div class="dice-roll-header">${escapeHtml(diceRoll.label)}</div>
+            <div class="dice-roll-body">
+                <div class="dice-roll-threshold">目标值: \u2264 ${diceRoll.threshold}</div>
+                <div class="dice-roll-number">--</div>
+                <button class="dice-roll-btn">投掷</button>
+            </div>
+        `;
+        container.appendChild(panel);
+        scrollToBottom();
+
+        const numberEl = panel.querySelector(".dice-roll-number");
+        const btnEl = panel.querySelector(".dice-roll-btn");
+
+        // 闪烁动画：数字在 1-100 之间快速变化
+        let flickerInterval = setInterval(() => {
+            numberEl.textContent = Math.floor(Math.random() * 100) + 1;
+        }, 80);
+
+        btnEl.addEventListener("click", () => {
+            clearInterval(flickerInterval);
+            numberEl.textContent = diceRoll.roll;
+            btnEl.disabled = true;
+            btnEl.textContent = "已投掷";
+
+            // 显示结果
+            const resultEl = document.createElement("div");
+            resultEl.className = "dice-roll-result " + (diceRoll.success ? "dice-success" : "dice-failure");
+
+            let resultText = diceRoll.success ? "成功" : "失败";
+            if (diceRoll.critical_success) resultText = "大成功！";
+            if (diceRoll.critical_failure) resultText = "大失败！";
+            if (isSancheck && diceRoll.san_loss) {
+                resultText += ` (SAN ${diceRoll.san_loss})`;
+            }
+            resultEl.textContent = resultText;
+            panel.querySelector(".dice-roll-body").appendChild(resultEl);
+            scrollToBottom();
+
+            resolve();
+        }, { once: true });
+    });
 }
 
 function addLoadingIndicator() {
