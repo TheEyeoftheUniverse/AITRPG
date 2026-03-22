@@ -923,6 +923,16 @@ class SessionManager:
                     elif isinstance(update, str):
                         npc_state[npc_name]["location"] = update
 
+            if "threat_entity_updates" in changes and isinstance(changes["threat_entity_updates"], dict):
+                npc_state = state["world_state"].setdefault("npcs", {})
+                for entity_name, update in changes["threat_entity_updates"].items():
+                    if entity_name not in npc_state:
+                        npc_state[entity_name] = {}
+                    if isinstance(update, dict):
+                        self._deep_merge_dict(npc_state[entity_name], update)
+                    elif isinstance(update, str):
+                        npc_state[entity_name]["location"] = update
+
         # 保存节奏AI上下文（阶段判断+世界变化）
         state["rhythm_context"].append({
             "round": state["round_count"],

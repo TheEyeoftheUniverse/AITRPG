@@ -4,6 +4,7 @@ from ..game_state.location_context import (
     build_runtime_location_context,
     get_module_npcs,
     get_module_threat_entities,
+    is_threat_entity,
 )
 from .usage_metrics import extract_usage_metrics
 
@@ -257,7 +258,17 @@ class RuleAI:
                     existing = {}
                 npc_updates[npc_name] = self._merge_nested_dict(existing, update)
         if isinstance(npc_updates, dict) and npc_updates:
-            changes["npc_updates"] = npc_updates
+            pure_npc = {}
+            threat_updates = {}
+            for name, upd in npc_updates.items():
+                if is_threat_entity(name, upd if isinstance(upd, dict) else None):
+                    threat_updates[name] = upd
+                else:
+                    pure_npc[name] = upd
+            if pure_npc:
+                changes["npc_updates"] = pure_npc
+            if threat_updates:
+                changes["threat_entity_updates"] = threat_updates
 
         return changes
 

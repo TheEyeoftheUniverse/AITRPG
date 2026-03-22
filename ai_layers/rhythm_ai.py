@@ -4,6 +4,7 @@ from ..game_state.location_context import (
     build_runtime_location_context,
     get_module_npcs,
     get_module_threat_entities,
+    is_threat_entity,
 )
 from .usage_metrics import extract_usage_metrics
 
@@ -197,8 +198,10 @@ class RhythmAI:
         npc_data = npc_context.get(focused_npc, {})
         runtime_state = npc_data.get("runtime_state", {})
         attitude = runtime_state.get("attitude", npc_data.get("initial_attitude", "neutral"))
-        trust_level = float(runtime_state.get("trust_level", 0.0) or 0.0)
-        trust_threshold = float(npc_data.get("trust_threshold", 0.5) or 0.5)
+        raw_trust = runtime_state.get("trust_level", 0.0)
+        trust_level = float(raw_trust) if isinstance(raw_trust, (int, float, str)) else 0.0
+        raw_threshold = npc_data.get("trust_threshold", 0.5)
+        trust_threshold = float(raw_threshold) if isinstance(raw_threshold, (int, float, str)) else 0.5
         npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
         player_facts = npc_memory.get("player_facts", {}) if isinstance(npc_memory.get("player_facts"), dict) else {}
         conversation_flags = npc_memory.get("conversation_flags", {}) if isinstance(npc_memory.get("conversation_flags"), dict) else {}
@@ -474,8 +477,9 @@ class RhythmAI:
         if not memory_update:
             return {}
 
+        update_key = "threat_entity_updates" if is_threat_entity(focus_npc) else "npc_updates"
         return {
-            "npc_updates": {
+            update_key: {
                 focus_npc: {
                     "memory": memory_update,
                 }

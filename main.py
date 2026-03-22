@@ -1107,7 +1107,7 @@ class AITRPGPlugin(Star):
             if merged_values:
                 merged[list_key] = merged_values
 
-        for dict_key in ("flags", "npc_locations", "npc_updates"):
+        for dict_key in ("flags", "npc_locations", "npc_updates", "threat_entity_updates"):
             merged_dict = {}
             for source in (hard_changes, soft_changes):
                 value = source.get(dict_key, {})
@@ -1192,6 +1192,16 @@ class AITRPGPlugin(Star):
                     npc_state[npc_name] = self._deep_merge_dict(npc_state[npc_name], update)
                 elif isinstance(update, str):
                     npc_state[npc_name]["location"] = update
+
+        if "threat_entity_updates" in changes and isinstance(changes["threat_entity_updates"], dict):
+            npc_state = world_state.setdefault("npcs", {})
+            for entity_name, update in changes["threat_entity_updates"].items():
+                if entity_name not in npc_state:
+                    npc_state[entity_name] = {}
+                if isinstance(update, dict):
+                    npc_state[entity_name] = self._deep_merge_dict(npc_state[entity_name], update)
+                elif isinstance(update, str):
+                    npc_state[entity_name]["location"] = update
 
     def _format_output(self, narrative, rule_result, rhythm_result, state):
         """格式化输出（包含AI工作流展示）"""

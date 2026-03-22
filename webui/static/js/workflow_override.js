@@ -67,6 +67,7 @@ const WORKFLOW_LABELS = {
     clues: "线索",
     npc_locations: "NPC 位置变化",
     npc_updates: "NPC 状态变化",
+    threat_entity_updates: "威胁实体状态变化",
     source_round: "来源轮次",
 };
 
