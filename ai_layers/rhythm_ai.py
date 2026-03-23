@@ -3,6 +3,7 @@ from astrbot.api.star import Context
 from ..game_state.location_context import (
     build_adjacent_locations_context,
     build_runtime_location_context,
+    get_cross_wall_npcs,
     get_module_npcs,
     get_module_threat_entities,
     is_threat_entity,
@@ -172,7 +173,7 @@ class RhythmAI:
             "- evidence_seen: 玩家展示的证据 [{\"key\": \"证据名\", \"source_round\": 当前轮次}]。\n"
             "- trust_signals: 描述本轮信任变化信号 [{\"signal\": \"信号描述\", \"round\": 当前轮次, \"direction\": \"+\"或\"-\"}]。\n"
             "- last_impression: {\"focus\": \"NPC本轮关注重点\", \"attitude_snapshot\": \"当前态度\", \"source_round\": 当前轮次}\n"
-            "- trust_change_reason: 一个字符串key，必须来自NPC数据中的 available_trust_reasons 列表。如果本轮没有值得改变信任的行为，不输出此字段。\n"
+            "- trust_change_reasons: 一个字符串key的列表，每个key必须来自NPC数据中的 available_trust_reasons 列表。同一轮可命中多个原因。如果本轮没有值得改变信任的行为，不输出此字段。\n"
             "- 只输出有内容的字段，空列表/空对象的字段可以省略。\n\n"
             "## npc_memory_updates schema\n"
             "{\n"
@@ -184,11 +185,16 @@ class RhythmAI:
             '    "evidence_seen": [],\n'
             '    "trust_signals": [],\n'
             '    "last_impression": {},\n'
-            '    "trust_change_reason": "available_trust_reasons中的key"\n'
+            '    "trust_change_reasons": ["available_trust_reasons中的key1", "key2"]\n'
             "  }\n"
             "}\n\n"
             "# Output note\n"
-            "You may add npc_action_guide and npc_memory_updates alongside the existing JSON fields."
+            "You may add npc_action_guide and npc_memory_updates alongside the existing JSON fields.\n\n"
+            "# 隔墙交流补充规则\n"
+            "- 如果NPC上下文中包含 interaction_mode=cross_wall_voice_only，说明该NPC通过墙壁交流，只能听到声音，不能看到对方。\n"
+            "- 隔墙交流时，npc_action_guide的response_strategy应体现隔墙的物理隔断感。\n"
+            "- 如果NPC记忆中已有answered_questions或player_facts记录了某信息，不要在next_line_goal中重复追问这些已回答的问题。\n"
+            "- 重复追问已回答信息是BUG。NPC应根据记忆推进对话，而非循环问同样的问题。\n"
         )
         input_classification = (rule_plan or {}).get("input_classification", "action")
         if input_classification == "dialogue":
@@ -209,7 +215,7 @@ class RhythmAI:
             return True
         return False
 
-    def _build_npc_action_guide(self, player_input: str, rule_plan: dict, npc_context: dict) -> dict:
+    def _build_npc_action_guide(self, player_input: str, rule_plan: dict, npc_context: dict, game_state: dict = None) -> dict:
         if not isinstance(npc_context, dict) or not npc_context:
             return {}
 
@@ -239,6 +245,32 @@ class RhythmAI:
         trust_gates = npc_data.get("trust_gates", {})
         high_min = float(trust_gates.get("high", {}).get("min", npc_data.get("trust_threshold", 0.5)))
         medium_min = float(trust_gates.get("medium", {}).get("min", 0.2))
+
+        # 隔墙交流首次接触检查
+        is_cross_wall = bool(npc_data.get("cross_wall"))
+        if is_cross_wall:
+            npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
+            visited = (game_state or {}).get("visited_locations", []) if game_state else []
+            npc_from_room = npc_data.get("cross_wall_from_room", "")
+            has_prior_contact = bool(
+                npc_memory.get("player_facts")
+                or npc_memory.get("topics_discussed")
+                or npc_memory.get("evidence_seen")
+                or trust_level > 0
+                or npc_from_room in visited
+            )
+            if not has_prior_contact:
+                return {
+                    "focus_npc": focused_npc,
+                    "cross_wall_heard_only": True,
+                    "cross_wall": True,
+                    "attitude": attitude,
+                    "response_strategy": "",
+                    "next_line_goal": "",
+                    "revealable_info": [],
+                    "should_open_door": False,
+                }
+
         dialogue_guide = (
             npc_data.get("dialogue_guide", {})
             if isinstance(npc_data.get("dialogue_guide"), dict)
@@ -246,6 +278,11 @@ class RhythmAI:
         )
         key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
         lower_input = str(player_input or "").lower()
+
+        # 紧急协助阈值（低于正式入队阈值）
+        emergency_threshold = float(npc_data.get("emergency_help_threshold", high_min))
+        help_keywords = ["帮", "救", "引开", "help", "bait", "distract", "管家", "堵"]
+        is_requesting_help = any(kw in lower_input for kw in help_keywords)
 
         if trust_level >= high_min:
             response_strategy = (
@@ -256,6 +293,14 @@ class RhythmAI:
             )
             revealable_info = list(key_info.keys())
             should_open_door = "open" in lower_input or "cooperate" in lower_input
+        elif trust_level >= emergency_threshold and is_requesting_help:
+            # 紧急协助：信任达到紧急阈值且玩家在求助
+            response_strategy = (
+                dialogue_guide.get("emergency_help")
+                or "在确认管家位置安全后，愿意执行一次短时协助动作"
+            )
+            revealable_info = list(key_info.keys())[:1]
+            should_open_door = False
         elif trust_level >= medium_min:
             response_strategy = (
                 dialogue_guide.get("medium_trust")
@@ -273,7 +318,7 @@ class RhythmAI:
             revealable_info = []
             should_open_door = False
 
-        return {
+        guide = {
             "focus_npc": focused_npc,
             "attitude": attitude,
             "response_strategy": response_strategy,
@@ -281,6 +326,9 @@ class RhythmAI:
             "revealable_info": revealable_info,
             "should_open_door": should_open_door,
         }
+        if is_cross_wall:
+            guide["cross_wall"] = True
+        return guide
 
     def _normalize_result(self, result: dict, base_result: dict) -> dict:
         if not isinstance(result, dict):
@@ -365,6 +413,13 @@ class RhythmAI:
                 "Current threat entity context:",
                 json.dumps(threat_entity_context, ensure_ascii=False, indent=2),
             ])
+        butler_chase = location_context.get("butler_chase") if isinstance(location_context, dict) else None
+        if butler_chase:
+            parts.extend([
+                "",
+                "Active butler chase context:",
+                json.dumps(butler_chase, ensure_ascii=False, indent=2),
+            ])
         adjacent_context = build_adjacent_locations_context(game_state, module_data, current_location)
         if adjacent_context:
             parts.extend([
@@ -400,6 +455,35 @@ class RhythmAI:
                 "memory": runtime_state.get("memory", {}),
                 "companion_state": runtime_state.get("companion_state", "inactive"),
             }
+            trust_map = npc_data.get("trust_map", {})
+            if isinstance(trust_map, dict) and trust_map:
+                merged_npc["available_trust_reasons"] = list(trust_map.keys())
+            scene_npcs[npc_name] = merged_npc
+
+        # 追加隔墙可交流NPC
+        cross_wall = get_cross_wall_npcs(game_state, module_data, current_location)
+        for npc_name, cross_info in cross_wall.items():
+            if npc_name in scene_npcs:
+                continue
+            npc_data = get_module_npcs(module_data).get(npc_name)
+            if not npc_data:
+                continue
+            runtime_state = npc_states.get(npc_name, {})
+            npc_location = runtime_state.get("location", npc_data.get("location"))
+
+            merged_npc = dict(npc_data)
+            merged_npc.setdefault("name", npc_name)
+            merged_npc["runtime_state"] = {
+                "location": npc_location,
+                "attitude": runtime_state.get("attitude", npc_data.get("initial_attitude", "neutral")),
+                "trust_level": runtime_state.get("trust_level", 0.0),
+                "memory": runtime_state.get("memory", {}),
+                "companion_state": runtime_state.get("companion_state", "inactive"),
+            }
+            merged_npc["cross_wall"] = True
+            merged_npc["cross_wall_type"] = cross_info.get("wall_type", "voice_only")
+            merged_npc["cross_wall_from_room"] = cross_info.get("from_room", "")
+            merged_npc["interaction_mode"] = "cross_wall_voice_only"
             trust_map = npc_data.get("trust_map", {})
             if isinstance(trust_map, dict) and trust_map:
                 merged_npc["available_trust_reasons"] = list(trust_map.keys())
@@ -453,7 +537,7 @@ class RhythmAI:
         feasibility = (rule_plan or {}).get("feasibility", {})
         npc_context = self._build_scene_npc_context(game_state, module_data)
         threat_entity_context = self._build_scene_threat_entity_context(game_state, module_data)
-        npc_action_guide = self._build_npc_action_guide(player_input, rule_plan, npc_context)
+        npc_action_guide = self._build_npc_action_guide(player_input, rule_plan, npc_context, game_state)
 
         return {
             "feasible": bool(feasibility.get("ok", True)),

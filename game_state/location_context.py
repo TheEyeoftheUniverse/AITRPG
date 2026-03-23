@@ -154,8 +154,63 @@ def build_runtime_location_context(
     location_context["threat_present"] = bool(present_threats)
     location_context["entity_present"] = bool(present_npcs or present_threats)
     location_context["threat_entities"] = list(present_threats)
+    butler_state = ((game_state or {}).get("world_state", {}).get("npcs", {}) or {}).get("管家", {})
+    chase_state = (butler_state or {}).get("chase_state", {})
+    if isinstance(chase_state, dict) and chase_state.get("active"):
+        current_loc = current_location
+        butler_location = str((butler_state or {}).get("location") or "").strip()
+        blocked_at = str(chase_state.get("blocked_at") or "").strip()
+        relation = "unknown"
+        if butler_location and current_loc:
+            if butler_location == current_loc:
+                relation = "same_room"
+            elif blocked_at and blocked_at == current_loc:
+                relation = "blocked_outside_current_room"
+            else:
+                relation = "separate_rooms"
+        location_context["butler_chase"] = {
+            "active": True,
+            "status": str(chase_state.get("status") or "idle"),
+            "target": chase_state.get("target"),
+            "butler_location": butler_location or None,
+            "player_location": current_loc,
+            "blocked_at": blocked_at or None,
+            "player_relation": relation,
+        }
 
     return location_context
+
+
+def get_cross_wall_npcs(
+    game_state: Dict[str, Any],
+    module_data: Dict[str, Any],
+    current_location: str,
+) -> Dict[str, Dict[str, Any]]:
+    """获取可通过隔墙交流到达的NPC（不在当前房间但配置了cross_wall_pairs）。"""
+    cross_wall_pairs = (module_data or {}).get("cross_wall_pairs", [])
+    if not isinstance(cross_wall_pairs, list):
+        return {}
+    npc_states = (game_state or {}).get("world_state", {}).get("npcs", {})
+    result: Dict[str, Dict[str, Any]] = {}
+
+    for pair in cross_wall_pairs:
+        if not isinstance(pair, dict):
+            continue
+        rooms = pair.get("rooms", [])
+        if not isinstance(rooms, list) or current_location not in rooms:
+            continue
+        other_rooms = [r for r in rooms if r != current_location]
+        for other_room in other_rooms:
+            for npc_name, npc_data in get_module_npcs(module_data).items():
+                runtime = npc_states.get(npc_name, {}) if isinstance(npc_states, dict) else {}
+                npc_loc = runtime.get("location", npc_data.get("location"))
+                if npc_loc == other_room:
+                    result[npc_name] = {
+                        "cross_wall": True,
+                        "wall_type": pair.get("type", "voice_only"),
+                        "from_room": other_room,
+                    }
+    return result
 
 
 def build_adjacent_locations_context(

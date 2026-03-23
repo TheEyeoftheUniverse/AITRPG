@@ -202,6 +202,9 @@ class SessionManager:
             "evidence_seen": [],
             "trust_signals": [],
             "last_impression": {},
+            "applied_trust_reasons": [],
+            "overheard_remote_dialogue": [],
+            "emergency_context": {},
         }
 
     def _build_default_butler_chase_state(self) -> Dict[str, Any]:
@@ -328,6 +331,47 @@ class SessionManager:
         butler_state = self._get_butler_runtime_state(state)
         return str(butler_state.get("location") or "").strip()
 
+    def get_butler_chase_context(self, session_id: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+        return self.build_butler_chase_context(state)
+
+    def build_butler_chase_context(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(state, dict):
+            return {}
+
+        butler_state = self._get_butler_runtime_state(state)
+        chase_state = butler_state.get("chase_state", {})
+        if not isinstance(chase_state, dict):
+            chase_state = self._build_default_butler_chase_state()
+
+        current_location = str(state.get("current_location") or "").strip()
+        butler_location = str(butler_state.get("location") or "").strip()
+        blocked_at = str(chase_state.get("blocked_at") or "").strip()
+        target = chase_state.get("target")
+
+        relation = "unknown"
+        if butler_location and current_location:
+            if butler_location == current_location:
+                relation = "same_room"
+            elif blocked_at and blocked_at == current_location:
+                relation = "blocked_outside_current_room"
+            else:
+                relation = "separate_rooms"
+
+        return {
+            "active": bool(chase_state.get("active")),
+            "status": str(chase_state.get("status") or "idle"),
+            "target": target,
+            "butler_location": butler_location or None,
+            "player_location": current_location or None,
+            "blocked_at": blocked_at or None,
+            "last_target_location": chase_state.get("last_target_location"),
+            "same_location_rounds": int(chase_state.get("same_location_rounds", 0) or 0),
+            "player_relation": relation,
+        }
+
     def is_player_with_active_butler(self, session_id: str) -> bool:
         state = self.sessions.get(session_id)
         if not state or not self.is_butler_active(session_id):
@@ -430,6 +474,37 @@ class SessionManager:
         chase_state["active"] = True
 
         return {"success": True, "butler_target": bait_entity, "bait_room": room}
+
+    def block_butler_with_current_room_door(self, session_id: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {"success": False, "message": "会话不存在"}
+        if not self.is_butler_active(session_id):
+            return {"success": False, "message": "管家当前没有在追逐你"}
+
+        module_data = self.get_module_data(session_id)
+        current_location = state.get("current_location")
+        room_data = module_data.get("locations", {}).get(current_location, {})
+        if not isinstance(room_data, dict) or not room_data.get("has_door"):
+            return {"success": False, "message": "这里没有门可以关上"}
+
+        butler_state = self._get_butler_runtime_state(state)
+        chase_state = butler_state.setdefault("chase_state", self._build_default_butler_chase_state())
+        if not isinstance(chase_state, dict):
+            chase_state = self._build_default_butler_chase_state()
+            butler_state["chase_state"] = chase_state
+
+        chase_state["active"] = True
+        chase_state["status"] = "blocked"
+        chase_state["target"] = "player"
+        chase_state["blocked_at"] = current_location
+        chase_state["last_target_location"] = current_location
+        self._sync_influence_dimensions(state)
+        return {
+            "success": True,
+            "blocked_at": current_location,
+            "message": "你及时关上了门，暂时把管家拦在了外面。",
+        }
 
     def unblock_butler(self, session_id: str, new_target: str = "player"):
         """当新活物进入管家视野时，解除管家的blocked状态。"""

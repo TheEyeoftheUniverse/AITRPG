@@ -3,6 +3,7 @@ from astrbot.api.star import Context
 from ..game_state.location_context import (
     build_adjacent_locations_context,
     build_runtime_location_context,
+    get_cross_wall_npcs,
     get_module_npcs,
     get_module_threat_entities,
     is_threat_entity,
@@ -309,6 +310,34 @@ class RuleAI:
             if threat_updates:
                 changes["threat_entity_updates"] = threat_updates
 
+        current_location = str((game_state or {}).get("current_location") or "").strip()
+        location_data = adjudication_result.get("location_context", {}) if isinstance(adjudication_result, dict) else {}
+        if not isinstance(location_data, dict):
+            location_data = {}
+        if (
+            check_success
+            and str(normalized_action.get("verb") or "").lower() == "close"
+            and current_location
+            and bool(location_data.get("has_door"))
+        ):
+            butler_state = ((game_state or {}).get("world_state", {}).get("npcs", {}) or {}).get("管家", {})
+            chase_state = (butler_state or {}).get("chase_state", {})
+            if isinstance(chase_state, dict) and chase_state.get("active"):
+                changes["threat_entity_updates"] = self._merge_nested_dict(
+                    changes.get("threat_entity_updates", {}),
+                    {
+                        "管家": {
+                            "chase_state": {
+                                "active": True,
+                                "status": "blocked",
+                                "target": "player",
+                                "blocked_at": current_location,
+                                "last_target_location": current_location,
+                            }
+                        }
+                    },
+                )
+
         return changes
 
     def _build_action_prompt(
@@ -339,6 +368,7 @@ class RuleAI:
         prompt = prompt.replace("{inventory}", json.dumps(inventory, ensure_ascii=False))
         prompt = prompt.replace("{clues_found}", json.dumps(clues_found, ensure_ascii=False))
         prompt = prompt.replace("{reachable_locations}", json.dumps(reachable, ensure_ascii=False))
+        butler_chase = location_context.get("butler_chase") if isinstance(location_context, dict) else None
         prompt += (
             "\n\n# 当前场景威胁实体字段\n"
             f"{json.dumps(scene_threat_entities, ensure_ascii=False, indent=2)}\n\n"
@@ -347,6 +377,12 @@ class RuleAI:
             "- threat entity 不是 NPC。它不能说话，不能被当作普通对话对象。\n"
             "- normalized_action.target_kind 可使用 threat_entity。\n"
             "- 输出JSON时，请在顶层加入 threat_entity_context 字段。\n"
+        )
+        prompt += (
+            "\n# 当前管家追逐状态补充\n"
+            f"{json.dumps(butler_chase or {}, ensure_ascii=False, indent=2)}\n"
+            "- 如果 butler_chase.active 为 true，说明玩家处于持续追逐压力中。即使管家不在当前房间，也要据此理解玩家的逃跑、关门、拖延和阻拦意图。\n"
+            "- 如果当前场景 has_door=true，且玩家表达关门、顶门、抵门、堵门或反锁的意思，在追逐中优先理解为试图把管家阻隔在门外。\n"
         )
         if self.is_dialogue_input(player_input):
             prompt += (
@@ -359,6 +395,17 @@ class RuleAI:
             prompt += (
                 "\n# 输入分类：行动\n"
                 "系统判定玩家输入为【行动】。请将其作为玩家角色的实际动作或行为处理。\n"
+            )
+        # 隔墙交流约束
+        cross_wall_npcs = [n for n, d in scene_npcs.items() if d.get("cross_wall")]
+        if cross_wall_npcs:
+            prompt += (
+                "\n# 隔墙交流约束\n"
+                f"以下NPC通过墙壁交流（voice_only）：{cross_wall_npcs}\n"
+                "- 玩家与这些NPC之间只能听到声音，不能获得视觉信息\n"
+                "- 不能描写对面房间的视觉细节\n"
+                "- 对话应体现隔墙/门后的物理隔断感\n"
+                "- 这些NPC仍然可以作为对话目标（target_kind=npc），feasibility应为ok\n"
             )
         return prompt
 
@@ -482,6 +529,7 @@ class RuleAI:
         ):
             normalized["check"] = self._build_object_check(normalized["object_context"])
 
+        self._apply_close_door_override(normalized, player_input, game_state, module_data)
         normalized["location_context"] = location_context if isinstance(location_context, dict) else {}
 
         npc_context = normalized.get("npc_context")
@@ -628,6 +676,7 @@ class RuleAI:
             plan["feasibility"]["reason"] = "目标物品不在当前场景"
             return plan
 
+        self._apply_close_door_override(plan, player_input, game_state, module_data)
         return plan
 
     def _requirements_met(self, requirements: Any, game_state: dict) -> bool:
@@ -698,6 +747,31 @@ class RuleAI:
                 "memory": runtime_state.get("memory", {}),
             }
             scene_npcs[npc_name] = merged_npc
+
+        # 追加隔墙可交流NPC
+        cross_wall = get_cross_wall_npcs(game_state, module_data, current_location)
+        for npc_name, cross_info in cross_wall.items():
+            if npc_name in scene_npcs:
+                continue
+            npc_data = get_module_npcs(module_data).get(npc_name)
+            if not npc_data:
+                continue
+            runtime_state = npc_states.get(npc_name, {})
+            npc_location = runtime_state.get("location", npc_data.get("location"))
+
+            merged_npc = dict(npc_data)
+            merged_npc.setdefault("name", npc_name)
+            merged_npc["runtime_state"] = {
+                "location": npc_location,
+                "attitude": runtime_state.get("attitude", npc_data.get("initial_attitude", "中立")),
+                "trust_level": runtime_state.get("trust_level", 0.0),
+                "memory": runtime_state.get("memory", {}),
+            }
+            merged_npc["cross_wall"] = True
+            merged_npc["cross_wall_type"] = cross_info.get("wall_type", "voice_only")
+            merged_npc["cross_wall_from_room"] = cross_info.get("from_room", "")
+            scene_npcs[npc_name] = merged_npc
+
         return scene_npcs
 
     def _get_scene_threat_entities(self, game_state: dict, module_data: dict) -> Dict[str, Dict[str, Any]]:
@@ -792,6 +866,8 @@ class RuleAI:
             return "burn"
         if any(keyword in text for keyword in ["切断", "砍", "破坏"]) or any(keyword in lowered for keyword in ["cut", "destroy", "break"]):
             return "destroy"
+        if self._is_close_door_action(text):
+            return "close"
         if any(keyword in text for keyword in ["说", "问", "交谈", "对话"]) or intent_name == "talk":
             return "talk"
         if any(keyword in text for keyword in ["用", "使用"]) or intent_name == "use":
@@ -801,6 +877,48 @@ class RuleAI:
         if intent_name:
             return intent_name
         return "interact"
+
+    def _is_close_door_action(self, player_input: str) -> bool:
+        text = str(player_input or "").strip()
+        if not text:
+            return False
+        lowered = text.lower()
+        cn_keywords = ["关门", "把门关上", "关上门", "顶住门", "堵门", "抵住房门", "反锁", "锁门", "拦住房门"]
+        en_keywords = ["shut the door", "close the door", "bar the door", "lock the door", "hold the door"]
+        return any(keyword in text for keyword in cn_keywords) or any(keyword in lowered for keyword in en_keywords)
+
+    def _apply_close_door_override(self, plan: dict, player_input: str, game_state: dict, module_data: dict):
+        if not isinstance(plan, dict) or not self._is_close_door_action(player_input):
+            return
+
+        current_location = game_state.get("current_location", "master_bedroom")
+        location_data = (module_data or {}).get("locations", {}).get(current_location, {})
+        has_door = bool((location_data or {}).get("has_door"))
+
+        normalized_action = plan.setdefault("normalized_action", {})
+        feasibility = plan.setdefault("feasibility", {"ok": True, "reason": None})
+        check = plan.setdefault("check", {})
+
+        normalized_action["verb"] = "close"
+        normalized_action["target_kind"] = "location"
+        normalized_action["target_key"] = current_location
+        if not normalized_action.get("raw_target_text"):
+            normalized_action["raw_target_text"] = "门"
+
+        check["required"] = False
+        check["skill"] = None
+        check["difficulty"] = "无需判定"
+
+        if not has_door:
+            feasibility["ok"] = False
+            feasibility["reason"] = feasibility.get("reason") or "这里没有门可以关上"
+            return
+
+        butler_state = ((game_state or {}).get("world_state", {}).get("npcs", {}) or {}).get("管家", {})
+        chase_state = (butler_state or {}).get("chase_state", {})
+        if isinstance(chase_state, dict) and chase_state.get("active"):
+            feasibility["ok"] = True
+            feasibility["reason"] = None
 
     def _should_default_to_scene_npc(self, player_input: str, normalized_action: dict, scene_npcs: Dict[str, Dict[str, Any]]) -> bool:
         if not isinstance(scene_npcs, dict) or len(scene_npcs) != 1:

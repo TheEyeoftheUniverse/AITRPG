@@ -276,6 +276,7 @@ class AITRPGPlugin(Star):
             否则 context 包含 move_check_result, is_dialogue, state。
         """
         move_check_result = None
+        move_movement_note = None
 
         # === 结局已完全结束 ===
         if self.session_manager.is_game_over(session_id):
@@ -312,6 +313,7 @@ class AITRPGPlugin(Star):
         if move_to:
             move_result = self.session_manager.move_player(session_id, move_to)
             move_check_result = move_result.get("check_result")
+            move_movement_note = move_result.get("movement_note")
             if not move_result["success"]:
                 state = self.session_manager.get_session(session_id)
                 for step_key, _, _ in self.PROGRESS_STEPS:
@@ -369,8 +371,10 @@ class AITRPGPlugin(Star):
             target_loc = self.session_manager.get_location_context(session_id, move_to)
             loc_name = target_loc.get("name", move_to)
             description = str(target_loc.get("runtime_description") or target_loc.get("description") or "").strip()
+            butler_chase = self.session_manager.get_butler_chase_context(session_id)
+            chase_active = bool((butler_chase or {}).get("active"))
 
-            if target_loc.get("entity_present"):
+            if target_loc.get("entity_present") or chase_active:
                 self._skip_progress_step(session_id, "rule_intent", "纯移动，不解析意图")
                 self._skip_progress_step(session_id, "rule_adjudication", "纯移动，不做动作裁定")
                 self._skip_progress_step(session_id, "rule_check", "纯移动，不触发判定")
@@ -381,6 +385,8 @@ class AITRPGPlugin(Star):
                     state=state,
                     module_data=module_data,
                     history=history,
+                    move_check_result=move_check_result,
+                    movement_note=move_movement_note,
                 )
                 result["move_check_result"] = move_check_result
                 return self._finalize_action_result(session_id, result, message="到场叙述完成"), None
@@ -413,6 +419,7 @@ class AITRPGPlugin(Star):
 
         return None, {
             "move_check_result": move_check_result,
+            "move_movement_note": move_movement_note,
             "is_dialogue": is_dialogue,
             "state": state,
         }
@@ -465,10 +472,12 @@ class AITRPGPlugin(Star):
 
             # ===== 预检查阶段（重试时跳过） =====
             move_check_result = None
+            move_movement_note = None
             is_dialogue = False
 
             if retry_from:
                 move_check_result = cache.get("move_check_result")
+                move_movement_note = cache.get("move_movement_note")
                 is_dialogue = cache.get("is_dialogue", False)
             else:
                 early_result, precheck_ctx = await self._precheck_action(
@@ -476,6 +485,7 @@ class AITRPGPlugin(Star):
                 if early_result is not None:
                     return early_result
                 move_check_result = precheck_ctx["move_check_result"]
+                move_movement_note = precheck_ctx.get("move_movement_note")
                 is_dialogue = precheck_ctx["is_dialogue"]
                 state = precheck_ctx["state"]
 
@@ -485,6 +495,7 @@ class AITRPGPlugin(Star):
                     "move_to": move_to,
                     "history": history,
                     "move_check_result": move_check_result,
+                    "move_movement_note": move_movement_note,
                     "is_dialogue": is_dialogue,
                 }
                 cache = self._last_action_cache[session_id]
@@ -526,6 +537,13 @@ class AITRPGPlugin(Star):
                 )
                 self._finish_progress_step(session_id, "rule_adjudication", self.rule_ai.pop_call_metric(adjudication_trace_id), "动作裁定完成")
                 rule_plan["input_classification"] = "dialogue" if is_dialogue else "action"
+                if move_to:
+                    rule_plan["movement_context"] = {
+                        "moved_this_turn": True,
+                        "destination": move_to,
+                        "check_result": move_check_result,
+                        "movement_note": move_movement_note,
+                    }
                 logger.info(f"[AITRPG] 动作裁定结果: {rule_plan}")
 
                 # === 第三步：规则AI - 执行检定 ===
@@ -554,6 +572,10 @@ class AITRPGPlugin(Star):
                             break  # 当前只支持一个NPC协助
 
                 self._finish_progress_step(session_id, "rule_check", {}, "规则判定完成")
+                if move_to:
+                    rule_result["movement_check"] = move_check_result
+                    if move_movement_note:
+                        rule_result["movement_note"] = move_movement_note
                 logger.info(f"[AITRPG] 规则判定结果: {rule_result}")
 
                 # === SAN检定 ===
@@ -640,8 +662,8 @@ class AITRPGPlugin(Star):
 
                 # 将RhythmAI的npc_memory_updates合并到world_changes中
                 self._apply_memory_updates(rhythm_result, merged_changes)
-                # 根据trust_change_reason查模组trust_map，计算信任增量
-                self._apply_trust_changes(rhythm_result, module_data, merged_changes)
+                # 根据trust_change_reasons查模组trust_map，计算信任增量（支持多reason叠加+一次性去重）
+                self._apply_trust_changes(rhythm_result, module_data, merged_changes, state)
 
                 rhythm_result["feasible"] = bool(rule_plan.get("feasibility", {}).get("ok", True))
                 if not rhythm_result.get("hint"):
@@ -942,6 +964,8 @@ class AITRPGPlugin(Star):
         state: dict,
         module_data: dict,
         history: list,
+        move_check_result: dict | None = None,
+        movement_note: str | None = None,
     ) -> dict:
         target_loc = self.session_manager.get_location_context(session_id, move_to)
         loc_name = target_loc.get("name", move_to)
@@ -974,11 +998,23 @@ class AITRPGPlugin(Star):
                 "npc_updates": {},
             },
         }
-        rule_result = {
+        if move_check_result or movement_note:
+            rule_plan["movement_context"] = {
+                "moved_this_turn": True,
+                "destination": move_to,
+                "check_result": move_check_result,
+                "movement_note": movement_note,
+            }
+        rule_result = move_check_result if isinstance(move_check_result, dict) else {
             "check_type": None,
             "success": True,
             "result_description": "移动到新场景",
         }
+        if movement_note:
+            rule_result = dict(rule_result)
+            rule_result["movement_note"] = movement_note
+            if not rule_result.get("result_description"):
+                rule_result["result_description"] = movement_note
         activation_changes = {}
         if self.session_manager.should_activate_butler_on_entry(session_id, move_to):
             activation_changes = self.session_manager.build_butler_activation_changes(
@@ -986,7 +1022,14 @@ class AITRPGPlugin(Star):
                 "player_entered_living_room",
             )
 
-        use_rhythm_arrival_judgement = self.session_manager.should_use_butler_arrival_judgement(session_id, move_to)
+        butler_chase = self.session_manager.get_butler_chase_context(session_id)
+        chase_active = bool((butler_chase or {}).get("active"))
+        use_rhythm_arrival_judgement = (
+            self.session_manager.should_use_butler_arrival_judgement(session_id, move_to)
+            or chase_active
+            or bool(move_check_result)
+            or bool(movement_note)
+        )
         if use_rhythm_arrival_judgement:
             self._start_progress_step(session_id, "rhythm", "节奏AI 正在判断威胁实体的到场反应")
             rhythm_trace_id = f"{session_id}:rhythm"
@@ -1027,6 +1070,9 @@ class AITRPGPlugin(Star):
             state = self.session_manager.get_session(session_id)
 
         rhythm_result["arrival_mode"] = True
+        if movement_note:
+            rhythm_result["hint"] = movement_note if not rhythm_result.get("hint") else f"{movement_note} {rhythm_result.get('hint')}"
+            rhythm_result["movement_note"] = movement_note
 
         if self.session_manager.is_game_over(session_id) or self.session_manager.is_ending_triggered(session_id):
             state = self.session_manager.get_session(session_id)
@@ -1344,8 +1390,12 @@ class AITRPGPlugin(Star):
             if isinstance(updates.get("last_impression"), dict) and updates["last_impression"]:
                 memory_entry["last_impression"] = updates["last_impression"]
 
-    def _apply_trust_changes(self, rhythm_result: dict, module_data: dict, merged_changes: dict):
-        """根据RhythmAI输出的trust_change_reason查模组trust_map，写入trust_delta。"""
+    def _apply_trust_changes(self, rhythm_result: dict, module_data: dict, merged_changes: dict, game_state: dict = None):
+        """根据RhythmAI输出的trust_change_reasons查模组trust_map，写入trust_delta。
+
+        支持多reason叠加（trust_change_reasons列表），正向reason只首次生效（一次性去重）。
+        向后兼容旧的单值trust_change_reason格式。
+        """
         memory_updates = rhythm_result.get("npc_memory_updates", {})
         if not isinstance(memory_updates, dict):
             return
@@ -1356,18 +1406,57 @@ class AITRPGPlugin(Star):
         for npc_name, updates in memory_updates.items():
             if not isinstance(updates, dict):
                 continue
-            reason = updates.get("trust_change_reason")
-            if not reason or not isinstance(reason, str):
+
+            # 支持新格式（列表）和旧格式（单值）
+            reasons = updates.get("trust_change_reasons", [])
+            if not isinstance(reasons, list):
+                reasons = []
+            old_reason = updates.get("trust_change_reason")
+            if isinstance(old_reason, str) and old_reason and old_reason not in reasons:
+                reasons.append(old_reason)
+
+            if not reasons:
                 continue
+
             trust_map = npcs_module.get(npc_name, {}).get("trust_map", {})
-            delta = trust_map.get(reason)
-            if delta is None:
+            if not isinstance(trust_map, dict):
                 continue
+
+            # 从game_state读取已生效的正向reason
+            npc_runtime = {}
+            if isinstance(game_state, dict):
+                npc_runtime = game_state.get("world_state", {}).get("npcs", {}).get(npc_name, {})
+            npc_memory = npc_runtime.get("memory", {}) if isinstance(npc_runtime.get("memory"), dict) else {}
+            already_applied = set(npc_memory.get("applied_trust_reasons", []))
+
             npc_entry = npc_updates.setdefault(npc_name, {})
             if not isinstance(npc_entry, dict):
                 npc_entry = {}
                 npc_updates[npc_name] = npc_entry
-            npc_entry["trust_delta"] = delta
+
+            total_delta = 0.0
+            newly_applied = []
+            for reason in reasons:
+                if not isinstance(reason, str):
+                    continue
+                delta = trust_map.get(reason)
+                if delta is None:
+                    continue
+                # 正向reason一次性检查（负面reason可重复触发）
+                if isinstance(delta, (int, float)) and delta > 0 and reason in already_applied:
+                    continue
+                total_delta += float(delta)
+                if isinstance(delta, (int, float)) and delta > 0:
+                    newly_applied.append(reason)
+
+            if total_delta != 0:
+                npc_entry["trust_delta"] = total_delta
+            if newly_applied:
+                memory_entry = npc_entry.setdefault("memory", {})
+                applied_list = memory_entry.setdefault("applied_trust_reasons", [])
+                for r in newly_applied:
+                    if r not in applied_list:
+                        applied_list.append(r)
 
     def _merge_world_changes(self, hard_changes: dict, soft_changes: dict) -> dict:
         """合并规则层硬变化与节奏层软变化，避免状态更新分散在多处。"""

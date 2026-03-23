@@ -784,6 +784,14 @@ class NarrativeAI:
                 "summary": self._build_default_summary(player_input),
             }
 
+        # 隔墙首次喊话：听见但不回应
+        if npc_guide.get("cross_wall_heard_only"):
+            return {
+                "narrative": "你朝隔壁墙壁喊了一声。没有人回应——但隔壁似乎有一瞬间的安静，像是有什么动静停了下来。",
+                "summary": "向隔壁喊话，无人回应",
+            }
+
+        is_cross_wall = bool(npc_guide.get("cross_wall") or npc_data.get("cross_wall"))
         attitude = str(npc_guide.get("attitude") or npc_data.get("initial_attitude") or "警惕").strip()
         response_strategy = str(npc_guide.get("response_strategy") or "").strip()
         next_line_goal = str(npc_guide.get("next_line_goal") or "").strip()
@@ -808,38 +816,88 @@ class NarrativeAI:
             or trust_level > 0
         )
 
-        preface = "门后安静了一瞬，像是在判断你这句话值不值得相信。"
-        if should_open_door:
+        # 信任阶段阈值
+        trust_gates = npc_data.get("trust_gates", {})
+        high_min = float(trust_gates.get("high", {}).get("min", npc_data.get("trust_threshold", 0.5)))
+        medium_min = float(trust_gates.get("medium", {}).get("min", 0.2))
+
+        # 基于记忆的重复追问防护（用player_facts替代conversation_flags）
+        already_knows_name = bool(player_facts.get("name")) or conversation_flags.get("knows_player_name")
+        already_knows_origin = bool(player_facts.get("origin")) or conversation_flags.get("knows_player_origin_claim")
+        already_has_evidence = bool(evidence_seen) or conversation_flags.get("evidence_presented")
+
+        # === preface（开场描写）===
+        if is_cross_wall:
+            preface = "隔壁安静了片刻。"
+        elif trust_level >= high_min:
+            preface = "门后很快传来回应。"
+        elif has_prior_conversation:
+            preface = "门后沉默了一瞬。"
+        else:
+            preface = "门后安静了一瞬，像是在判断你这句话值不值得相信。"
+
+        # === door_line（物理状态描写）===
+        if is_cross_wall:
+            door_line = "声音从墙壁另一侧传来，闷沉而真实。"
+        elif should_open_door:
             door_line = "随后门锁轻轻一响，门却只松开了一道极窄的缝。"
         else:
             door_line = "门没有开，只是那道贴在门后的呼吸声变得更清晰了一些。"
 
+        # === spoken_line（NPC台词）—— 按信任阶段分别生成 ===
         info_key = next((item for item in revealable_info if item in key_info), None) if revealable_info else None
-        if info_key:
-            clue_text = self._trim_text(str(key_info.get(info_key) or ""), 80)
-            spoken_line = f"\u201c先听着，{clue_text}\u201d"
-        elif "name" in next_line_goal.lower() and not conversation_flags.get("knows_player_name"):
-            spoken_line = "\u201c名字。\u201d"
-        elif ("got here" in next_line_goal.lower() or "origin" in next_line_goal.lower()) and not conversation_flags.get("knows_player_origin_claim"):
-            spoken_line = "\u201c你到底是怎么到这里来的？\u201d"
-        elif ("evidence" in next_line_goal.lower() or "proof" in next_line_goal.lower()) and not conversation_flags.get("evidence_presented"):
-            spoken_line = "\u201c光靠嘴说不够。你有证据吗？\u201d"
-        elif "trust" in next_line_goal.lower() or "verify" in next_line_goal.lower():
-            spoken_line = "\u201c这种话谁都能编。你是谁，为什么会在这里？\u201d"
-        elif "cooperation" in next_line_goal.lower() or "合作" in next_line_goal:
-            spoken_line = "\u201c如果你不是来找死的，就把你知道的先说清楚，我们再谈怎么合作。\u201d"
-        elif "reveal" in next_line_goal.lower():
-            spoken_line = "\u201c我可以告诉你一点事，但你最好先证明自己不是麻烦。\u201d"
-        else:
-            spoken_line = "\u201c我听见了。继续说。\u201d"
 
+        if trust_level >= high_min:
+            # 高信任：明显转暖、合作
+            if info_key:
+                clue_text = self._trim_text(str(key_info.get(info_key) or ""), 80)
+                spoken_line = f"\u201c我知道一些事。{clue_text}\u201d"
+            elif "cooperation" in next_line_goal.lower() or "合作" in next_line_goal:
+                spoken_line = "\u201c好，我们来想想怎么办。\u201d"
+            else:
+                spoken_line = "\u201c我听你的，接下来怎么做？\u201d"
+        elif trust_level >= medium_min:
+            # 中信任：谨慎但愿意听
+            if info_key:
+                clue_text = self._trim_text(str(key_info.get(info_key) or ""), 80)
+                spoken_line = f"\u201c听好，{clue_text}\u201d"
+            elif not already_knows_name and "name" in next_line_goal.lower():
+                spoken_line = "\u201c你叫什么？\u201d"
+            elif not has_prior_conversation:
+                spoken_line = "\u201c你是谁？\u201d"
+            else:
+                spoken_line = "\u201c我听到了。继续说。\u201d"
+        else:
+            # 低信任：警惕、克制、短句
+            if not already_knows_name and ("name" in next_line_goal.lower() or not has_prior_conversation):
+                spoken_line = "\u201c名字。\u201d"
+            elif not already_knows_origin and ("origin" in next_line_goal.lower() or "got here" in next_line_goal.lower()):
+                spoken_line = "\u201c你怎么到这儿来的？\u201d"
+            elif not already_has_evidence and ("evidence" in next_line_goal.lower() or "proof" in next_line_goal.lower()):
+                spoken_line = "\u201c光靠嘴说不够。有证据吗？\u201d"
+            elif has_prior_conversation:
+                spoken_line = "\u201c……继续。\u201d"
+            else:
+                spoken_line = "\u201c谁？\u201d"
+
+        # === tone（语气描写）===
         tone = ""
         trimmed_strategy = self._trim_text(self._strip_trailing_punctuation(response_strategy), 24)
-        if response_strategy:
-            if has_prior_conversation:
-                tone = f"{npc_name}的语气依旧{attitude}，明显带着{trimmed_strategy}。"
+        if trust_level >= high_min:
+            if response_strategy:
+                tone = f"{npc_name}的语气比以往缓和了许多，带着{trimmed_strategy}。"
             else:
-                tone = f"{npc_name}的语气{attitude}，明显带着{trimmed_strategy}。"
+                tone = f"{npc_name}的语气比以往缓和了许多。"
+        elif trust_level >= medium_min and has_prior_conversation:
+            if response_strategy:
+                tone = f"{npc_name}的语气依旧直接，但少了之前的防备，{trimmed_strategy}。"
+            else:
+                tone = f"{npc_name}的语气依旧直接，但少了之前的防备。"
+        elif response_strategy:
+            if has_prior_conversation:
+                tone = f"{npc_name}的语气依旧{attitude}，带着{trimmed_strategy}。"
+            else:
+                tone = f"{npc_name}的语气{attitude}，带着{trimmed_strategy}。"
         elif attitude:
             if has_prior_conversation:
                 tone = f"{npc_name}的语气依旧{attitude}。"
