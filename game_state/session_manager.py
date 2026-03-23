@@ -1436,6 +1436,13 @@ class SessionManager:
         previous_location = current
         state["current_location"] = target_key
 
+        if self.is_butler_active(session_id):
+            butler_state = self._get_butler_runtime_state(state)
+            chase_state = butler_state.setdefault("chase_state", self._build_default_butler_chase_state())
+            if isinstance(chase_state, dict) and chase_state.get("target", "player") == "player":
+                # Butler trails the player's last room, not the room just entered.
+                chase_state["last_target_location"] = previous_location
+
         # 跟随状态的NPC一起移动
         for npc_name, npc_data in state["world_state"].get("npcs", {}).items():
             if isinstance(npc_data, dict) and npc_data.get("companion_state") == "follow":

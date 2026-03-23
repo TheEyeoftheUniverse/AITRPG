@@ -278,6 +278,19 @@
     color: var(--success);
 }
 
+.processing-chip.danger {
+    color: var(--danger);
+}
+
+.processing-step.error {
+    border-color: var(--danger, #e05c6c);
+    background: #e05c6c0f;
+}
+
+.processing-step.error .processing-step-title {
+    color: var(--danger, #e05c6c);
+}
+
 @media (max-width: 768px) {
     .processing-status {
         margin: 10px 10px 4px;

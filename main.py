@@ -36,6 +36,7 @@ class AITRPGPlugin(Star):
         self._webui_task = None
         self._webui_shutdown_event = None
         self._action_progress = {}
+        self._last_action_cache = {}
 
     async def initialize(self):
         """插件初始化"""
@@ -266,9 +267,195 @@ class AITRPGPlugin(Star):
             logger.error(traceback.format_exc())
             yield event.plain_result(f"❌ 处理出错: {str(e)}")
 
-    async def _process_action_core(self, session_id: str, player_input: str, history: list, move_to: str = None) -> dict:
-        """核心三层AI处理，返回结构化结果。可被 AstrBot 消息处理和 WebUI API 共同调用。"""
-        logger.info(f"[AITRPG] 开始处理玩家行动: {player_input}, move_to: {move_to}")
+    async def _precheck_action(self, session_id: str, player_input: str, history: list,
+                               move_to: str, state: dict, module_data: dict) -> tuple:
+        """执行AI处理前的预检查（结局、移动、纯移动、输入分类）。
+
+        Returns:
+            (early_result, context): 如果 early_result 不为 None，调用方应直接返回该结果。
+            否则 context 包含 move_check_result, is_dialogue, state。
+        """
+        move_check_result = None
+
+        # === 结局已完全结束 ===
+        if self.session_manager.is_game_over(session_id):
+            ending_text = self.session_manager.get_game_over_message(session_id)
+            for step_key, _, _ in self.PROGRESS_STEPS:
+                self._skip_progress_step(session_id, step_key, "结局已触发")
+            state = self.session_manager.get_session(session_id)
+            return self._finalize_action_result(
+                session_id,
+                {
+                    "rule_plan": {},
+                    "rule_result": {"check_type": None},
+                    "hard_changes": {},
+                    "rhythm_result": {
+                        "feasible": False,
+                        "hint": "本局已结束",
+                        "stage_assessment": "结局",
+                        "world_changes": {},
+                        "soft_world_changes": {},
+                    },
+                    "narrative_result": {"narrative": ending_text, "summary": "结局"},
+                    "game_state": state,
+                },
+                message="结局已触发",
+            ), None
+
+        # === 进入结局阶段（Phase 2）：跳过规则AI，直接调用文案AI生成结局叙述 ===
+        if self.session_manager.is_ending_triggered(session_id):
+            result = await self._process_ending_narrative(session_id, player_input, history)
+            return result, None
+
+        # === 移动处理 ===
+        move_result = None
+        if move_to:
+            move_result = self.session_manager.move_player(session_id, move_to)
+            move_check_result = move_result.get("check_result")
+            if not move_result["success"]:
+                state = self.session_manager.get_session(session_id)
+                for step_key, _, _ in self.PROGRESS_STEPS:
+                    self._skip_progress_step(session_id, step_key, "本轮未执行")
+                move_rule_result = move_result.get("check_result") or {"check_type": None}
+                move_narrative = move_result["message"]
+                move_summary = move_result["message"]
+                rhythm_hint = move_result["message"]
+                result_message = "移动取消" if move_result.get("warning_blocked") else "移动失败"
+                if move_result.get("caught") and self.session_manager.is_ending_triggered(session_id):
+                    # Butler capture now uses two-phase ending
+                    flags = state.get("world_state", {}).get("flags", {})
+                    move_narrative = flags.get("ending_hardcoded_text", move_narrative)
+                    ending_id = self.session_manager.get_ending_id(session_id) or "insane"
+                    move_summary = "结局触发"
+                    rhythm_hint = "结局触发"
+                return self._finalize_action_result(
+                    session_id,
+                    {
+                        "rule_plan": {},
+                        "rule_result": move_rule_result,
+                        "hard_changes": {},
+                        "rhythm_result": {"feasible": False, "hint": rhythm_hint, "stage_assessment": "", "world_changes": {}, "soft_world_changes": {}},
+                        "narrative_result": {"narrative": move_narrative, "summary": move_summary},
+                        "game_state": state
+                    },
+                    status="completed",
+                    message=result_message,
+                ), None
+            # 刷新状态（位置已更新）
+            state = self.session_manager.get_session(session_id)
+
+            # 检查是否移动到了结局地点（如灰色平原）
+            if self.session_manager.check_location_ending(session_id):
+                state = self.session_manager.get_session(session_id)
+                flags = state.get("world_state", {}).get("flags", {})
+                ending_text = flags.get("ending_hardcoded_text", "结局已触发。")
+                for step_key, _, _ in self.PROGRESS_STEPS:
+                    self._skip_progress_step(session_id, step_key, "结局触发")
+                return self._finalize_action_result(
+                    session_id,
+                    {
+                        "rule_plan": {},
+                        "rule_result": {"check_type": None},
+                        "hard_changes": {},
+                        "rhythm_result": {"feasible": False, "hint": "结局触发", "stage_assessment": "结局", "world_changes": {}, "soft_world_changes": {}},
+                        "narrative_result": {"narrative": ending_text, "summary": "结局触发"},
+                        "game_state": state,
+                    },
+                    message="结局触发",
+                ), None
+
+        # === 纯移动无行动 ===
+        if move_to and not player_input:
+            target_loc = self.session_manager.get_location_context(session_id, move_to)
+            loc_name = target_loc.get("name", move_to)
+            description = str(target_loc.get("runtime_description") or target_loc.get("description") or "").strip()
+
+            if target_loc.get("entity_present"):
+                self._skip_progress_step(session_id, "rule_intent", "纯移动，不解析意图")
+                self._skip_progress_step(session_id, "rule_adjudication", "纯移动，不做动作裁定")
+                self._skip_progress_step(session_id, "rule_check", "纯移动，不触发判定")
+                self._skip_progress_step(session_id, "rhythm", "使用到场默认节奏")
+                result = await self._build_move_arrival_result(
+                    session_id=session_id,
+                    move_to=move_to,
+                    state=state,
+                    module_data=module_data,
+                    history=history,
+                )
+                result["move_check_result"] = move_check_result
+                return self._finalize_action_result(session_id, result, message="到场叙述完成"), None
+
+            # 纯移动不应被伪造成"我前往某处"再交给三层AI，否则会被误判成
+            # 主动和场景内NPC搭话，导致NPC在玩家尚未开口时就开始回应。
+            if description:
+                narrative = f"你来到了{loc_name}。\n\n{description}"
+            else:
+                narrative = f"你来到了{loc_name}。"
+
+            for step_key, _, _ in self.PROGRESS_STEPS:
+                self._skip_progress_step(session_id, step_key, "纯移动，无需调用AI")
+            return self._finalize_action_result(
+                session_id,
+                {
+                    "rule_plan": {},
+                    "rule_result": {"check_type": None},
+                    "hard_changes": {},
+                    "rhythm_result": self._advance_passive_move_round(session_id, module_data),
+                    "narrative_result": {"narrative": narrative, "summary": f"移动到{loc_name}"},
+                    "move_check_result": move_check_result,
+                    "game_state": self.session_manager.get_session(session_id)
+                },
+                message="场景移动完成",
+            ), None
+
+        # === 输入分类：对话 vs 行动 ===
+        is_dialogue = self.rule_ai.is_dialogue_input(player_input)
+
+        return None, {
+            "move_check_result": move_check_result,
+            "is_dialogue": is_dialogue,
+            "state": state,
+        }
+
+    def _cache_step_progress(self, session_id: str, cache: dict, step_keys: list):
+        """缓存指定步骤的进度信息，用于重试时回放。"""
+        for sk in step_keys:
+            step = self._get_progress_step(session_id, sk)
+            if step:
+                cache[f"step_{sk}"] = {
+                    "skipped": step["status"] == "skipped",
+                    "metrics": {
+                        "prompt_tokens": step.get("prompt_tokens", 0),
+                        "completion_tokens": step.get("completion_tokens", 0),
+                        "total_tokens": step.get("total_tokens", 0),
+                        "token_source": step.get("token_source"),
+                    }
+                }
+
+    def _replay_cached_steps(self, session_id: str, cache: dict, step_keys: list):
+        """从缓存回放步骤进度（用于重试时显示已完成步骤）。"""
+        for sk in step_keys:
+            step_cache = cache.get(f"step_{sk}", {})
+            if step_cache.get("skipped"):
+                self._skip_progress_step(session_id, sk, "已缓存")
+            else:
+                self._finish_progress_step(session_id, sk, step_cache.get("metrics", {}), "已缓存")
+
+    async def _process_action_core(self, session_id: str, player_input: str, history: list, move_to: str = None, retry_from: str = None) -> dict:
+        """核心三层AI处理，返回结构化结果。可被 AstrBot 消息处理和 WebUI API 共同调用。
+
+        retry_from: 重试起点。None=正常执行, "rule"=从规则AI重试, "rhythm"=从节奏AI重试, "narrative"=从文案AI重试
+        """
+        # === 重试设置 ===
+        cache = self._last_action_cache.get(session_id) or {}
+        if retry_from:
+            if not cache:
+                raise ValueError("没有可重试的操作上下文")
+            player_input = cache["player_input"]
+            move_to = cache.get("move_to")
+            history = cache["history"]
+
+        logger.info(f"[AITRPG] 开始处理玩家行动: {player_input}, move_to: {move_to}, retry_from: {retry_from}")
         self._begin_action_progress(session_id, player_input, move_to)
 
         try:
@@ -276,362 +463,283 @@ class AITRPGPlugin(Star):
             state = self.session_manager.get_session(session_id)
             module_data = self.session_manager.get_module_data(session_id)
 
-            # === 结局已完全结束 ===
-            if self.session_manager.is_game_over(session_id):
-                ending_text = self.session_manager.get_game_over_message(session_id)
-                for step_key, _, _ in self.PROGRESS_STEPS:
-                    self._skip_progress_step(session_id, step_key, "结局已触发")
-                return self._finalize_action_result(
-                    session_id,
-                    {
-                        "rule_plan": {},
-                        "rule_result": {"check_type": None},
-                        "hard_changes": {},
-                        "rhythm_result": {
-                            "feasible": False,
-                            "hint": "本局已结束",
-                            "stage_assessment": "结局",
-                            "world_changes": {},
-                            "soft_world_changes": {},
-                        },
-                        "narrative_result": {"narrative": ending_text, "summary": "结局"},
-                        "game_state": state,
-                    },
-                    message="结局已触发",
+            # ===== 预检查阶段（重试时跳过） =====
+            move_check_result = None
+            is_dialogue = False
+
+            if retry_from:
+                move_check_result = cache.get("move_check_result")
+                is_dialogue = cache.get("is_dialogue", False)
+            else:
+                early_result, precheck_ctx = await self._precheck_action(
+                    session_id, player_input, history, move_to, state, module_data)
+                if early_result is not None:
+                    return early_result
+                move_check_result = precheck_ctx["move_check_result"]
+                is_dialogue = precheck_ctx["is_dialogue"]
+                state = precheck_ctx["state"]
+
+                # 初始化重试缓存
+                self._last_action_cache[session_id] = {
+                    "player_input": player_input,
+                    "move_to": move_to,
+                    "history": history,
+                    "move_check_result": move_check_result,
+                    "is_dialogue": is_dialogue,
+                }
+                cache = self._last_action_cache[session_id]
+
+            # ===== 规则AI阶段 =====
+            if retry_from in ("rhythm", "narrative"):
+                # 从缓存加载规则AI结果
+                intent = cache["intent"]
+                rule_plan = cache["rule_plan"]
+                rule_result = cache["rule_result"]
+                sancheck_result = cache.get("sancheck_result")
+                hard_changes = cache["hard_changes"]
+                self._replay_cached_steps(session_id, cache, ["rule_intent", "rule_adjudication", "rule_check"])
+            else:
+                # === 第一步：规则AI - 意图解析 ===
+                if is_dialogue:
+                    # 硬编码：带引号 → 对话意图，跳过LLM意图解析
+                    logger.info("[AITRPG] 检测到引号，硬编码为对话意图")
+                    self._skip_progress_step(session_id, "rule_intent", "引号输入 → 对话（硬编码）")
+                    intent = {"intent": "talk", "target": None, "category": "对话"}
+                else:
+                    logger.info("[AITRPG] 调用规则AI进行意图解析...")
+                    self._start_progress_step(session_id, "rule_intent", "规则AI 正在解析意图")
+                    intent_trace_id = f"{session_id}:rule_intent"
+                    intent = await self.rule_ai.parse_intent(player_input, trace_id=intent_trace_id)
+                    self._finish_progress_step(session_id, "rule_intent", self.rule_ai.pop_call_metric(intent_trace_id), "意图解析完成")
+                logger.info(f"[AITRPG] 意图解析结果: {intent}")
+
+                # === 第二步：规则AI - 动作裁定与硬变化规划 ===
+                logger.info("[AITRPG] 调用规则AI进行动作裁定...")
+                self._start_progress_step(session_id, "rule_adjudication", "规则AI 正在裁定动作")
+                adjudication_trace_id = f"{session_id}:rule_adjudication"
+                rule_plan = await self.rule_ai.adjudicate_action(
+                    player_input=player_input,
+                    intent=intent,
+                    game_state=state,
+                    module_data=module_data,
+                    trace_id=adjudication_trace_id,
+                )
+                self._finish_progress_step(session_id, "rule_adjudication", self.rule_ai.pop_call_metric(adjudication_trace_id), "动作裁定完成")
+                rule_plan["input_classification"] = "dialogue" if is_dialogue else "action"
+                logger.info(f"[AITRPG] 动作裁定结果: {rule_plan}")
+
+                # === 第三步：规则AI - 执行检定 ===
+                logger.info("[AITRPG] 调用规则AI进行规则判定...")
+                self._start_progress_step(session_id, "rule_check", "正在执行规则判定")
+                rule_result = await self.rule_ai.resolve_check(
+                    adjudication_result=rule_plan,
+                    player_state=state["player"]
                 )
 
-            # === 进入结局阶段（Phase 2）：跳过规则AI，直接调用文案AI生成结局叙述 ===
-            if self.session_manager.is_ending_triggered(session_id):
-                return await self._process_ending_narrative(session_id, player_input, history)
+                # 协助检定：如果场景中有follow状态的NPC且本轮需要检定
+                check_data = (rule_plan or {}).get("check", {})
+                if check_data.get("required") and check_data.get("skill"):
+                    following = self.session_manager.get_following_companions(session_id)
+                    for companion_name in following:
+                        npc_module = module_data.get("npcs", {}).get(companion_name, {})
+                        npc_skills = npc_module.get("skills", {})
+                        if npc_skills:
+                            rule_result = self.rule_ai.resolve_assist_check(
+                                player_result=rule_result,
+                                npc_name=companion_name,
+                                npc_skills=npc_skills,
+                                skill=check_data["skill"],
+                                difficulty=self.rule_ai._normalize_difficulty(check_data.get("difficulty")),
+                            )
+                            break  # 当前只支持一个NPC协助
 
-            # === 移动处理 ===
-            move_result = None
-            move_check_result = None  # 移动时的闪避检定结果
-            if move_to:
-                move_result = self.session_manager.move_player(session_id, move_to)
-                move_check_result = move_result.get("check_result")
-                if not move_result["success"]:
-                    state = self.session_manager.get_session(session_id)
-                    for step_key, _, _ in self.PROGRESS_STEPS:
-                        self._skip_progress_step(session_id, step_key, "本轮未执行")
-                    move_rule_result = move_result.get("check_result") or {"check_type": None}
-                    move_narrative = move_result["message"]
-                    move_summary = move_result["message"]
-                    rhythm_hint = move_result["message"]
-                    result_message = "移动取消" if move_result.get("warning_blocked") else "移动失败"
-                    if move_result.get("caught") and self.session_manager.is_ending_triggered(session_id):
-                        # Butler capture now uses two-phase ending
-                        flags = state.get("world_state", {}).get("flags", {})
-                        move_narrative = flags.get("ending_hardcoded_text", move_narrative)
-                        ending_id = self.session_manager.get_ending_id(session_id) or "insane"
-                        move_summary = "结局触发"
-                        rhythm_hint = "结局触发"
-                    return self._finalize_action_result(
-                        session_id,
-                        {
-                            "rule_plan": {},
-                            "rule_result": move_rule_result,
-                            "hard_changes": {},
-                            "rhythm_result": {"feasible": False, "hint": rhythm_hint, "stage_assessment": "", "world_changes": {}, "soft_world_changes": {}},
-                            "narrative_result": {"narrative": move_narrative, "summary": move_summary},
-                            "game_state": state
-                        },
-                        status="completed",
-                        message=result_message,
+                self._finish_progress_step(session_id, "rule_check", {}, "规则判定完成")
+                logger.info(f"[AITRPG] 规则判定结果: {rule_result}")
+
+                # === SAN检定 ===
+                sancheck_result = None
+                if rule_result.get("success"):  # 技能检定成功才触发sancheck
+                    entity_ctx = (rule_plan or {}).get("object_context") or (rule_plan or {}).get("threat_entity_context")
+                    if entity_ctx:
+                        sancheck_result = self.rule_ai.resolve_sancheck(
+                            entity_context=entity_ctx,
+                            player_san=state["player"]["san"],
+                            session_manager=self.session_manager,
+                            session_id=session_id,
+                        )
+                        if sancheck_result:
+                            logger.info(f"[AITRPG] SAN检定: {sancheck_result}")
+
+                hard_changes = self.rule_ai.build_hard_changes(
+                    player_input=player_input,
+                    adjudication_result=rule_plan,
+                    rule_result=rule_result,
+                    game_state=state,
+                    sancheck_result=sancheck_result,
+                )
+                if self.session_manager.should_activate_butler_for_action(session_id, player_input):
+                    hard_changes = self._merge_world_changes(
+                        hard_changes,
+                        self.session_manager.build_butler_activation_changes(
+                            session_id,
+                            "player_approached_butler_in_living_room",
+                        ),
                     )
-                # 刷新状态（位置已更新）
-                state = self.session_manager.get_session(session_id)
+                logger.info(f"[AITRPG] 规则层硬变化: {hard_changes}")
 
-                # 检查是否移动到了结局地点（如灰色平原）
-                if self.session_manager.check_location_ending(session_id):
+                # === 处理同伴指令 ===
+                companion_cmd = (rule_plan or {}).get("companion_command", {})
+                if isinstance(companion_cmd, dict) and companion_cmd.get("command") and companion_cmd.get("target_npc"):
+                    cmd_target = companion_cmd["target_npc"]
+                    cmd_action = companion_cmd["command"]
+                    if cmd_action in ("follow", "wait", "bait"):
+                        companion_result = self.session_manager.set_companion_state(session_id, cmd_target, cmd_action)
+                        logger.info(f"[AITRPG] 同伴指令: {cmd_target} -> {cmd_action}, 结果: {companion_result}")
+                        if companion_result.get("success"):
+                            hard_changes.setdefault("npc_updates", {}).setdefault(cmd_target, {})["companion_state"] = cmd_action
+                            # 诱饵指令：执行诱饵行动
+                            if cmd_action == "bait":
+                                bait_result = self.session_manager.execute_bait_action(session_id, cmd_target)
+                                logger.info(f"[AITRPG] 诱饵行动结果: {bait_result}")
+
+                # 缓存规则AI结果（用于重试）
+                cache["intent"] = intent
+                cache["rule_plan"] = rule_plan
+                cache["rule_result"] = rule_result
+                cache["sancheck_result"] = sancheck_result
+                cache["hard_changes"] = hard_changes
+                self._cache_step_progress(session_id, cache, ["rule_intent", "rule_adjudication", "rule_check"])
+
+            # ===== 节奏AI阶段 =====
+            if retry_from == "narrative":
+                # 从缓存加载节奏AI结果
+                rhythm_result = cache["rhythm_result"]
+                self._replay_cached_steps(session_id, cache, ["rhythm"])
+            else:
+                # === 第四步：节奏AI - 节奏评估与软变化补充 ===
+                logger.info("[AITRPG] 调用节奏AI进行节奏评估...")
+                self._start_progress_step(session_id, "rhythm", "节奏AI 正在评估剧情节奏")
+                preview_state = self._preview_state_with_world_changes(state, hard_changes)
+                rhythm_trace_id = f"{session_id}:rhythm"
+                rhythm_result = await self.rhythm_ai.process(
+                    intent=intent,
+                    player_input=player_input,
+                    rule_plan=rule_plan,
+                    rule_result=rule_result,
+                    game_state=preview_state,
+                    module_data=module_data,
+                    history=history,
+                    trace_id=rhythm_trace_id,
+                )
+                self._finish_progress_step(session_id, "rhythm", self.rhythm_ai.pop_call_metric(rhythm_trace_id), "节奏评估完成")
+                logger.info(f"[AITRPG] 节奏AI结果: {rhythm_result}")
+
+                soft_changes = rhythm_result.get("world_changes", {})
+                soft_changes = soft_changes if isinstance(soft_changes, dict) else {}
+                merged_changes = self._merge_world_changes(hard_changes, soft_changes)
+
+                # 将RhythmAI的npc_memory_updates合并到world_changes中
+                self._apply_memory_updates(rhythm_result, merged_changes)
+                # 根据trust_change_reason查模组trust_map，计算信任增量
+                self._apply_trust_changes(rhythm_result, module_data, merged_changes)
+
+                rhythm_result["feasible"] = bool(rule_plan.get("feasibility", {}).get("ok", True))
+                if not rhythm_result.get("hint"):
+                    rhythm_result["hint"] = rule_plan.get("feasibility", {}).get("reason")
+                rhythm_result["location_context"] = rule_plan.get("location_context", {})
+                rhythm_result["object_context"] = rule_plan.get("object_context")
+                rhythm_result["threat_entity_context"] = rhythm_result.get("threat_entity_context") or rule_plan.get("threat_entity_context")
+                rhythm_result["npc_context"] = rhythm_result.get("npc_context") or rule_plan.get("npc_context", {})
+                rhythm_result["soft_world_changes"] = soft_changes
+                rhythm_result["world_changes"] = merged_changes
+
+                # 更新游戏状态
+                self.session_manager.update_state(session_id, rhythm_result)
+                state = self.session_manager.get_session(session_id)
+                self._refresh_rhythm_runtime_context(session_id, rhythm_result, module_data)
+
+                # === 检查结局条件 ===
+                # 检查SAN<=0
+                if self.session_manager.check_san_ending(session_id):
                     state = self.session_manager.get_session(session_id)
                     flags = state.get("world_state", {}).get("flags", {})
-                    ending_text = flags.get("ending_hardcoded_text", "结局已触发。")
-                    for step_key, _, _ in self.PROGRESS_STEPS:
-                        self._skip_progress_step(session_id, step_key, "结局触发")
+                    ending_text = flags.get("ending_hardcoded_text", "你的理智已经崩溃。")
+                    self._skip_progress_step(session_id, "narrative", "结局触发，跳过文案AI")
                     return self._finalize_action_result(
                         session_id,
                         {
-                            "rule_plan": {},
-                            "rule_result": {"check_type": None},
-                            "hard_changes": {},
-                            "rhythm_result": {"feasible": False, "hint": "结局触发", "stage_assessment": "结局", "world_changes": {}, "soft_world_changes": {}},
+                            "rule_plan": rule_plan,
+                            "rule_result": rule_result,
+                            "hard_changes": hard_changes,
+                            "rhythm_result": rhythm_result,
                             "narrative_result": {"narrative": ending_text, "summary": "结局触发"},
+                            "sancheck_result": sancheck_result,
                             "game_state": state,
                         },
                         message="结局触发",
                     )
 
-            # === 纯移动无行动 ===
-            if move_to and not player_input:
-                target_loc = self.session_manager.get_location_context(session_id, move_to)
-                loc_name = target_loc.get("name", move_to)
-                description = str(target_loc.get("runtime_description") or target_loc.get("description") or "").strip()
-
-                if target_loc.get("entity_present"):
-                    self._skip_progress_step(session_id, "rule_intent", "纯移动，不解析意图")
-                    self._skip_progress_step(session_id, "rule_adjudication", "纯移动，不做动作裁定")
-                    self._skip_progress_step(session_id, "rule_check", "纯移动，不触发判定")
-                    self._skip_progress_step(session_id, "rhythm", "使用到场默认节奏")
-                    result = await self._build_move_arrival_result(
-                        session_id=session_id,
-                        move_to=move_to,
-                        state=state,
-                        module_data=module_data,
-                        history=history,
-                    )
-                    result["move_check_result"] = move_check_result
-                    return self._finalize_action_result(session_id, result, message="到场叙述完成")
-
-                # 纯移动不应被伪造成“我前往某处”再交给三层AI，否则会被误判成
-                # 主动和场景内NPC搭话，导致NPC在玩家尚未开口时就开始回应。
-                if description:
-                    narrative = f"你来到了{loc_name}。\n\n{description}"
-                else:
-                    narrative = f"你来到了{loc_name}。"
-
-                for step_key, _, _ in self.PROGRESS_STEPS:
-                    self._skip_progress_step(session_id, step_key, "纯移动，无需调用AI")
-                return self._finalize_action_result(
-                    session_id,
-                    {
-                        "rule_plan": {},
-                        "rule_result": {"check_type": None},
-                        "hard_changes": {},
-                        "rhythm_result": {"feasible": True, "hint": None, "stage_assessment": "", "world_changes": {}, "soft_world_changes": {}},
-                        "narrative_result": {"narrative": narrative, "summary": f"移动到{loc_name}"},
-                        "move_check_result": move_check_result,
-                        "game_state": state
-                    },
-                    message="场景移动完成",
-                )
-
-            # === 输入分类：对话 vs 行动 ===
-            is_dialogue = self.rule_ai.is_dialogue_input(player_input)
-
-            # === 第一步：规则AI - 意图解析 ===
-            if is_dialogue:
-                # 硬编码：带引号 → 对话意图，跳过LLM意图解析
-                logger.info("[AITRPG] 检测到引号，硬编码为对话意图")
-                self._skip_progress_step(session_id, "rule_intent", "引号输入 → 对话（硬编码）")
-                intent = {"intent": "talk", "target": None, "category": "对话"}
-            else:
-                logger.info("[AITRPG] 调用规则AI进行意图解析...")
-                self._start_progress_step(session_id, "rule_intent", "规则AI 正在解析意图")
-                intent_trace_id = f"{session_id}:rule_intent"
-                intent = await self.rule_ai.parse_intent(player_input, trace_id=intent_trace_id)
-                self._finish_progress_step(session_id, "rule_intent", self.rule_ai.pop_call_metric(intent_trace_id), "意图解析完成")
-            logger.info(f"[AITRPG] 意图解析结果: {intent}")
-
-            # === 第二步：规则AI - 动作裁定与硬变化规划 ===
-            logger.info("[AITRPG] 调用规则AI进行动作裁定...")
-            self._start_progress_step(session_id, "rule_adjudication", "规则AI 正在裁定动作")
-            adjudication_trace_id = f"{session_id}:rule_adjudication"
-            rule_plan = await self.rule_ai.adjudicate_action(
-                player_input=player_input,
-                intent=intent,
-                game_state=state,
-                module_data=module_data,
-                trace_id=adjudication_trace_id,
-            )
-            self._finish_progress_step(session_id, "rule_adjudication", self.rule_ai.pop_call_metric(adjudication_trace_id), "动作裁定完成")
-            rule_plan["input_classification"] = "dialogue" if is_dialogue else "action"
-            logger.info(f"[AITRPG] 动作裁定结果: {rule_plan}")
-
-            # === 第三步：规则AI - 执行检定 ===
-            logger.info("[AITRPG] 调用规则AI进行规则判定...")
-            self._start_progress_step(session_id, "rule_check", "正在执行规则判定")
-            rule_result = await self.rule_ai.resolve_check(
-                adjudication_result=rule_plan,
-                player_state=state["player"]
-            )
-
-            # 协助检定：如果场景中有follow状态的NPC且本轮需要检定
-            check_data = (rule_plan or {}).get("check", {})
-            if check_data.get("required") and check_data.get("skill"):
-                following = self.session_manager.get_following_companions(session_id)
-                for companion_name in following:
-                    npc_module = module_data.get("npcs", {}).get(companion_name, {})
-                    npc_skills = npc_module.get("skills", {})
-                    if npc_skills:
-                        rule_result = self.rule_ai.resolve_assist_check(
-                            player_result=rule_result,
-                            npc_name=companion_name,
-                            npc_skills=npc_skills,
-                            skill=check_data["skill"],
-                            difficulty=self.rule_ai._normalize_difficulty(check_data.get("difficulty")),
-                        )
-                        break  # 当前只支持一个NPC协助
-
-            self._finish_progress_step(session_id, "rule_check", {}, "规则判定完成")
-            logger.info(f"[AITRPG] 规则判定结果: {rule_result}")
-
-            # === SAN检定 ===
-            sancheck_result = None
-            if rule_result.get("success"):  # 技能检定成功才触发sancheck
-                entity_ctx = (rule_plan or {}).get("object_context") or (rule_plan or {}).get("threat_entity_context")
-                if entity_ctx:
-                    sancheck_result = self.rule_ai.resolve_sancheck(
-                        entity_context=entity_ctx,
-                        player_san=state["player"]["san"],
-                        session_manager=self.session_manager,
-                        session_id=session_id,
-                    )
-                    if sancheck_result:
-                        logger.info(f"[AITRPG] SAN检定: {sancheck_result}")
-
-            hard_changes = self.rule_ai.build_hard_changes(
-                player_input=player_input,
-                adjudication_result=rule_plan,
-                rule_result=rule_result,
-                game_state=state,
-                sancheck_result=sancheck_result,
-            )
-            if self.session_manager.should_activate_butler_for_action(session_id, player_input):
-                hard_changes = self._merge_world_changes(
-                    hard_changes,
-                    self.session_manager.build_butler_activation_changes(
+                # 检查仪式是否被破坏
+                if self.session_manager.check_ritual_destruction_ending(session_id):
+                    state = self.session_manager.get_session(session_id)
+                    flags = state.get("world_state", {}).get("flags", {})
+                    ending_text = flags.get("ending_hardcoded_text", "仪式被破坏了。")
+                    self._skip_progress_step(session_id, "narrative", "结局触发，跳过文案AI")
+                    return self._finalize_action_result(
                         session_id,
-                        "player_approached_butler_in_living_room",
-                    ),
-                )
-            logger.info(f"[AITRPG] 规则层硬变化: {hard_changes}")
+                        {
+                            "rule_plan": rule_plan,
+                            "rule_result": rule_result,
+                            "hard_changes": hard_changes,
+                            "rhythm_result": rhythm_result,
+                            "narrative_result": {"narrative": ending_text, "summary": "结局触发"},
+                            "sancheck_result": sancheck_result,
+                            "game_state": state,
+                        },
+                        message="结局触发",
+                    )
 
-            # === 处理同伴指令 ===
-            companion_cmd = (rule_plan or {}).get("companion_command", {})
-            if isinstance(companion_cmd, dict) and companion_cmd.get("command") and companion_cmd.get("target_npc"):
-                cmd_target = companion_cmd["target_npc"]
-                cmd_action = companion_cmd["command"]
-                if cmd_action in ("follow", "wait", "bait"):
-                    companion_result = self.session_manager.set_companion_state(session_id, cmd_target, cmd_action)
-                    logger.info(f"[AITRPG] 同伴指令: {cmd_target} -> {cmd_action}, 结果: {companion_result}")
-                    if companion_result.get("success"):
-                        hard_changes.setdefault("npc_updates", {}).setdefault(cmd_target, {})["companion_state"] = cmd_action
-                        # 诱饵指令：执行诱饵行动
-                        if cmd_action == "bait":
-                            bait_result = self.session_manager.execute_bait_action(session_id, cmd_target)
-                            logger.info(f"[AITRPG] 诱饵行动结果: {bait_result}")
+                # 检查管家凝视等其他game_over（兼容旧逻辑）
+                if self.session_manager.is_ending_triggered(session_id):
+                    state = self.session_manager.get_session(session_id)
+                    flags = state.get("world_state", {}).get("flags", {})
+                    ending_text = flags.get("ending_hardcoded_text", "结局已触发。")
+                    self._skip_progress_step(session_id, "narrative", "结局触发，跳过文案AI")
+                    return self._finalize_action_result(
+                        session_id,
+                        {
+                            "rule_plan": rule_plan,
+                            "rule_result": rule_result,
+                            "hard_changes": hard_changes,
+                            "rhythm_result": rhythm_result,
+                            "narrative_result": {"narrative": ending_text, "summary": "结局触发"},
+                            "sancheck_result": sancheck_result,
+                            "game_state": state,
+                        },
+                        message="结局触发",
+                    )
 
-            # === 第四步：节奏AI - 节奏评估与软变化补充 ===
-            logger.info("[AITRPG] 调用节奏AI进行节奏评估...")
-            self._start_progress_step(session_id, "rhythm", "节奏AI 正在评估剧情节奏")
-            preview_state = self._preview_state_with_world_changes(state, hard_changes)
-            rhythm_trace_id = f"{session_id}:rhythm"
-            rhythm_result = await self.rhythm_ai.process(
-                intent=intent,
-                player_input=player_input,
-                rule_plan=rule_plan,
-                rule_result=rule_result,
-                game_state=preview_state,
-                module_data=module_data,
-                history=history,
-                trace_id=rhythm_trace_id,
-            )
-            self._finish_progress_step(session_id, "rhythm", self.rhythm_ai.pop_call_metric(rhythm_trace_id), "节奏评估完成")
-            logger.info(f"[AITRPG] 节奏AI结果: {rhythm_result}")
+                if self.session_manager.is_game_over(session_id):
+                    ending_text = self.session_manager.get_game_over_message(session_id)
+                    return self._finalize_action_result(
+                        session_id,
+                        {
+                            "rule_plan": rule_plan,
+                            "rule_result": rule_result,
+                            "hard_changes": hard_changes,
+                            "rhythm_result": rhythm_result,
+                            "narrative_result": {"narrative": ending_text, "summary": "结局"},
+                            "sancheck_result": sancheck_result,
+                            "game_state": state,
+                        },
+                        message="结局触发",
+                    )
 
-            soft_changes = rhythm_result.get("world_changes", {})
-            soft_changes = soft_changes if isinstance(soft_changes, dict) else {}
-            merged_changes = self._merge_world_changes(hard_changes, soft_changes)
+                # 缓存节奏AI结果（用于重试）
+                cache["rhythm_result"] = rhythm_result
+                self._cache_step_progress(session_id, cache, ["rhythm"])
 
-            # 将RhythmAI的npc_memory_updates合并到world_changes中
-            self._apply_memory_updates(rhythm_result, merged_changes)
-            # 根据trust_change_reason查模组trust_map，计算信任增量
-            self._apply_trust_changes(rhythm_result, module_data, merged_changes)
-
-            rhythm_result["feasible"] = bool(rule_plan.get("feasibility", {}).get("ok", True))
-            if not rhythm_result.get("hint"):
-                rhythm_result["hint"] = rule_plan.get("feasibility", {}).get("reason")
-            rhythm_result["location_context"] = rule_plan.get("location_context", {})
-            rhythm_result["object_context"] = rule_plan.get("object_context")
-            rhythm_result["threat_entity_context"] = rhythm_result.get("threat_entity_context") or rule_plan.get("threat_entity_context")
-            rhythm_result["npc_context"] = rhythm_result.get("npc_context") or rule_plan.get("npc_context", {})
-            rhythm_result["soft_world_changes"] = soft_changes
-            rhythm_result["world_changes"] = merged_changes
-
-            # 更新游戏状态
-            self.session_manager.update_state(session_id, rhythm_result)
-            state = self.session_manager.get_session(session_id)
-            self._refresh_rhythm_runtime_context(session_id, rhythm_result, module_data)
-
-            # === 检查结局条件 ===
-            # 检查SAN<=0
-            if self.session_manager.check_san_ending(session_id):
-                state = self.session_manager.get_session(session_id)
-                flags = state.get("world_state", {}).get("flags", {})
-                ending_text = flags.get("ending_hardcoded_text", "你的理智已经崩溃。")
-                self._skip_progress_step(session_id, "narrative", "结局触发，跳过文案AI")
-                return self._finalize_action_result(
-                    session_id,
-                    {
-                        "rule_plan": rule_plan,
-                        "rule_result": rule_result,
-                        "hard_changes": hard_changes,
-                        "rhythm_result": rhythm_result,
-                        "narrative_result": {"narrative": ending_text, "summary": "结局触发"},
-                        "sancheck_result": sancheck_result,
-                        "game_state": state,
-                    },
-                    message="结局触发",
-                )
-
-            # 检查仪式是否被破坏
-            if self.session_manager.check_ritual_destruction_ending(session_id):
-                state = self.session_manager.get_session(session_id)
-                flags = state.get("world_state", {}).get("flags", {})
-                ending_text = flags.get("ending_hardcoded_text", "仪式被破坏了。")
-                self._skip_progress_step(session_id, "narrative", "结局触发，跳过文案AI")
-                return self._finalize_action_result(
-                    session_id,
-                    {
-                        "rule_plan": rule_plan,
-                        "rule_result": rule_result,
-                        "hard_changes": hard_changes,
-                        "rhythm_result": rhythm_result,
-                        "narrative_result": {"narrative": ending_text, "summary": "结局触发"},
-                        "sancheck_result": sancheck_result,
-                        "game_state": state,
-                    },
-                    message="结局触发",
-                )
-
-            # 检查管家凝视等其他game_over（兼容旧逻辑）
-            if self.session_manager.is_ending_triggered(session_id):
-                state = self.session_manager.get_session(session_id)
-                flags = state.get("world_state", {}).get("flags", {})
-                ending_text = flags.get("ending_hardcoded_text", "结局已触发。")
-                self._skip_progress_step(session_id, "narrative", "结局触发，跳过文案AI")
-                return self._finalize_action_result(
-                    session_id,
-                    {
-                        "rule_plan": rule_plan,
-                        "rule_result": rule_result,
-                        "hard_changes": hard_changes,
-                        "rhythm_result": rhythm_result,
-                        "narrative_result": {"narrative": ending_text, "summary": "结局触发"},
-                        "sancheck_result": sancheck_result,
-                        "game_state": state,
-                    },
-                    message="结局触发",
-                )
-
-            if self.session_manager.is_game_over(session_id):
-                ending_text = self.session_manager.get_game_over_message(session_id)
-                return self._finalize_action_result(
-                    session_id,
-                    {
-                        "rule_plan": rule_plan,
-                        "rule_result": rule_result,
-                        "hard_changes": hard_changes,
-                        "rhythm_result": rhythm_result,
-                        "narrative_result": {"narrative": ending_text, "summary": "结局"},
-                        "sancheck_result": sancheck_result,
-                        "game_state": state,
-                    },
-                    message="结局触发",
-                )
-
-            # === 第五步：文案AI - 生成叙述 ===
+            # ===== 文案AI阶段（始终执行） =====
             logger.info("[AITRPG] 调用文案AI生成叙述...")
             self._start_progress_step(session_id, "narrative", "文案AI 正在生成叙述")
             narrative_trace_id = f"{session_id}:narrative"
@@ -662,7 +770,17 @@ class AITRPGPlugin(Star):
                 message="三层 AI 处理完成",
             )
         except Exception as e:
-            self._complete_action_progress(session_id, status="error", message=str(e))
+            # 标记当前正在运行的步骤为错误
+            progress = self._action_progress.get(session_id)
+            if progress:
+                for step in progress.get("steps", []):
+                    if step.get("status") == "running":
+                        self._fail_progress_step(session_id, step["key"], str(e))
+                        break
+                if progress.get("status") != "error":
+                    self._complete_action_progress(session_id, status="error", message=str(e))
+            else:
+                self._complete_action_progress(session_id, status="error", message=str(e))
             raise
 
     async def _process_player_action(self, session_id: str, player_input: str):
@@ -898,19 +1016,15 @@ class AITRPGPlugin(Star):
             soft_changes = soft_changes if isinstance(soft_changes, dict) else {}
             rhythm_result["soft_world_changes"] = soft_changes
             rhythm_result["world_changes"] = self._merge_world_changes(activation_changes, soft_changes)
-            if rhythm_result["world_changes"]:
-                self.session_manager.update_state(session_id, rhythm_result)
-                state = self.session_manager.get_session(session_id)
-            self._refresh_rhythm_runtime_context(session_id, rhythm_result, module_data)
+            rhythm_result = self._advance_passive_move_round(session_id, module_data, rhythm_result)
+            state = self.session_manager.get_session(session_id)
         else:
             rhythm_result = self.rhythm_ai._build_base_result("", rule_plan, state, module_data)
             rhythm_result["location_context"] = target_loc
             rhythm_result["world_changes"] = activation_changes
             rhythm_result["soft_world_changes"] = {}
-            if activation_changes:
-                self.session_manager.update_state(session_id, rhythm_result)
-                state = self.session_manager.get_session(session_id)
-                self._refresh_rhythm_runtime_context(session_id, rhythm_result, module_data)
+            rhythm_result = self._advance_passive_move_round(session_id, module_data, rhythm_result)
+            state = self.session_manager.get_session(session_id)
 
         rhythm_result["arrival_mode"] = True
 
@@ -1100,6 +1214,21 @@ class AITRPGPlugin(Star):
         step["duration_ms"] = 0
         progress["updated_at"] = time.perf_counter()
 
+    def _fail_progress_step(self, session_id: str, step_key: str, message: str = ""):
+        """Mark a specific progress step as error."""
+        step = self._get_progress_step(session_id, step_key)
+        if not step:
+            return
+        now = time.perf_counter()
+        step["status"] = "error"
+        step["message"] = message or step.get("message") or ""
+        if step.get("started_at") is not None:
+            step["finished_at"] = now
+            step["duration_ms"] = int((now - step["started_at"]) * 1000)
+        progress = self._action_progress.get(session_id)
+        if progress:
+            progress["updated_at"] = now
+
     def _complete_action_progress(self, session_id: str, status: str = "completed", message: str = ""):
         progress = self._action_progress.get(session_id)
         if not progress:
@@ -1157,6 +1286,20 @@ class AITRPGPlugin(Star):
         finalized = dict(result or {})
         finalized["telemetry"] = self.get_action_progress(session_id)
         return finalized
+
+    def _advance_passive_move_round(self, session_id: str, module_data: dict, rhythm_result: dict | None = None) -> dict:
+        rhythm_result = dict(rhythm_result or {})
+        rhythm_result.setdefault("feasible", True)
+        rhythm_result.setdefault("hint", None)
+        rhythm_result.setdefault("stage_assessment", "")
+        rhythm_result.setdefault("world_changes", {})
+        rhythm_result.setdefault("soft_world_changes", {})
+
+        runtime_changes = self.session_manager.update_state(session_id, rhythm_result) or {}
+        if runtime_changes:
+            rhythm_result["world_changes"] = self._merge_world_changes(rhythm_result["world_changes"], runtime_changes)
+        self._refresh_rhythm_runtime_context(session_id, rhythm_result, module_data)
+        return rhythm_result
 
     def _apply_memory_updates(self, rhythm_result: dict, merged_changes: dict):
         """将RhythmAI输出的npc_memory_updates合并到merged_changes的npc_updates中。"""

@@ -509,7 +509,20 @@ def create_trpg_app(plugin):
                 logger.error(f"[AITRPG WebUI] 处理行动出错: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-                return jsonify({"error": f"处理出错: {str(e)}"}), 500
+                # 返回错误信息 + 遥测数据（含失败步骤信息）+ 已完成的中间结果
+                telemetry = plugin.get_action_progress(session_id)
+                cache = plugin._last_action_cache.get(session_id, {})
+                return jsonify({
+                    "error": f"处理出错: {str(e)}",
+                    "telemetry": telemetry,
+                    "partial_results": {
+                        "rule_plan": cache.get("rule_plan"),
+                        "rule_result": cache.get("rule_result"),
+                        "hard_changes": cache.get("hard_changes"),
+                        "rhythm_result": cache.get("rhythm_result"),
+                    },
+                    "can_retry": bool(cache),
+                }), 500
 
     @app.route("/trpg/api/progress", methods=["GET"])
     async def api_progress():
@@ -523,6 +536,168 @@ def create_trpg_app(plugin):
         return jsonify({
             "progress": plugin.get_action_progress(session_id)
         })
+
+    @app.route("/trpg/api/retry", methods=["POST"])
+    async def api_retry():
+        """重试失败的AI处理步骤"""
+        cookie_id = _get_cookie_id()
+        if not cookie_id:
+            return jsonify({"error": "无有效会话"}), 400
+
+        web_session = _restore_web_session(cookie_id)
+        if not web_session["game_started"]:
+            return jsonify({"error": "游戏尚未开始"}), 400
+
+        lock = _session_locks[cookie_id]
+
+        async with lock:
+            data = await request.get_json()
+            retry_from = data.get("retry_from", "rule")  # "rule" | "rhythm" | "narrative"
+
+            if retry_from not in ("rule", "rhythm", "narrative"):
+                return jsonify({"error": f"无效的重试起点: {retry_from}"}), 400
+
+            session_id = web_session["session_id"]
+
+            try:
+                # 调用核心处理流程（带重试参数）
+                result = await plugin._process_action_core(
+                    session_id=session_id,
+                    player_input="",  # Will be overridden from cache
+                    history=[],       # Will be overridden from cache
+                    move_to=None,
+                    retry_from=retry_from,
+                )
+
+                narrative = result["narrative_result"]["narrative"]
+                summary = result["narrative_result"]["summary"]
+
+                # 解析演出效果标签
+                parsed = parse_theatrical_tags(narrative)
+                narrative = parsed["clean_text"]
+                theatrical_effects = parsed["effects"]
+
+                # 同步到 AstrBot 对话记录
+                cache = plugin._last_action_cache.get(session_id, {})
+                player_input = cache.get("player_input", "")
+                move_to = cache.get("move_to")
+                conv_id = web_session.get("conv_id")
+                display_input = player_input or (f"[移动到{move_to}]" if move_to else "")
+                if conv_id:
+                    try:
+                        conv_mgr = plugin.context.conversation_manager
+                        await conv_mgr.add_message_pair(
+                            cid=conv_id,
+                            user_message=plugin._build_history_message("user", display_input),
+                            assistant_message=plugin._build_history_message("assistant", narrative)
+                        )
+                        await plugin._compress_history_if_needed(
+                            conv_mgr=conv_mgr,
+                            session_id=session_id,
+                            conv_id=conv_id,
+                        )
+                    except Exception as e:
+                        logger.warning(f"[AITRPG WebUI] 重试时同步对话记录失败: {e}")
+
+                # 更新 web 会话历史（重试时替换最后一组消息而非追加）
+                if web_session["chat_messages"] and web_session["chat_messages"][-1].get("role") == "assistant":
+                    # 移除上次失败的错误消息
+                    last_msg = web_session["chat_messages"][-1]
+                    if last_msg.get("content", "").startswith("处理出错:") or last_msg.get("content") == "网络错误，请重试。":
+                        web_session["chat_messages"].pop()
+
+                web_session["history"].append(plugin._build_history_message("user", display_input))
+                web_session["history"].append(plugin._build_history_message("assistant", narrative))
+
+                if len(web_session["history"]) > 40:
+                    web_session["history"] = web_session["history"][-40:]
+
+                if display_input:
+                    web_session["chat_messages"].append({"role": "user", "content": display_input})
+                web_session["chat_messages"].append({"role": "assistant", "content": narrative})
+
+                # 同步 narrative_history
+                plugin.session_manager.add_narrative_summary(session_id, display_input, narrative, summary)
+
+                state = plugin.session_manager.get_session(session_id)
+
+                # 持久化 map_corrupt 效果
+                corrupt_entries = {e["target"]: e["content"] for e in theatrical_effects if e.get("type") == "map_corrupt"}
+                if corrupt_entries:
+                    ws = state.setdefault("world_state", {})
+                    ws.setdefault("corrupt_map", {}).update(corrupt_entries)
+
+                map_data = plugin.session_manager.get_map_data(session_id)
+
+                web_session["last_workflow"] = {
+                    "rule_plan": result.get("rule_plan", {}),
+                    "rule_result": result.get("rule_result", {}),
+                    "hard_changes": result.get("hard_changes", {}),
+                    "rhythm_result": result.get("rhythm_result", {}),
+                    "telemetry": result.get("telemetry", {}),
+                }
+                _persist_web_session(cookie_id)
+
+                # 构建骰子演出数据
+                dice_rolls = []
+                rule_result_data = result.get("rule_result", {})
+                if rule_result_data.get("check_type") == "skill_check":
+                    dice_rolls.append({
+                        "type": "skill_check",
+                        "label": f"{rule_result_data['skill']}检定（{rule_result_data['difficulty']}）",
+                        "roll": rule_result_data["roll"],
+                        "threshold": rule_result_data["threshold"],
+                        "success": rule_result_data["success"],
+                        "critical_success": rule_result_data.get("critical_success", False),
+                        "critical_failure": rule_result_data.get("critical_failure", False),
+                        "description": rule_result_data.get("result_description", ""),
+                    })
+                sancheck_data = result.get("sancheck_result")
+                if sancheck_data:
+                    dice_rolls.append({
+                        "type": "sancheck",
+                        "label": f"SAN检定（{sancheck_data['entity_name']}）",
+                        "roll": sancheck_data["roll"],
+                        "threshold": sancheck_data["threshold"],
+                        "success": sancheck_data["success"],
+                        "san_loss": sancheck_data["san_loss"],
+                        "description": f"{'成功' if sancheck_data['success'] else '失败'}, SAN {'不变' if sancheck_data['san_loss'] == 0 else str(sancheck_data['san_loss'])}",
+                    })
+
+                return jsonify({
+                    "success": True,
+                    "narrative": narrative,
+                    "theatrical_effects": theatrical_effects,
+                    "dice_rolls": dice_rolls,
+                    "rule_plan": result.get("rule_plan", {}),
+                    "rule_result": result["rule_result"],
+                    "hard_changes": result.get("hard_changes", {}),
+                    "rhythm_result": result["rhythm_result"],
+                    "telemetry": result.get("telemetry", {}),
+                    "game_state": _serialize_state(state),
+                    "map_data": map_data,
+                    "ending_phase": plugin.session_manager.get_ending_phase(session_id),
+                    "ending_id": plugin.session_manager.get_ending_id(session_id),
+                    "game_over": plugin.session_manager.is_game_over(session_id),
+                })
+
+            except Exception as e:
+                logger.error(f"[AITRPG WebUI] 重试处理出错: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                telemetry = plugin.get_action_progress(session_id)
+                retry_cache = plugin._last_action_cache.get(session_id, {})
+                return jsonify({
+                    "error": f"重试出错: {str(e)}",
+                    "telemetry": telemetry,
+                    "partial_results": {
+                        "rule_plan": retry_cache.get("rule_plan"),
+                        "rule_result": retry_cache.get("rule_result"),
+                        "hard_changes": retry_cache.get("hard_changes"),
+                        "rhythm_result": retry_cache.get("rhythm_result"),
+                    },
+                    "can_retry": bool(retry_cache),
+                }), 500
 
     @app.route("/trpg/api/state", methods=["GET"])
     async def api_state():

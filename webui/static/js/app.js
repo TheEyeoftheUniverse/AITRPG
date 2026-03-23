@@ -8,6 +8,9 @@ let currentMapData = null;        // 缓存的地图数据
 let progressPollTimer = null;
 let processingStatusCollapsed = true;
 let endingPhase = null;           // null | "triggered" | "concluded"
+let currentAbortController = null; // 用于中断正在进行的fetch请求
+let lastPlayerInput = "";          // 上次玩家输入（用于重试恢复）
+let lastMoveDestination = null;    // 上次移动目标（用于重试恢复）
 
 const PROCESSING_STAGE_GROUPS = [
     {
@@ -114,6 +117,10 @@ async function checkExistingSession() {
                     data.last_workflow.hard_changes
                 );
                 updateRhythmPanel(data.last_workflow.rhythm_result);
+                // 恢复上次AI处理进度（含重试按钮）
+                if (data.last_workflow.telemetry) {
+                    renderProcessingStatus(data.last_workflow.telemetry, { forceCollapsed: true });
+                }
             }
             // 恢复地图
             if (data.map_data) {
@@ -355,6 +362,8 @@ function renderProcessingGroup(group) {
         ? "active"
         : group.status === "completed"
         ? "success"
+        : group.status === "error"
+        ? "danger"
         : "";
     const tokenSourceLabel = group.tokenSource === "estimated"
         ? "估算"
@@ -409,7 +418,9 @@ function renderProcessingStatus(progress, options = {}) {
         processingStatusCollapsed = true;
     } else if (status === "running") {
         processingStatusCollapsed = false;
-    } else if (status === "completed" || status === "error") {
+    } else if (status === "error") {
+        processingStatusCollapsed = false;  // 出错时保持展开，方便玩家点重试
+    } else if (status === "completed") {
         processingStatusCollapsed = true;
     }
 
@@ -422,6 +433,8 @@ function renderProcessingStatus(progress, options = {}) {
     badge.className = `processing-status-badge ${status}`;
     summary.textContent = buildProcessingSummary(progress, groups);
     steps.innerHTML = groups.map((group) => renderProcessingGroup(group)).join("");
+
+    // 网络错误等没有单独步骤信息的场景：不再显示内嵌重试按钮，使用顶部栏重试按钮
 
     toggle.classList.remove("hidden");
     toggle.setAttribute("aria-expanded", processingStatusCollapsed ? "false" : "true");
@@ -523,6 +536,85 @@ window.startProgressPolling = startProgressPolling;
 window.stopProgressPolling = stopProgressPolling;
 window.clearProcessingStatus = clearProcessingStatus;
 
+// ─── 中断并重试 ───
+
+function abortAndRetry() {
+    // 1. 中断正在进行的fetch请求
+    if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+    }
+
+    // 2. 重置前端处理状态
+    isProcessing = false;
+    stopProgressPolling();
+
+    // 3. 移除loading指示器
+    const chatMessages = document.getElementById("chat-messages");
+    if (chatMessages) {
+        const loadingMsg = chatMessages.querySelector(".loading-dots");
+        if (loadingMsg) {
+            loadingMsg.closest(".message").remove();
+        }
+    }
+
+    // 4. 移除上次的错误消息或AI回复（因为要重新发送）
+    if (chatMessages && chatMessages.lastElementChild) {
+        const lastMsg = chatMessages.lastElementChild;
+        const bubble = lastMsg.querySelector(".message-bubble");
+        if (bubble && (
+            bubble.textContent.startsWith("处理出错:") ||
+            bubble.textContent === "网络错误，请重试。" ||
+            lastMsg.querySelector(".loading-dots")
+        )) {
+            lastMsg.remove();
+        }
+    }
+
+    // 5. 恢复玩家输入到输入框
+    const input = document.getElementById("chat-input");
+    if (lastPlayerInput || lastMoveDestination) {
+        input.value = lastPlayerInput || "";
+        input.style.height = "auto";
+        input.style.height = Math.min(input.scrollHeight, 120) + "px";
+
+        // 恢复移动选择
+        if (lastMoveDestination && currentMapData) {
+            const reachable = new Set(currentMapData.reachable || []);
+            if (reachable.has(lastMoveDestination)) {
+                selectedDestination = lastMoveDestination;
+                const loc = currentMapData.locations[lastMoveDestination];
+                const locName = loc ? loc.display_name : lastMoveDestination;
+                const indicator = document.getElementById("move-indicator");
+                const indicatorText = document.getElementById("move-indicator-text");
+                indicatorText.textContent = `即将移动到：${locName}`;
+                indicator.classList.remove("hidden");
+                renderMap(currentMapData);
+            }
+        }
+    }
+
+    // 6. 重新启用输入
+    setInputEnabled(true);
+    input.focus();
+
+    // 7. 折叠处理状态面板
+    renderProcessingStatus({ status: "error", message: "已中断，请重新发送", total_duration_ms: 0, summary: {}, steps: [] }, { forceCollapsed: true });
+
+    // 8. 更新按钮可见性
+    updateRetryButtonVisibility();
+}
+
+function updateRetryButtonVisibility() {
+    const btn = document.getElementById("btn-retry");
+    if (!btn) return;
+    // 处理中 或 有上次输入可恢复时显示
+    const shouldShow = isProcessing || (lastPlayerInput || lastMoveDestination);
+    btn.classList.toggle("hidden", !shouldShow);
+}
+
+window.abortAndRetry = abortAndRetry;
+
 // ─── 发送行动 ───
 
 async function sendAction() {
@@ -539,6 +631,10 @@ async function sendAction() {
         // 需要有文字输入或移动目标
         if (!text && !moveTo) return;
     }
+
+    // 保存本轮输入（用于重试恢复）
+    lastPlayerInput = text;
+    lastMoveDestination = moveTo;
 
     // 清空输入
     input.value = "";
@@ -567,9 +663,13 @@ async function sendAction() {
     // 显示 loading
     isProcessing = true;
     setInputEnabled(false);
+    updateRetryButtonVisibility();
     const loadingEl = addLoadingIndicator();
     renderProcessingStatus(buildInitialProcessingState(), { forceExpanded: true });
     startProgressPolling();
+
+    // 创建 AbortController 以支持中断
+    currentAbortController = new AbortController();
 
     try {
         const body = {};
@@ -584,15 +684,18 @@ async function sendAction() {
         const resp = await fetch("/trpg/api/action", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: currentAbortController.signal,
         });
         const data = await resp.json();
 
         // 移除 loading
         loadingEl.remove();
+        currentAbortController = null;
 
         if (data.error) {
-            renderProcessingStatus({
+            // 使用后端返回的遥测数据（包含失败步骤信息），否则用兜底
+            const errorTelemetry = data.telemetry || {
                 status: "error",
                 message: data.error,
                 total_duration_ms: 0,
@@ -603,9 +706,29 @@ async function sendAction() {
                     token_source: null,
                 },
                 steps: [],
-            }, { forceCollapsed: true });
+            };
+            if (errorTelemetry.status !== "error") {
+                errorTelemetry.status = "error";
+            }
+            renderProcessingStatus(errorTelemetry);
+
+            // 用已完成的中间结果更新面板
+            if (data.partial_results) {
+                const pr = data.partial_results;
+                if (pr.rule_result) {
+                    updateRulePanel(pr.rule_plan, pr.rule_result, pr.hard_changes);
+                }
+                if (pr.rhythm_result) {
+                    updateRhythmPanel(pr.rhythm_result);
+                }
+            }
+
             addMessage("assistant", "处理出错: " + data.error);
         } else {
+            // 成功：清除重试输入记录
+            lastPlayerInput = "";
+            lastMoveDestination = null;
+
             // 骰子演出：先展示检定，再展示叙述
             if (data.dice_rolls && data.dice_rolls.length > 0) {
                 for (const diceRoll of data.dice_rolls) {
@@ -649,6 +772,13 @@ async function sendAction() {
         }
     } catch (err) {
         loadingEl.remove();
+        currentAbortController = null;
+
+        // 被abort中断时不显示错误消息（abortAndRetry已处理）
+        if (err.name === "AbortError") {
+            return;
+        }
+
         renderProcessingStatus({
             status: "error",
             message: "网络错误",
@@ -660,12 +790,13 @@ async function sendAction() {
                 token_source: null,
             },
             steps: [],
-        }, { forceCollapsed: true });
+        });
         addMessage("assistant", "网络错误，请重试。");
         console.error("Action failed:", err);
     } finally {
         stopProgressPolling();
         isProcessing = false;
+        updateRetryButtonVisibility();
         // Don't re-enable input if game is concluded
         if (endingPhase === "concluded") {
             // Everything stays disabled
@@ -946,6 +1077,12 @@ async function resetGame() {
 
         // 重置结局状态
         endingPhase = null;
+        lastPlayerInput = "";
+        lastMoveDestination = null;
+        if (currentAbortController) {
+            currentAbortController.abort();
+            currentAbortController = null;
+        }
         const input = document.getElementById("chat-input");
         input.disabled = false;
         input.placeholder = "输入你的行动...";
@@ -981,6 +1118,7 @@ async function resetGame() {
         overlay.style.display = "";
         overlay.classList.remove("fade-out");
         clearProcessingStatus();
+        updateRetryButtonVisibility();
         loadModules();
     } catch (err) {
         console.error("Reset failed:", err);
@@ -1028,7 +1166,7 @@ async function processTheatricalEffects(effects) {
                 batch.push(effects[i]);
                 i++;
             }
-            const delay = (prevType === "paragraph" && batch[0].type === "paragraph") ? 500 : 800;
+            const delay = getTheatricalDelay(prevType, batch[0]);
             await theatricalSleep(delay);
             await effectMapCorruptBatch(batch);
             prevType = "map_corrupt";
@@ -1036,7 +1174,7 @@ async function processTheatricalEffects(effects) {
         }
 
         // 连续 paragraph 之间只等 500ms，其他情况等 800ms
-        const delay = (prevType === "paragraph" && effect.type === "paragraph") ? 500 : 800;
+        const delay = getTheatricalDelay(prevType, effect);
         await theatricalSleep(delay);
         switch (effect.type) {
             case "paragraph":
@@ -1061,6 +1199,14 @@ async function processTheatricalEffects(effects) {
 }
 
 // 1. paragraph — 额外独立消息
+function getTheatricalDelay(prevType, effect) {
+    if (Number.isFinite(effect?.delay_ms) && effect.delay_ms >= 0) {
+        return effect.delay_ms;
+    }
+    return (prevType === "paragraph" && effect?.type === "paragraph") ? 500 : 800;
+}
+
+// 1. paragraph 鈥?棰濆鐙珛娑堟伅
 async function effectParagraph(content) {
     if (!content) return;
     addMessage("assistant", content);

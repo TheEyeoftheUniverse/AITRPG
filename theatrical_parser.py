@@ -16,8 +16,8 @@ import re
 
 
 # ── 外部效果标签 (内容从clean_text中移除) ──
+_PARAGRAPH_RE = re.compile(r"<paragraph(?:\s*=\s*([^>]+))?>(.*?)</paragraph>", re.DOTALL | re.IGNORECASE)
 _EXTERNAL_TAGS = [
-    ("paragraph",    re.compile(r"<paragraph>(.*?)</paragraph>",       re.DOTALL)),
     ("system_echo",  re.compile(r"<system-echo>(.*?)</system-echo>",   re.DOTALL)),
     ("inject_input", re.compile(r"<inject-input>(.*?)</inject-input>", re.DOTALL)),
 ]
@@ -33,6 +33,16 @@ _MAP_CORRUPT_RE = re.compile(r"<map-corrupt>(.*?)</map-corrupt>", re.DOTALL)
 _MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
 
 
+def _parse_delay_ms(raw_value: str | None) -> int | None:
+    """Parse delay values like '3000ms'. Invalid values fall back to defaults."""
+    if not raw_value:
+        return None
+    match = re.fullmatch(r"(\d+)\s*ms", raw_value.strip(), re.IGNORECASE)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
 def parse_theatrical_tags(text: str) -> dict:
     """解析文本中的演出标签。
 
@@ -45,6 +55,7 @@ def parse_theatrical_tags(text: str) -> dict:
             "clean_text": str,
             "effects": [
                 {"type": "paragraph",    "content": "..."},
+                {"type": "paragraph",    "content": "...", "delay_ms": 3000},
                 {"type": "system_echo",  "content": "..."},
                 {"type": "inject_input", "content": "..."},
                 {"type": "glitch",       "content": "...", "inline_id": 0},
@@ -82,6 +93,14 @@ def parse_theatrical_tags(text: str) -> dict:
         matches.append((m.start(), m.end(), effect, marker))
 
     # ── 外部标签: paragraph, system_echo, inject_input ──
+    for m in _PARAGRAPH_RE.finditer(text):
+        delay_ms = _parse_delay_ms(m.group(1))
+        content = m.group(2).strip()
+        effect = {"type": "paragraph", "content": content}
+        if delay_ms is not None:
+            effect["delay_ms"] = delay_ms
+        matches.append((m.start(), m.end(), effect, None))
+
     for tag_type, pattern in _EXTERNAL_TAGS:
         for m in pattern.finditer(text):
             content = m.group(1).strip()
