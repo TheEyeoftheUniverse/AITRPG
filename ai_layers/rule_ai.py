@@ -1,6 +1,7 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
 from ..game_state.location_context import (
+    build_adjacent_locations_context,
     build_runtime_location_context,
     get_module_npcs,
     get_module_threat_entities,
@@ -333,6 +334,8 @@ class RuleAI:
         prompt = prompt.replace("{location_context}", json.dumps(location_context, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{scene_objects}", json.dumps(scene_objects, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{scene_npcs}", json.dumps(scene_npcs, ensure_ascii=False, indent=2))
+        adjacent_context = build_adjacent_locations_context(game_state, module_data, current_location)
+        prompt = prompt.replace("{adjacent_locations}", json.dumps(adjacent_context, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{inventory}", json.dumps(inventory, ensure_ascii=False))
         prompt = prompt.replace("{clues_found}", json.dumps(clues_found, ensure_ascii=False))
         prompt = prompt.replace("{reachable_locations}", json.dumps(reachable, ensure_ascii=False))

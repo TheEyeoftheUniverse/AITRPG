@@ -1210,6 +1210,9 @@ function getTheatricalDelay(prevType, effect) {
 async function effectParagraph(content) {
     if (!content) return;
     addMessage("assistant", content);
+    // 处理段落内嵌套的内联标记 (glitch/echo-text → span)
+    const lastMsg = document.getElementById("chat-messages").lastElementChild;
+    processInlineMarkers(lastMsg);
     await theatricalSleep(100);
 }
 

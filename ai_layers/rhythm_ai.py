@@ -1,6 +1,7 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
 from ..game_state.location_context import (
+    build_adjacent_locations_context,
     build_runtime_location_context,
     get_module_npcs,
     get_module_threat_entities,
@@ -363,6 +364,13 @@ class RhythmAI:
                 "",
                 "Current threat entity context:",
                 json.dumps(threat_entity_context, ensure_ascii=False, indent=2),
+            ])
+        adjacent_context = build_adjacent_locations_context(game_state, module_data, current_location)
+        if adjacent_context:
+            parts.extend([
+                "",
+                "Adjacent locations context (door_closed=true means player can only hear/smell, not see):",
+                json.dumps(adjacent_context, ensure_ascii=False, indent=2),
             ])
         if atmosphere_guide:
             parts.extend([

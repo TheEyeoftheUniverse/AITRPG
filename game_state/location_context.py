@@ -156,3 +156,46 @@ def build_runtime_location_context(
     location_context["threat_entities"] = list(present_threats)
 
     return location_context
+
+
+def build_adjacent_locations_context(
+    game_state: Dict[str, Any],
+    module_data: Dict[str, Any],
+    location_key: str = None,
+) -> List[Dict[str, Any]]:
+    """构建当前场景相邻场景的上下文列表（仅description + 门状态）。"""
+    current_location = location_key or (game_state or {}).get("current_location", "master_bedroom")
+    locations = (module_data or {}).get("locations", {})
+    current_loc_data = locations.get(current_location, {})
+    if not isinstance(current_loc_data, dict):
+        return []
+
+    # 构建 显示名 → location key 映射
+    name_to_key = {}
+    for key, loc_data in locations.items():
+        name = (loc_data if isinstance(loc_data, dict) else {}).get("name", "")
+        if name:
+            name_to_key[name] = key
+
+    visited = (game_state or {}).get("visited_locations", [])
+    exits = current_loc_data.get("exits", [])
+
+    adjacent = []
+    for exit_name in exits:
+        adj_key = name_to_key.get(exit_name)
+        if not adj_key or adj_key not in locations:
+            continue
+        adj_data = locations[adj_key]
+        if not isinstance(adj_data, dict):
+            continue
+
+        has_door = bool(adj_data.get("has_door"))
+        door_closed = has_door and adj_key not in visited
+
+        adjacent.append({
+            "name": exit_name,
+            "description": adj_data.get("description", ""),
+            "door_closed": door_closed,
+        })
+
+    return adjacent

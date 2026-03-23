@@ -138,11 +138,17 @@ def parse_theatrical_tags(text: str) -> dict:
             sj, ej = matches[j][0], matches[j][1]
             if sj >= si and ej <= ei and (ej - sj) < (ei - si):
                 nested.add(j)
-                # 从外层效果内容中剥离内层标签原文
+                # 从外层效果内容中处理内层标签
                 inner_raw = text[sj:ej]
+                inner_replacement = matches[j][3]
                 eff_i = matches[i][2]
                 if "content" in eff_i:
-                    eff_i["content"] = eff_i["content"].replace(inner_raw, "").strip()
+                    if inner_replacement is not None:
+                        # 内联标签嵌套在外层: 保留为标记（如 %%GLITCH:0%%text%%/GLITCH%%）
+                        eff_i["content"] = eff_i["content"].replace(inner_raw, inner_replacement).strip()
+                    else:
+                        # 外部标签嵌套在外层: 剥离
+                        eff_i["content"] = eff_i["content"].replace(inner_raw, "").strip()
 
     # 提取有序效果列表（包含嵌套效果，仍按顺序触发）
     effects = [m[2] for m in matches]
