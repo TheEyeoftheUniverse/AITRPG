@@ -204,7 +204,7 @@
       "check_required": "侦查",
       "difficulty": "无需判定，直接成功",
       "sancheck": "0/1",
-      "success_result": "通往二楼走廊的主卧的门，门开了一条缝，绝对不是玩家打开的。玩家在入睡前是关了门的。",
+      "success_result": "通往二楼走廊的主卧的门，玩家刚来这儿的时候，门开了一条缝，而那绝对不是玩家打开的。玩家在入睡前是关了门的。",
       "can_take": false,
       "atmosphere": 0.3
     },
@@ -501,7 +501,7 @@
         "trigger": "",
         "priority": 3,
         "description": "迷失结局：在未烧毁仪式的情况，通过任意方式进入房外的灰色平原，就会永远迷失在平原里。",
-        "hardcoded_text": "你推开厨房角落的后门，踏出了这栋房子。灰蒙蒙的平原在你眼前无限延伸，没有道路或地标，没有太阳或月亮。<paragraph>你只是往外踏出了一步，再回头看时，那栋房子就变得始终在同一个距离上，不远不近，像是一个永远无法到达也无法离开的锚点。</paragraph><paragraph>渐渐地，你分不清自己是在前进还是原地踏步。时间在这里失去了意义。</paragraph><map-corrupt>master_bedroom|░░░░</map-corrupt><map-corrupt>second_floor_hallway|█▓▒░█</map-corrupt><map-corrupt>guest_bedroom|╬═╪╩</map-corrupt><map-corrupt>study|▒▓█░</map-corrupt><map-corrupt>first_floor_hallway|╠║╣╚╗</map-corrupt><map-corrupt>living_room|░▒▓█</map-corrupt><map-corrupt>kitchen|╔═╦╗</map-corrupt><map-corrupt>outside|∷∷∷</map-corrupt><map-corrupt>basement|╫╪╬║</map-corrupt><map-corrupt>ritual_chamber|█████</map-corrupt><system-echo>欢迎光临。</system-echo>"
+        "hardcoded_text": "你推开厨房角落的后门，踏出了这栋房子。灰蒙蒙的平原在你眼前无限延伸，没有道路或地标，没有太阳或月亮。<paragraph=1500ms>你只是往外踏出了一步，再回头看时，那栋房子就变得始终在同一个距离上，不远不近，像是一个永远无法到达也无法离开的锚点。</paragraph><paragraph=1500ms>渐渐地，你分不清自己是在前进还是原地踏步。时间在这里失去了意义。</paragraph><map-corrupt>master_bedroom|░░░░</map-corrupt><map-corrupt>second_floor_hallway|█▓▒░█</map-corrupt><map-corrupt>guest_bedroom|╬═╪╩</map-corrupt><map-corrupt>study|▒▓█░</map-corrupt><map-corrupt>first_floor_hallway|╠║╣╚╗</map-corrupt><map-corrupt>living_room|░▒▓█</map-corrupt><map-corrupt>kitchen|╔═╦╗</map-corrupt><map-corrupt>outside|∷∷∷</map-corrupt><map-corrupt>basement|╫╪╬║</map-corrupt><map-corrupt>ritual_chamber|█████</map-corrupt><system-echo>欢迎光临。</system-echo>"
       }
     }
   },
