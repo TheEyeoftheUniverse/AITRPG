@@ -174,6 +174,7 @@ class RhythmAI:
             "- trust_signals: 描述本轮信任变化信号 [{\"signal\": \"信号描述\", \"round\": 当前轮次, \"direction\": \"+\"或\"-\"}]。\n"
             "- last_impression: {\"focus\": \"NPC本轮关注重点\", \"attitude_snapshot\": \"当前态度\", \"source_round\": 当前轮次}\n"
             "- trust_change_reasons: 一个字符串key的列表，每个key必须来自NPC数据中的 available_trust_reasons 列表。同一轮可命中多个原因。如果本轮没有值得改变信任的行为，不输出此字段。\n"
+            "- 信任匹配原则：宽松匹配。玩家的行为只要在语义上接近某个 available_trust_reasons 中的key，就应该触发。例如玩家说了自己的名字、来历、目的中的任何一项，都可以匹配 shared_personal_info；玩家表达理解、同情、安慰，都可以匹配 showed_empathy；玩家主动询问NPC的状况、故事、感受，都可以匹配 asked_about_her；玩家说话语气平和、没有催促施压，可以匹配 patient_and_respectful 或 calm_communication。一轮中多个reason同时触发是正常且鼓励的。\n"
             "- 只输出有内容的字段，空列表/空对象的字段可以省略。\n\n"
             "## npc_memory_updates schema\n"
             "{\n"
@@ -195,6 +196,8 @@ class RhythmAI:
             "- 隔墙交流时，npc_action_guide的response_strategy应体现隔墙的物理隔断感。\n"
             "- 如果NPC记忆中已有answered_questions或player_facts记录了某信息，不要在next_line_goal中重复追问这些已回答的问题。\n"
             "- 重复追问已回答信息是BUG。NPC应根据记忆推进对话，而非循环问同样的问题。\n"
+            "- NPC对话节奏原则：NPC不是审讯者。当玩家展示善意（分享信息、表达关心、提供帮助）时，NPC应该给予正向反馈（感谢、放松语气、分享一点自己的信息），而不是立刻抛出下一个质疑。next_line_goal应该是自然的对话推进，不是连续追问清单。\n"
+            "- 信任是双向的：玩家愿意主动分享、倾听、关心NPC时，NPC也应该逐步敞开，而不是始终保持审视姿态。\n"
         )
         input_classification = (rule_plan or {}).get("input_classification", "action")
         if input_classification == "dialogue":

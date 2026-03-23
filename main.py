@@ -372,7 +372,7 @@ class AITRPGPlugin(Star):
             loc_name = target_loc.get("name", move_to)
             description = str(target_loc.get("runtime_description") or target_loc.get("description") or "").strip()
             butler_chase = self.session_manager.get_butler_chase_context(session_id)
-            chase_active = bool((butler_chase or {}).get("active"))
+            chase_active = bool((butler_chase or {}).get("active")) and (butler_chase or {}).get("status") != "blocked"
 
             if target_loc.get("entity_present") or chase_active:
                 self._skip_progress_step(session_id, "rule_intent", "纯移动，不解析意图")
@@ -1639,6 +1639,7 @@ class AITRPGPlugin(Star):
         rhythm_result["location_context"] = self.session_manager.get_location_context(session_id)
         rhythm_result["threat_entity_context"] = self.rhythm_ai._build_scene_threat_entity_context(state, module_data)
         rhythm_result["npc_context"] = self.rhythm_ai._build_scene_npc_context(state, module_data)
+        rhythm_result["butler_chase"] = self.session_manager.get_butler_chase_context(session_id)
         return state
 
     async def terminate(self):

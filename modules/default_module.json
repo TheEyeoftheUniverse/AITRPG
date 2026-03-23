@@ -364,15 +364,8 @@
       "background": "1957年的独居女性，同样是被低价房产广告吸引而住进这里，随后被卷入中间带。她已经在次卧里困了很久，久到那本反复翻阅的书都能倒背如流。她总结出了关于管家的基本规律，但也因管家的规律无法独自行动。",
       "current_state": "把自己锁在次卧里，反复翻阅同一本书（已能背诵）。当听到门外有动静时会高度警惕。她【绝对】不会试着从门缝去看玩家，因为她知道管家的存在，不看门缝是出于谨慎。",
       "first_appearance": "当玩家靠近次卧时，会听到冰冷的女声。她不会立刻开门，需要玩家通过对话建立信任。",
-      "trust_actions": {
-        "分享自己的经历（她会询问玩家是谁，为什么在这里）": 0.2,
-        "把房产广告/驾照/其他可以证明玩家身份的东西从门下方滑进去（听了玩家的经历和动机之后，会要求玩家给出证据）": 0.15,
-        "提到窗外异象": 0.15,
-        "询问她的故事（她也是来这里购买低价房产的）": 0.1,
-        "承诺协助她找寻离开这里的线索": 0.2
-      },
       "dialogue_guide": {
-        "low_trust": "高度警惕、克制、话少。用短句试探，不给出多余信息。如果玩家已回答过的问题，不再重复追问，而是沉默或转向新的判断点。",
+        "low_trust": "警惕但不是审讯。用短句试探，但当玩家主动分享信息或表达善意时，给予简短的正向回应（如沉默片刻后语气稍缓、简短致谢）。不要连续追问，给玩家说话的空间。已回答的问题绝不重复。",
         "medium_trust": "开始认真倾听，语气依然直接但不再施压。会主动分享她观察到的管家规律。偶有讽刺，但更多是理性判断式表达，如\"继续说\"\"我在听\"\"先说重点\"。",
         "high_trust": "明显转暖，表现出合作意愿。主动提出计划、分享关键信息。语气果断但不再防御，偶尔流露关心。",
         "cooperation": "冷静果断的行动模式。会主动提出由自己来引开管家。说话简洁有力，偶有轻描淡写的狠话掩盖恐惧。",
@@ -383,26 +376,27 @@
         "提出由自己（玩家）来引开管家": "由玩家吸引管家注意力的话，将管家暂时吸引在主卧门口的话，她可以完美地在房子里完成所有线索调查并最终来解救玩家，跟玩家分享正确离开的线索。"
       },
       "trust_map": {
-        "shared_name": 0.05,
-        "shared_origin": 0.08,
-        "shared_goal": 0.06,
-        "showed_evidence": 0.12,
+        "shared_personal_info": 0.1,
+        "showed_evidence": 0.15,
         "showed_real_estate_ad": 0.18,
-        "made_promise_to_help": 0.08,
-        "mentioned_window_anomaly": 0.04,
-        "asked_her_story": 0.03,
+        "made_promise_to_help": 0.1,
+        "mentioned_shared_experience": 0.08,
+        "asked_about_her": 0.08,
         "showed_empathy": 0.1,
-        "reported_butler_blocking_master_bedroom": 0.12,
-        "described_safe_bait_plan": 0.15,
-        "respected_her_safety_boundary": 0.12,
-        "consistent_story_under_pressure": 0.1,
-        "asked_for_help_calmly": 0.08,
-        "confirmed_no_visual_risk_to_guest_bedroom": 0.15,
-        "disclosed_cross_wall_words_before_contact": 0.04,
+        "patient_and_respectful": 0.06,
+        "offered_useful_info": 0.1,
+        "reported_butler_position": 0.12,
+        "described_safe_plan": 0.15,
+        "respected_her_boundary": 0.08,
+        "consistent_under_pressure": 0.1,
+        "calm_communication": 0.06,
+        "confirmed_safety_for_her": 0.15,
+        "disclosed_cross_wall_words": 0.04,
         "aggressive_behavior": -0.1,
         "contradicted_self": -0.12,
         "tried_to_force_door": -0.15,
-        "pressured_her_to_open_without_confirmation": -0.18
+        "pressured_without_confirmation": -0.18,
+        "dismissed_her_concerns": -0.08
       },
       "trust_gates": {
         "low": {
@@ -489,7 +483,7 @@
         "trigger": "butler_gaze===true OR san_remaining<=0",
         "priority": 1,
         "description": "疯狂结局：玩家永久疯狂了，彻底迷失在了这个世界，再也无人知晓玩家的下落。达成此结局的情况通常是与管家对视了，与管家对视进入该结局的情况，需要极力渲染管家的非人恐怖感。例子：玩家吸引管家到主卧房门前停留，但打开了门缝，通过门缝试着查看管家是否离去时，会跟管家对上视线————管家会以一种极度扭曲身形的姿势把头移动到玩家的目光前，如果玩家是因此疯狂，这个场景需要详细描写，以给玩家留下深刻的印象。需要注意的是，除了主动打开门缝的情况，其他情况不主动看管家的脸就不会触发对视。而打开门缝这个行为会让管家的视线覆盖整个门缝，因此才会造成这样的结果。",
-        "hardcoded_text_butler_gaze": "你没能完成一次完整的退避，被它拦住了去路。<paragraph=2000ms>它扭曲诡异的走路动作不符合任何你对“移动”的理解。</paragraph><paragraph=2000ms><glitch>它背对着你的头部以一种关节不该存在的方式朝你的方向偏转。</glitch></paragraph><paragraph=1500ms>你看到了。</paragraph><paragraph=1000ms>你看到了。</paragraph><paragraph=700ms>你看到了。</paragraph><paragraph=400ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=50ms>你看到了。</paragraph><paragraph=50ms>你看到了。</paragraph><paragraph=50ms>你看到了。</paragraph><paragraph=50ms>你看到了。</paragraph><paragraph=50ms>你看到了。</paragraph><paragraph=50ms>……</paragraph>",
+        "hardcoded_text_butler_gaze": "你没能完成一次完整的退避，被它拦住了去路。<paragraph=2000ms>它扭曲诡异的走路动作不符合任何你对“移动”的理解。</paragraph><paragraph=2000ms><glitch>它背对着你的头部以一种关节不该存在的方式朝你的方向偏转。</glitch></paragraph><paragraph=1500ms>你看到了。</paragraph><paragraph=1000ms>你看到了。</paragraph><paragraph=700ms>你看到了。</paragraph><paragraph=400ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=50ms>你看到了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>……</paragraph>",
         "hardcoded_text_san_zero": "你的理智已经完全崩溃。那些不该被人类认知的东西一点一点侵蚀着你的思维，直到最后一丝清明也被吞没。你的双眼失去了焦距，嘴角挂着无意义的微笑。这个世界对你而言，已经不再有任何意义。<inject-input> 哈哈哈哈哈 哈哈哈哈哈哈 啊哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈 哈哈哈哈哈哈哈哈哈</inject-input>"
       },
       "amnesia": {

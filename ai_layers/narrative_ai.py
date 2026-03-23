@@ -291,6 +291,7 @@ class NarrativeAI:
         raw_npc_action_guide = rhythm_result.get("npc_action_guide", {})
         dialogue_npcs, _, npc_action_guide = self._sanitize_npc_prompt_inputs(raw_npc_context, raw_npc_action_guide)
         threat_entities = list(location_context.get("present_threats", []) or [])
+        butler_chase = rhythm_result.get("butler_chase", {}) if isinstance(rhythm_result.get("butler_chase"), dict) else {}
         atmosphere_guide = rhythm_result.get("atmosphere_guide", {})
         feasible = rhythm_result.get("feasible", True)
         hint = rhythm_result.get("hint")
@@ -356,6 +357,19 @@ class NarrativeAI:
         if threat_entities:
             rhythm_block += f"\n- threat_entities: {json.dumps(threat_entities, ensure_ascii=False)}"
 
+        if butler_chase.get("active"):
+            compact_chase = {
+                "active": butler_chase.get("active"),
+                "status": butler_chase.get("status"),
+                "butler_location": butler_chase.get("butler_location"),
+                "player_location": butler_chase.get("player_location"),
+                "blocked_at": butler_chase.get("blocked_at"),
+                "last_target_location": butler_chase.get("last_target_location"),
+                "same_location_rounds": butler_chase.get("same_location_rounds"),
+                "player_relation": butler_chase.get("player_relation"),
+            }
+            rhythm_block += f"\n- butler_chase: {json.dumps(compact_chase, ensure_ascii=False)}"
+
         if not feasible and hint:
             rhythm_block += f"\n- blocked_reason: {hint}"
 
@@ -405,6 +419,26 @@ class NarrativeAI:
                 "- You may describe their posture, movement, breathing, distance, gaze pressure, or pursuit.\n"
                 "- Do not write quoted speech, polite verbal exchange, or reported dialogue for threat entities.\n"
             )
+        if butler_chase.get("active") and butler_chase.get("status") != "blocked":
+            relation = butler_chase.get("player_relation", "separate_rooms")
+            prompt += (
+                "- BUTLER CHASE IS ACTIVE. The butler is pursuing the player. This turn MUST convey ongoing chase tension.\n"
+                "- Do NOT write this as a calm room introduction. The threat has not ended.\n"
+            )
+            if relation == "same_room":
+                prompt += "- The butler is in the SAME ROOM. Write direct, immediate physical threat and pressure.\n"
+            elif relation == "separate_rooms":
+                prompt += (
+                    "- The butler is in a DIFFERENT ROOM but closing in. Write approaching footsteps, distant breathing, "
+                    "the sense of being hunted. The player just escaped but the pursuit continues.\n"
+                )
+            elif relation == "blocked_outside_current_room":
+                prompt += "- The butler is BLOCKED outside the current room. Write door-pressure, waiting presence, muffled sounds.\n"
+        elif butler_chase.get("active") and butler_chase.get("status") == "blocked":
+            prompt += (
+                "- The butler chase is active but the butler is currently blocked by a door.\n"
+                "- Pure movement can use normal room descriptions, but the overall atmosphere should still feel uneasy.\n"
+            )
         return prompt
 
     def _build_compact_retry_prompt(
@@ -443,6 +477,16 @@ class NarrativeAI:
             "current_scene_has_npc": bool(dialogue_npcs),
             "arrival_mode": bool(rhythm_result.get("arrival_mode")),
         }
+        butler_chase = rhythm_result.get("butler_chase", {}) if isinstance(rhythm_result.get("butler_chase"), dict) else {}
+        if butler_chase.get("active"):
+            compact_payload["butler_chase"] = {
+                "active": butler_chase.get("active"),
+                "status": butler_chase.get("status"),
+                "butler_location": butler_chase.get("butler_location"),
+                "player_location": butler_chase.get("player_location"),
+                "blocked_at": butler_chase.get("blocked_at"),
+                "player_relation": butler_chase.get("player_relation"),
+            }
         creative_additions = rhythm_result.get("creative_additions", {})
         has_creative = isinstance(creative_additions, dict) and any(
             v for v in creative_additions.values() if v
@@ -484,6 +528,16 @@ class NarrativeAI:
                 "The player moved into the room and did not say anything.\n"
                 "If something reacts, make it a reaction to presence or footsteps, not a reply to dialogue."
             )
+        if compact_payload.get("butler_chase", {}).get("active") and compact_payload.get("butler_chase", {}).get("status") != "blocked":
+            relation = compact_payload.get("butler_chase", {}).get("player_relation", "separate_rooms")
+            prompt += (
+                "\n\nBUTLER CHASE IS ACTIVE. The butler is pursuing the player.\n"
+                "This turn MUST convey ongoing chase tension. Do NOT write a calm room introduction.\n"
+            )
+            if relation == "same_room":
+                prompt += "The butler is in the SAME ROOM — write direct physical threat.\n"
+            elif relation == "separate_rooms":
+                prompt += "The butler is in a DIFFERENT ROOM but closing in — write approaching footsteps, distant breathing, the sense of being hunted.\n"
         return prompt
 
     def _normalize_rhythm_result(self, rhythm_result: dict) -> dict:
@@ -693,6 +747,11 @@ class NarrativeAI:
                 "narrative": f"你试着这么做，但眼下行不通。{hint}",
                 "summary": self._build_default_summary(player_input),
             }
+
+        # 追逐中的移动反馈（优先级最高）
+        butler_chase = rhythm_result.get("butler_chase", {}) if isinstance(rhythm_result.get("butler_chase"), dict) else {}
+        if butler_chase.get("active") and butler_chase.get("status") != "blocked":
+            return self._build_local_chase_fallback_narrative(butler_chase, location_context, normalized_action, rhythm_result)
 
         if self._is_arrival_mode(normalized_action, rhythm_result) and threat_entity_context:
             return self._build_local_threat_arrival_narrative(threat_entity_context, location_context)
@@ -1001,6 +1060,43 @@ class NarrativeAI:
         return {
             "narrative": narrative,
             "summary": f"移动到{location_name}",
+        }
+
+    def _build_local_chase_fallback_narrative(
+        self,
+        butler_chase: dict,
+        location_context: dict,
+        normalized_action: dict,
+        rhythm_result: dict,
+    ) -> dict:
+        """追逐态下的本地 fallback 叙述。管家 active 且非 blocked 时使用。"""
+        location_name = location_context.get("name") or "当前地点"
+        relation = butler_chase.get("player_relation", "separate_rooms")
+        is_arrival = self._is_arrival_mode(normalized_action, rhythm_result)
+
+        if relation == "same_room":
+            if is_arrival:
+                narrative = f"你踏入{location_name}——那道笔直的人影已经在这里了。它没有任何多余的动作，只是缓缓转向你，距离近得令人窒息。"
+            else:
+                narrative = "那道人影就在几步之外，压迫感无处可躲。你能感到它的注视像针一样扎在皮肤上。"
+        elif relation == "blocked_outside_current_room":
+            if is_arrival:
+                narrative = f"你来到{location_name}。门外传来沉重的呼吸声，像是什么东西正贴在门板另一侧等待。"
+            else:
+                narrative = "门外的存在感没有消退。偶尔传来一声低沉的摩擦，像指甲划过木头的声音。"
+        else:
+            # separate_rooms — 最常见的追逐中移动场景
+            if is_arrival:
+                narrative = (
+                    f"你匆忙来到{location_name}，身后的脚步声还没有停下。"
+                    "走廊深处传来沉重而均匀的脚步——它还在追。你没有多少时间。"
+                )
+            else:
+                narrative = "远处的脚步声在回响。它没有加速，也没有放慢，只是持续、稳定地逼近。你需要尽快行动。"
+
+        return {
+            "narrative": narrative,
+            "summary": f"追逐中移动到{location_name}" if is_arrival else "追逐仍在持续",
         }
 
     def _build_local_threat_response(
