@@ -1024,14 +1024,17 @@ class AITRPGPlugin(Star):
 
         butler_chase = self.session_manager.get_butler_chase_context(session_id)
         chase_active = bool((butler_chase or {}).get("active"))
+        npc_present = bool(target_loc.get("npc_present"))
         use_rhythm_arrival_judgement = (
             self.session_manager.should_use_butler_arrival_judgement(session_id, move_to)
             or chase_active
             or bool(move_check_result)
             or bool(movement_note)
+            or npc_present
         )
         if use_rhythm_arrival_judgement:
-            self._start_progress_step(session_id, "rhythm", "节奏AI 正在判断威胁实体的到场反应")
+            rhythm_step_msg = "节奏AI 正在评估NPC到场反应" if npc_present and not chase_active else "节奏AI 正在判断威胁实体的到场反应"
+            self._start_progress_step(session_id, "rhythm", rhythm_step_msg)
             rhythm_trace_id = f"{session_id}:rhythm"
             preview_state = self._preview_state_with_world_changes(state, activation_changes)
             rhythm_result = await self.rhythm_ai.process(
@@ -1052,7 +1055,7 @@ class AITRPGPlugin(Star):
                 session_id,
                 "rhythm",
                 self.rhythm_ai.pop_call_metric(rhythm_trace_id),
-                "威胁实体到场判断完成",
+                "到场节奏评估完成",
             )
             rhythm_result = rhythm_result if isinstance(rhythm_result, dict) else {}
             soft_changes = rhythm_result.get("world_changes", {})
