@@ -17,8 +17,8 @@
                         "opening":  "昨日，你买下了一处足够便宜的房屋，当晚就得以在主卧里睡下；\n\n然后，你忽然在深夜中醒来，房屋的布局变得陈旧且陌生。\n\n不合适的枕头与坚硬的床垫带来全身酸痛的疲惫感，而空气中弥漫的沉默，不断地从四面八方压迫着你的思考... "
                     },
     "special_messages":  {
-                             "first_living_room_entry_blocked":  "你刚想踏进客厅。\n\n客厅内不远处，一道人形的背部在你脚掌落地的瞬间，发生了极其轻微的位移——\u003cglitch\u003e脊椎中段的某个位置，像被折断的竹节那样，朝一个不该存在的方向弯折了一寸。\u003c/glitch\u003e\n\n它没有动。不，它动了。但那个动作不属于任何一种你认知中的“转身”或“侧耳”，如果一个人的身体要做出那样的形态，他的肋骨应该已经刺穿了皮肤——\n\n你下意识地、猛地收回了脚，退出了客厅。\u003cinject-input\u003e快逃快逃快逃快逃快逃快逃快逃快逃快逃快逃快逃\u003c/inject-input\u003e",
-                             "first_outside_entry_blocked":  "你刚想推开厨房的后门，门外那片灰蒙蒙的平原便先一步压进了你的视野。外面没有道路或参照物，看不到任何尽头。\u003cecho-text\u003e该离开这个鬼地方了！你终于找到出口了！你迫不及待地踏出去！|你忽然一愣，直觉告诉你，从这里逃走绝不是正确的选择。你猛地停在门边，没有真正踏出去。\u003c/echo-text\u003e"
+                             "first_living_room_entry_blocked":  "你刚想踏进客厅。\n\n客厅内不远处，一道人形的背部在你脚掌落地的瞬间，发生了极其轻微的位移——<glitch>脊椎中段的某个位置，像被折断的竹节那样，朝一个不该存在的方向弯折了一寸。</glitch>\n\n它没有动。不，它动了。但那个动作不属于任何一种你认知中的“转身”或“侧耳”，如果一个人的身体要做出那样的形态，他的肋骨应该已经刺穿了皮肤——\n\n你下意识地、猛地收回了脚，退出了客厅。<inject-input>快逃快逃快逃快逃快逃快逃快逃快逃快逃快逃快逃</inject-input>",
+                             "first_outside_entry_blocked":  "你刚想推开厨房的后门，门外那片灰蒙蒙的平原便先一步压进了你的视野。外面没有道路或参照物，看不到任何尽头。<echo-text>该离开这个鬼地方了！你终于找到出口了！你迫不及待地踏出去！|你忽然一愣，直觉告诉你，从这里逃走绝不是正确的选择。你猛地停在门边，没有真正踏出去。</echo-text>"
                          },
     "mechanics":  {
                       "primary_pursuer":  {
@@ -44,7 +44,7 @@
     "locations":  {
                       "master_bedroom":  {
                                              "name":  "主卧",
-                                             "description":  "你初次醒来的地方。房间昏暗，空气中有股陈旧的味道。床铺凌乱，一面破碎的镜子立在衣柜旁，床头上还有几份你顺手带进来的，出售这间房子的剪报——房产广告。\u003csystem-echo\u003e你又回来了。\u003c/system-echo\u003e\u003csystem-echo\u003e从窗户跳下去吧。\u003cinject-input\u003e 跳出窗户\u003c/inject-input\u003e\u003c/system-echo\u003e",
+                                             "description":  "你初次醒来的地方。房间昏暗，空气中有股陈旧的味道。床铺凌乱，一面破碎的镜子立在衣柜旁，床头上还有几份你顺手带进来的，出售这间房子的剪报——房产广告。<system-echo>你又回来了。</system-echo><system-echo>从窗户跳下去吧。<inject-input> 跳出窗户</inject-input></system-echo>",
                                              "atmosphere":  0.1,
                                              "has_door":  true,
                                              "objects":  [
@@ -839,11 +839,11 @@
                                              },
                     "ending_conditions":  {
                                               "insane":  {
-                                                             "trigger":  "butler_gaze===true OR san_remaining\u003c=0",
+                                                             "trigger":  "butler_gaze===true OR san_remaining<=0",
                                                              "priority":  1,
                                                              "description":  "疯狂结局：玩家永久疯狂了，彻底迷失在了这个世界，再也无人知晓玩家的下落。达成此结局的情况通常是与管家对视了，与管家对视进入该结局的情况，需要极力渲染管家的非人恐怖感。例子：玩家吸引管家到主卧房门前停留，但打开了门缝，通过门缝试着查看管家是否离去时，会跟管家对上视线————管家会以一种极度扭曲身形的姿势把头移动到玩家的目光前，如果玩家是因此疯狂，这个场景需要详细描写，以给玩家留下深刻的印象。需要注意的是，除了主动打开门缝的情况，其他情况不主动看管家的脸就不会触发对视。而打开门缝这个行为会让管家的视线覆盖整个门缝，因此才会造成这样的结果。",
-                                                             "hardcoded_text_butler_gaze":  "你没能完成一次完整的退避，被它拦住了去路。\u003cparagraph=2000ms\u003e它扭曲诡异的走路动作不符合任何你对“移动”的理解。\u003c/paragraph\u003e\u003cparagraph=2000ms\u003e\u003cglitch\u003e它背对着你的头部以一种关节不该存在的方式朝你的方向偏转。\u003c/glitch\u003e\u003c/paragraph\u003e\u003cparagraph=1500ms\u003e你看到了。\u003c/paragraph\u003e\u003cparagraph=1000ms\u003e你看到了。\u003c/paragraph\u003e\u003cparagraph=700ms\u003e你看到了。\u003c/paragraph\u003e\u003cparagraph=400ms\u003e你看到了。\u003c/paragraph\u003e\u003cparagraph=100ms\u003e你看到了。\u003c/paragraph\u003e\u003cparagraph=100ms\u003e你看到了。\u003c/paragraph\u003e\u003cparagraph=100ms\u003e你看到了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e你看到了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e看见你了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e看见你了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e看见你了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e看见你了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e看见你了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e看见你了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e看见你了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e看见你了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e看见你了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e看见你了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e看见你了。\u003c/paragraph\u003e\u003cparagraph=50ms\u003e……\u003c/paragraph\u003e",
-                                                             "hardcoded_text_san_zero":  "你的理智已经完全崩溃。那些不该被人类认知的东西一点一点侵蚀着你的思维，直到最后一丝清明也被吞没。你的双眼失去了焦距，嘴角挂着无意义的微笑。这个世界对你而言，已经不再有任何意义。\u003cinject-input\u003e 哈哈哈哈哈 哈哈哈哈哈哈 啊哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈 哈哈哈哈哈哈哈哈哈\u003c/inject-input\u003e"
+                                                             "hardcoded_text_butler_gaze":  "你没能完成一次完整的退避，被它拦住了去路。<paragraph=2000ms>它扭曲诡异的走路动作不符合任何你对“移动”的理解。</paragraph><paragraph=2000ms><glitch>它背对着你的头部以一种关节不该存在的方式朝你的方向偏转。</glitch></paragraph><paragraph=1500ms>你看到了。</paragraph><paragraph=1000ms>你看到了。</paragraph><paragraph=700ms>你看到了。</paragraph><paragraph=400ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=50ms>你看到了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>……</paragraph>",
+                                                             "hardcoded_text_san_zero":  "你的理智已经完全崩溃。那些不该被人类认知的东西一点一点侵蚀着你的思维，直到最后一丝清明也被吞没。你的双眼失去了焦距，嘴角挂着无意义的微笑。这个世界对你而言，已经不再有任何意义。<inject-input> 哈哈哈哈哈 哈哈哈哈哈哈 啊哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈 哈哈哈哈哈哈哈哈哈</inject-input>"
                                                          },
                                               "amnesia":  {
                                                               "trigger":  "amnesia===true AND escape_success===true",
@@ -869,7 +869,7 @@
                                                               "trigger":  "",
                                                               "priority":  3,
                                                               "description":  "迷失结局：在未烧毁仪式的情况，通过任意方式进入房外的灰色平原，就会永远迷失在平原里。",
-                                                              "hardcoded_text":  "你推开厨房角落的后门，踏出了这栋房子。灰蒙蒙的平原在你眼前无限延伸，没有道路或地标，没有太阳或月亮。\u003cparagraph=1500ms\u003e你只是往外踏出了一步，再回头看时，那栋房子就变得始终在同一个距离上，不远不近，像是一个永远无法到达也无法离开的锚点。\u003c/paragraph\u003e\u003cparagraph=1500ms\u003e渐渐地，你分不清自己是在前进还是原地踏步。时间在这里失去了意义。\u003c/paragraph\u003e\u003cmap-corrupt\u003emaster_bedroom|░░░░\u003c/map-corrupt\u003e\u003cmap-corrupt\u003esecond_floor_hallway|█▓▒░█\u003c/map-corrupt\u003e\u003cmap-corrupt\u003eguest_bedroom|╬═╪╩\u003c/map-corrupt\u003e\u003cmap-corrupt\u003estudy|▒▓█░\u003c/map-corrupt\u003e\u003cmap-corrupt\u003efirst_floor_hallway|╠║╣╚╗\u003c/map-corrupt\u003e\u003cmap-corrupt\u003eliving_room|░▒▓█\u003c/map-corrupt\u003e\u003cmap-corrupt\u003ekitchen|╔═╦╗\u003c/map-corrupt\u003e\u003cmap-corrupt\u003eoutside|∷∷∷\u003c/map-corrupt\u003e\u003cmap-corrupt\u003ebasement|╫╪╬║\u003c/map-corrupt\u003e\u003cmap-corrupt\u003eritual_chamber|█████\u003c/map-corrupt\u003e\u003csystem-echo\u003e欢迎光临。\u003c/system-echo\u003e"
+                                                              "hardcoded_text":  "你推开厨房角落的后门，踏出了这栋房子。灰蒙蒙的平原在你眼前无限延伸，没有道路或地标，没有太阳或月亮。<paragraph=1500ms>你只是往外踏出了一步，再回头看时，那栋房子就变得始终在同一个距离上，不远不近，像是一个永远无法到达也无法离开的锚点。</paragraph><paragraph=1500ms>渐渐地，你分不清自己是在前进还是原地踏步。时间在这里失去了意义。</paragraph><map-corrupt>master_bedroom|░░░░</map-corrupt><map-corrupt>second_floor_hallway|█▓▒░█</map-corrupt><map-corrupt>guest_bedroom|╬═╪╩</map-corrupt><map-corrupt>study|▒▓█░</map-corrupt><map-corrupt>first_floor_hallway|╠║╣╚╗</map-corrupt><map-corrupt>living_room|░▒▓█</map-corrupt><map-corrupt>kitchen|╔═╦╗</map-corrupt><map-corrupt>outside|∷∷∷</map-corrupt><map-corrupt>basement|╫╪╬║</map-corrupt><map-corrupt>ritual_chamber|█████</map-corrupt><system-echo>欢迎光临。</system-echo>"
                                                           }
                                           }
                 },

@@ -65,7 +65,7 @@ class SessionManager:
             if filename.endswith(".json"):
                 module_path = os.path.join(modules_dir, filename)
                 try:
-                    with open(module_path, "r", encoding="utf-8") as f:
+                    with open(module_path, "r", encoding="utf-8-sig") as f:
                         data = json.load(f)
                     info = data.get("module_info", {})
                     modules.append({
@@ -105,7 +105,7 @@ class SessionManager:
         )
 
         try:
-            with open(module_path, "r", encoding="utf-8") as f:
+            with open(module_path, "r", encoding="utf-8-sig") as f:
                 module_data = json.load(f)
             return normalize_module_data(module_data)
         except FileNotFoundError:
@@ -1286,10 +1286,7 @@ class SessionManager:
         state = self.sessions.get(session_id)
         if not state or self.is_butler_active(session_id):
             return False
-        if not self.has_butler_living_room_warning(session_id):
-            return False
-        warning_location = self._get_primary_pursuer_warning_location(self.get_module_data(session_id))
-        return bool(target_key) and target_key == self.get_butler_location(session_id) == warning_location
+        return bool(target_key) and target_key == self.get_butler_location(session_id)
 
     def has_outside_lost_warning(self, session_id: str) -> bool:
         state = self.sessions.get(session_id)
@@ -1796,6 +1793,36 @@ class SessionManager:
 
         chase_state["same_location_rounds"] = 0
         return False
+
+    def _is_butler_activation_grace_exit(
+        self,
+        state: Dict[str, Any],
+        current_location: str,
+        target_location: str,
+    ) -> bool:
+        if not isinstance(state, dict):
+            return False
+        if not current_location or not target_location or current_location == target_location:
+            return False
+
+        butler_state = self._get_butler_runtime_state(state)
+        chase_state = butler_state.get("chase_state", {})
+        if not isinstance(chase_state, dict) or not chase_state.get("active"):
+            return False
+        if str(chase_state.get("target") or "player").strip() != "player":
+            return False
+        if str(chase_state.get("status") or "").strip() == "blocked":
+            return False
+
+        contact_location = self._get_butler_contact_location_from_state(state)
+        if not contact_location or current_location != contact_location:
+            return False
+
+        activation_round = chase_state.get("activation_round")
+        if activation_round is None:
+            return False
+
+        return int(activation_round or 0) == int(state.get("round_count", 0) or 0)
 
     def _advance_butler_chase(self, state: Dict[str, Any]) -> Dict[str, Any]:
         butler_state = self._get_butler_runtime_state(state)
