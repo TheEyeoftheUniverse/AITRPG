@@ -3,6 +3,13 @@ from astrbot.api.star import Context
 from ..game_state.location_context import (
     build_adjacent_locations_context,
     build_runtime_location_context,
+    get_entity_dialogue_guide,
+    get_entity_first_appearance,
+    get_entity_profile_text,
+    get_entity_reveal_text_map,
+    get_entity_trust_gates,
+    get_entity_trust_map,
+    get_entity_trust_threshold,
     get_cross_wall_npcs,
     get_module_npcs,
     get_module_threat_entities,
@@ -14,6 +21,7 @@ from .usage_metrics import extract_usage_metrics
 import json
 import os
 import re
+import copy
 from typing import Any
 
 
@@ -242,7 +250,7 @@ class RhythmAI:
             return True
         if not isinstance(npc_data.get("dialogue"), dict):
             return True
-        if npc_data.get("is_hostile") and not npc_data.get("dialogue_guide") and not npc_data.get("key_info"):
+        if npc_data.get("is_hostile") and not get_entity_dialogue_guide(npc_data) and not get_entity_reveal_text_map(npc_data):
             return True
         return False
 
@@ -253,12 +261,25 @@ class RhythmAI:
         normalized_action = (rule_plan or {}).get("normalized_action", {})
         target_key = normalized_action.get("target_key")
         target_kind = normalized_action.get("target_kind")
+        follow_arrival_reaction_context = (
+            (rule_plan or {}).get("follow_arrival_reaction_context")
+            if isinstance((rule_plan or {}).get("follow_arrival_reaction_context"), dict)
+            else {}
+        )
 
         focused_npc = None
         if target_kind == "npc" and target_key in npc_context:
             candidate = npc_context.get(target_key, {})
             if not self._should_suppress_npc_dialogue(target_key, candidate):
                 focused_npc = target_key
+        elif follow_arrival_reaction_context:
+            for npc_name in follow_arrival_reaction_context.get("triggered_npcs", []):
+                if npc_name not in npc_context:
+                    continue
+                candidate = npc_context.get(npc_name, {})
+                if not self._should_suppress_npc_dialogue(npc_name, candidate):
+                    focused_npc = npc_name
+                    break
         elif len(npc_context) == 1:
             only_npc = next(iter(npc_context))
             candidate = npc_context.get(only_npc, {})
@@ -273,10 +294,8 @@ class RhythmAI:
         attitude = runtime_state.get("attitude", npc_data.get("initial_attitude", "neutral"))
         raw_trust = runtime_state.get("trust_level", 0.0)
         trust_level = float(raw_trust) if isinstance(raw_trust, (int, float, str)) else 0.0
-        trust_gates = npc_data.get("trust_gates", {})
-        if isinstance(npc_data.get("trust"), dict):
-            trust_gates = npc_data.get("trust", {}).get("gates", trust_gates)
-        high_min = float(((trust_gates.get("high") or {}).get("min", npc_data.get("trust_threshold", 0.5))) or 0.5)
+        trust_gates = get_entity_trust_gates(npc_data)
+        high_min = float(((trust_gates.get("high") or {}).get("min", get_entity_trust_threshold(npc_data, 0.5))) or 0.5)
         medium_min = float(((trust_gates.get("medium") or {}).get("min", 0.2)) or 0.2)
         npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
         normalized_player_facts = self._normalize_player_facts(npc_memory.get("player_facts", {}))
@@ -316,11 +335,7 @@ class RhythmAI:
                     "should_open_door": False,
                 }
 
-        dialogue_guide = (
-            npc_data.get("dialogue_guide", {})
-            if isinstance(npc_data.get("dialogue_guide"), dict)
-            else {}
-        )
+        dialogue_guide = get_entity_dialogue_guide(npc_data)
         dialogue_cfg = npc_data.get("dialogue", {}) if isinstance(npc_data.get("dialogue"), dict) else {}
         if isinstance(dialogue_cfg.get("guide"), dict):
             dialogue_guide = dialogue_cfg.get("guide", {})
@@ -360,7 +375,7 @@ class RhythmAI:
                 dialogue_guide.get("high_trust")
                 or dialogue_guide.get("cooperation")
                 or ((runtime_state.get("soft_state") or {}).get("summary"))
-                or npc_data.get("current_state")
+                or get_entity_profile_text(npc_data, "current_state")
                 or "Stay alert but cooperate."
             )
             revealable_info = list(currently_allowed_reveals)
@@ -377,7 +392,7 @@ class RhythmAI:
             response_strategy = (
                 dialogue_guide.get("medium_trust")
                 or ((runtime_state.get("soft_state") or {}).get("summary"))
-                or npc_data.get("current_state")
+                or get_entity_profile_text(npc_data, "current_state")
                 or "Keep probing but share a small amount of information."
             )
             revealable_info = list(currently_allowed_reveals)[:1]
@@ -385,7 +400,7 @@ class RhythmAI:
         else:
             response_strategy = (
                 dialogue_guide.get("low_trust")
-                or npc_data.get("first_appearance")
+                or get_entity_first_appearance(npc_data)
                 or "Answer through the door and keep the player at distance."
             )
             revealable_info = []
@@ -457,6 +472,8 @@ class RhythmAI:
             normalized["npc_action_guide"] = base_result["npc_action_guide"]
         if not isinstance(normalized.get("atmosphere_guide"), dict):
             normalized["atmosphere_guide"] = base_result["atmosphere_guide"]
+        if not isinstance(normalized.get("follow_arrival_reaction_context"), dict):
+            normalized["follow_arrival_reaction_context"] = base_result.get("follow_arrival_reaction_context", {})
         if not isinstance(normalized.get("stage_assessment"), str):
             normalized["stage_assessment"] = str(normalized.get("stage_assessment", ""))
         if not isinstance(normalized.get("world_changes"), dict):
@@ -517,11 +534,22 @@ class RhythmAI:
         threat_entity_context = self._build_scene_threat_entity_context(game_state, module_data)
         atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
         object_context = (rule_plan or {}).get("object_context")
+        follow_arrival_reaction_context = (
+            (rule_plan or {}).get("follow_arrival_reaction_context")
+            if isinstance((rule_plan or {}).get("follow_arrival_reaction_context"), dict)
+            else {}
+        )
 
         parts = [
             "Current location context:",
             json.dumps({current_location: location_context}, ensure_ascii=False, indent=2),
         ]
+        if follow_arrival_reaction_context:
+            parts.extend([
+                "",
+                "Follow arrival reaction context (soft guidance for this first-arrival move only):",
+                json.dumps(follow_arrival_reaction_context, ensure_ascii=False, indent=2),
+            ])
         if object_context:
             parts.extend([
                 "",
@@ -597,7 +625,7 @@ class RhythmAI:
                 "companion_state": runtime_state.get("companion_state", runtime_state.get("companion_mode", "wait")),
                 "companion_task": runtime_state.get("companion_task", {}),
             }
-            trust_map = npc_data.get("trust_map", {})
+            trust_map = get_entity_trust_map(npc_data)
             if isinstance(trust_map, dict) and trust_map:
                 merged_npc["available_trust_reasons"] = list(trust_map.keys())
             merged_npc["reveal_state"] = self._build_reveal_state(merged_npc, game_state, runtime_state)
@@ -637,7 +665,7 @@ class RhythmAI:
             merged_npc["cross_wall_type"] = cross_info.get("wall_type", "voice_only")
             merged_npc["cross_wall_from_room"] = cross_info.get("from_room", "")
             merged_npc["interaction_mode"] = "cross_wall_voice_only"
-            trust_map = npc_data.get("trust_map", {})
+            trust_map = get_entity_trust_map(npc_data)
             if isinstance(trust_map, dict) and trust_map:
                 merged_npc["available_trust_reasons"] = list(trust_map.keys())
             merged_npc["reveal_state"] = self._build_reveal_state(merged_npc, game_state, runtime_state)
@@ -692,6 +720,13 @@ class RhythmAI:
         npc_context = self._build_scene_npc_context(game_state, module_data)
         threat_entity_context = self._build_scene_threat_entity_context(game_state, module_data)
         npc_action_guide = self._build_npc_action_guide(player_input, rule_plan, npc_context, game_state)
+        follow_arrival_reaction_context = (
+            copy.deepcopy((rule_plan or {}).get("follow_arrival_reaction_context"))
+            if isinstance((rule_plan or {}).get("follow_arrival_reaction_context"), dict)
+            else {}
+        )
+        if follow_arrival_reaction_context and isinstance(location_context, dict):
+            location_context["follow_arrival_reaction_context"] = copy.deepcopy(follow_arrival_reaction_context)
 
         return {
             "feasible": bool(feasibility.get("ok", True)),
@@ -707,6 +742,7 @@ class RhythmAI:
             "creative_additions": {},
             "continuity_flag": None,
             "npc_memory_updates": {},
+            "follow_arrival_reaction_context": follow_arrival_reaction_context,
             "ending_request": {
                 "requested": False,
                 "ending_id": None,
@@ -919,7 +955,7 @@ class RhythmAI:
         else:
             base = "短句、警惕、保持距离，不过度追问"
 
-        personality = str(npc_data.get("personality") or "").strip()
+        personality = get_entity_profile_text(npc_data, "personality")
         if personality:
             base += f"；保留{self._trim_text(personality, 36)}的说话感觉"
         if is_cross_wall:
@@ -1045,12 +1081,7 @@ class RhythmAI:
                 for key, item in reveal_items.items()
                 if isinstance(item, dict) and str(item.get("text") or "").strip()
             }
-        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
-        return {
-            key: str(value or "").strip()
-            for key, value in key_info.items()
-            if isinstance(key, str) and str(value or "").strip()
-        }
+        return get_entity_reveal_text_map(npc_data)
 
     def _normalize_revealed_info_keys(self, revealed_info: Any) -> set:
         keys = set()

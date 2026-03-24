@@ -7,6 +7,8 @@ from typing import Dict, Any, List, Set
 from .location_context import (
     DEFAULT_RUNTIME_MEMORY_TEMPLATE,
     build_runtime_location_context,
+    get_entity_dialogue_guide,
+    get_entity_first_appearance,
     get_module_all_entities,
     get_module_npcs,
     get_primary_pursuer_name,
@@ -895,8 +897,8 @@ class SessionManager:
             return True
         return bool(
             isinstance(npc_module.get("dialogue"), dict)
-            or isinstance(npc_module.get("dialogue_guide"), dict)
-            or str(npc_module.get("first_appearance") or "").strip()
+            or bool(get_entity_dialogue_guide(npc_module))
+            or bool(get_entity_first_appearance(npc_module))
         )
 
     def set_companion_state(self, session_id: str, npc_name: str, target_state: str, command_payload: Dict[str, Any] = None) -> Dict[str, Any]:

@@ -1,6 +1,7 @@
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
+from .game_state.location_context import get_entity_trust_map
 from .game_state.session_manager import SessionManager
 from .ai_layers.rule_ai import RuleAI
 from .ai_layers.rhythm_ai import RhythmAI
@@ -373,8 +374,16 @@ class AITRPGPlugin(Star):
             description = str(target_loc.get("runtime_description") or target_loc.get("description") or "").strip()
             butler_chase = self.session_manager.get_butler_chase_context(session_id)
             chase_active = bool((butler_chase or {}).get("active")) and (butler_chase or {}).get("status") != "blocked"
+            threat_present = bool(target_loc.get("threat_present"))
+            non_follow_npc_present = self.session_manager.has_non_follow_present_npc(session_id, move_to)
+            follow_arrival_reaction_context = self.session_manager.get_follow_arrival_reaction_context(session_id, move_to)
 
-            if target_loc.get("entity_present") or chase_active:
+            if threat_present or non_follow_npc_present or chase_active or follow_arrival_reaction_context:
+                if follow_arrival_reaction_context:
+                    self.session_manager.mark_follow_arrival_reactions_seen(
+                        session_id,
+                        follow_arrival_reaction_context,
+                    )
                 self._skip_progress_step(session_id, "rule_intent", "纯移动，不解析意图")
                 self._skip_progress_step(session_id, "rule_adjudication", "纯移动，不做动作裁定")
                 self._skip_progress_step(session_id, "rule_check", "纯移动，不触发判定")
@@ -387,6 +396,8 @@ class AITRPGPlugin(Star):
                     history=history,
                     move_check_result=move_check_result,
                     movement_note=move_movement_note,
+                    non_follow_npc_present=non_follow_npc_present,
+                    follow_arrival_reaction_context=follow_arrival_reaction_context,
                 )
                 result["move_check_result"] = move_check_result
                 return self._finalize_action_result(session_id, result, message="到场叙述完成"), None
@@ -1001,9 +1012,13 @@ class AITRPGPlugin(Star):
         history: list,
         move_check_result: dict | None = None,
         movement_note: str | None = None,
+        non_follow_npc_present: bool | None = None,
+        follow_arrival_reaction_context: dict | None = None,
     ) -> dict:
         target_loc = self.session_manager.get_location_context(session_id, move_to)
         loc_name = target_loc.get("name", move_to)
+        if isinstance(follow_arrival_reaction_context, dict) and follow_arrival_reaction_context:
+            target_loc["follow_arrival_reaction_context"] = copy.deepcopy(follow_arrival_reaction_context)
 
         rule_plan = {
             "normalized_action": {
@@ -1033,6 +1048,8 @@ class AITRPGPlugin(Star):
                 "npc_updates": {},
             },
         }
+        if isinstance(follow_arrival_reaction_context, dict) and follow_arrival_reaction_context:
+            rule_plan["follow_arrival_reaction_context"] = copy.deepcopy(follow_arrival_reaction_context)
         if move_check_result or movement_note:
             rule_plan["movement_context"] = {
                 "moved_this_turn": True,
@@ -1059,16 +1076,24 @@ class AITRPGPlugin(Star):
 
         butler_chase = self.session_manager.get_butler_chase_context(session_id)
         chase_active = bool((butler_chase or {}).get("active"))
-        npc_present = bool(target_loc.get("npc_present"))
+        threat_present = bool(target_loc.get("threat_present"))
+        npc_present = bool(non_follow_npc_present) if non_follow_npc_present is not None else bool(target_loc.get("npc_present"))
         use_rhythm_arrival_judgement = (
             self.session_manager.should_use_butler_arrival_judgement(session_id, move_to)
             or chase_active
             or bool(move_check_result)
             or bool(movement_note)
             or npc_present
+            or threat_present
+            or bool(follow_arrival_reaction_context)
         )
         if use_rhythm_arrival_judgement:
-            rhythm_step_msg = "节奏AI 正在评估NPC到场反应" if npc_present and not chase_active else "节奏AI 正在判断威胁实体的到场反应"
+            if follow_arrival_reaction_context and not chase_active and not threat_present:
+                rhythm_step_msg = "节奏AI 正在评估随行NPC首次到场反应"
+            elif npc_present and not chase_active:
+                rhythm_step_msg = "节奏AI 正在评估NPC到场反应"
+            else:
+                rhythm_step_msg = "节奏AI 正在判断威胁实体的到场反应"
             self._start_progress_step(session_id, "rhythm", rhythm_step_msg)
             rhythm_trace_id = f"{session_id}:rhythm"
             preview_state = self._preview_state_with_world_changes(state, activation_changes)
@@ -1097,6 +1122,13 @@ class AITRPGPlugin(Star):
             soft_changes = soft_changes if isinstance(soft_changes, dict) else {}
             rhythm_result["soft_world_changes"] = soft_changes
             rhythm_result["world_changes"] = self._merge_world_changes(activation_changes, soft_changes)
+            if isinstance(follow_arrival_reaction_context, dict) and follow_arrival_reaction_context:
+                rhythm_result["follow_arrival_reaction_context"] = copy.deepcopy(follow_arrival_reaction_context)
+                if not isinstance(rhythm_result.get("location_context"), dict):
+                    rhythm_result["location_context"] = {}
+                rhythm_result["location_context"]["follow_arrival_reaction_context"] = copy.deepcopy(
+                    follow_arrival_reaction_context
+                )
             rhythm_result = self._advance_passive_move_round(session_id, module_data, rhythm_result)
             state = self.session_manager.get_session(session_id)
         else:
@@ -1104,6 +1136,8 @@ class AITRPGPlugin(Star):
             rhythm_result["location_context"] = target_loc
             rhythm_result["world_changes"] = activation_changes
             rhythm_result["soft_world_changes"] = {}
+            if isinstance(follow_arrival_reaction_context, dict) and follow_arrival_reaction_context:
+                rhythm_result["follow_arrival_reaction_context"] = copy.deepcopy(follow_arrival_reaction_context)
             rhythm_result = self._advance_passive_move_round(session_id, module_data, rhythm_result)
             state = self.session_manager.get_session(session_id)
 
@@ -1456,7 +1490,7 @@ class AITRPGPlugin(Star):
             if not reasons:
                 continue
 
-            trust_map = npcs_module.get(npc_name, {}).get("trust_map", {})
+            trust_map = get_entity_trust_map(npcs_module.get(npc_name, {}))
             if not isinstance(trust_map, dict):
                 continue
 

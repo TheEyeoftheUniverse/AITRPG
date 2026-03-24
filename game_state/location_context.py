@@ -36,6 +36,142 @@ def entity_can_speak(entity_data: dict = None) -> bool:
     return isinstance(dialogue, dict)
 
 
+def get_entity_dialogue_module(entity_data: dict = None) -> Dict[str, Any]:
+    entity_data = entity_data if isinstance(entity_data, dict) else {}
+    dialogue = entity_data.get("dialogue", {})
+    return dialogue if isinstance(dialogue, dict) else {}
+
+
+def get_entity_trust_module(entity_data: dict = None) -> Dict[str, Any]:
+    entity_data = entity_data if isinstance(entity_data, dict) else {}
+    trust = entity_data.get("trust", {})
+    return trust if isinstance(trust, dict) else {}
+
+
+def get_entity_memory_module(entity_data: dict = None) -> Dict[str, Any]:
+    entity_data = entity_data if isinstance(entity_data, dict) else {}
+    memory = entity_data.get("memory", {})
+    return memory if isinstance(memory, dict) else {}
+
+
+def get_entity_long_term_memory(entity_data: dict = None) -> Dict[str, Any]:
+    memory = get_entity_memory_module(entity_data)
+    long_term = memory.get("long_term", {})
+    return long_term if isinstance(long_term, dict) else {}
+
+
+def get_entity_dialogue_guide(entity_data: dict = None) -> Dict[str, Any]:
+    entity_data = entity_data if isinstance(entity_data, dict) else {}
+    dialogue = get_entity_dialogue_module(entity_data)
+    guide = dialogue.get("guide", {})
+    if isinstance(guide, dict) and guide:
+        return guide
+    legacy = entity_data.get("dialogue_guide", {})
+    return legacy if isinstance(legacy, dict) else {}
+
+
+def get_entity_first_appearance(entity_data: dict = None) -> str:
+    entity_data = entity_data if isinstance(entity_data, dict) else {}
+    dialogue = get_entity_dialogue_module(entity_data)
+    text = str(dialogue.get("first_appearance") or "").strip()
+    if text:
+        return text
+    long_term = get_entity_long_term_memory(entity_data)
+    text = str(long_term.get("first_appearance") or "").strip()
+    if text:
+        return text
+    return str(entity_data.get("first_appearance") or "").strip()
+
+
+def get_entity_narrative_fallback(entity_data: dict = None) -> Dict[str, Any]:
+    entity_data = entity_data if isinstance(entity_data, dict) else {}
+    dialogue = get_entity_dialogue_module(entity_data)
+    fallback = dialogue.get("narrative_fallback", {})
+    if isinstance(fallback, dict) and fallback:
+        return fallback
+    legacy = entity_data.get("narrative_fallback", {})
+    return legacy if isinstance(legacy, dict) else {}
+
+
+def get_entity_trust_map(entity_data: dict = None) -> Dict[str, Any]:
+    entity_data = entity_data if isinstance(entity_data, dict) else {}
+    trust = get_entity_trust_module(entity_data)
+    mapping = trust.get("map", {})
+    if isinstance(mapping, dict) and mapping:
+        return mapping
+    legacy = entity_data.get("trust_map", {})
+    return legacy if isinstance(legacy, dict) else {}
+
+
+def get_entity_trust_gates(entity_data: dict = None) -> Dict[str, Any]:
+    entity_data = entity_data if isinstance(entity_data, dict) else {}
+    trust = get_entity_trust_module(entity_data)
+    gates = trust.get("gates", {})
+    if isinstance(gates, dict) and gates:
+        return gates
+    legacy = entity_data.get("trust_gates", {})
+    return legacy if isinstance(legacy, dict) else {}
+
+
+def get_entity_trust_threshold(entity_data: dict = None, default: float = 0.5) -> float:
+    entity_data = entity_data if isinstance(entity_data, dict) else {}
+    trust = get_entity_trust_module(entity_data)
+    raw_value = trust.get("threshold", entity_data.get("trust_threshold", default))
+    try:
+        return float(raw_value or default)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def get_entity_reveal_text_map(entity_data: dict = None) -> Dict[str, str]:
+    entity_data = entity_data if isinstance(entity_data, dict) else {}
+    reveal_cfg = entity_data.get("reveal", {})
+    reveal_items = reveal_cfg.get("items", {}) if isinstance(reveal_cfg, dict) else {}
+    if isinstance(reveal_items, dict) and reveal_items:
+        return {
+            key: str(item.get("text") or "").strip()
+            for key, item in reveal_items.items()
+            if isinstance(item, dict) and str(item.get("text") or "").strip()
+        }
+    key_info = entity_data.get("key_info", {})
+    if isinstance(key_info, dict):
+        return {
+            key: str(value or "").strip()
+            for key, value in key_info.items()
+            if isinstance(key, str) and str(value or "").strip()
+        }
+    return {}
+
+
+def get_entity_profile_text(entity_data: dict = None, key: str = "") -> str:
+    entity_data = entity_data if isinstance(entity_data, dict) else {}
+    field = str(key or "").strip()
+    if not field:
+        return ""
+
+    if field == "first_appearance":
+        return get_entity_first_appearance(entity_data)
+
+    if field == "current_state":
+        soft_state = entity_data.get("soft_state", {})
+        if isinstance(soft_state, dict):
+            summary = str(soft_state.get("initial_summary") or "").strip()
+            if summary:
+                return summary
+        long_term = get_entity_long_term_memory(entity_data)
+        for candidate in ("current_situation", "current_state"):
+            text = str(long_term.get(candidate) or "").strip()
+            if text:
+                return text
+        return str(entity_data.get("current_state") or "").strip()
+
+    long_term = get_entity_long_term_memory(entity_data)
+    text = str(long_term.get(field) or "").strip()
+    if text:
+        return text
+    return str(entity_data.get(field) or "").strip()
+
+
 def get_primary_pursuer_settings(module_data: dict) -> Dict[str, Any]:
     mechanics = (module_data or {}).get("mechanics", {})
     if not isinstance(mechanics, dict):

@@ -1,6 +1,14 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
-from ..game_state.location_context import is_threat_entity
+from ..game_state.location_context import (
+    get_entity_first_appearance,
+    get_entity_narrative_fallback,
+    get_entity_profile_text,
+    get_entity_reveal_text_map,
+    get_entity_trust_gates,
+    get_entity_trust_threshold,
+    is_threat_entity,
+)
 from .usage_metrics import extract_usage_metrics, merge_usage_metrics
 
 import json
@@ -315,6 +323,11 @@ class NarrativeAI:
         has_current_scene_npc = bool(compact_npc)
         creative_additions = rhythm_result.get("creative_additions", {})
         continuity_flag = rhythm_result.get("continuity_flag")
+        follow_arrival_reaction_context = (
+            rhythm_result.get("follow_arrival_reaction_context", {})
+            if isinstance(rhythm_result.get("follow_arrival_reaction_context"), dict)
+            else {}
+        )
 
         input_classification = rule_plan.get("input_classification", "action")
         if input_classification == "dialogue":
@@ -351,6 +364,11 @@ class NarrativeAI:
             f"- dialogue_memory: {json.dumps(dialogue_memory, ensure_ascii=False)}\n"
             f"- atmosphere_guide: {json.dumps(atmosphere_guide, ensure_ascii=False)}"
         )
+        if follow_arrival_reaction_context:
+            rhythm_block += (
+                "\n- follow_arrival_reaction_context: "
+                f"{json.dumps(follow_arrival_reaction_context, ensure_ascii=False)}"
+            )
 
         has_creative = isinstance(creative_additions, dict) and any(
             v for v in creative_additions.values() if v
@@ -499,6 +517,13 @@ class NarrativeAI:
             "current_scene_has_npc": bool(dialogue_npcs),
             "arrival_mode": bool(rhythm_result.get("arrival_mode")),
         }
+        follow_arrival_reaction_context = (
+            rhythm_result.get("follow_arrival_reaction_context", {})
+            if isinstance(rhythm_result.get("follow_arrival_reaction_context"), dict)
+            else {}
+        )
+        if follow_arrival_reaction_context:
+            compact_payload["follow_arrival_reaction_context"] = follow_arrival_reaction_context
         if butler_chase.get("active"):
             compact_payload["threat_chase"] = {
                 "active": butler_chase.get("active"),
@@ -770,6 +795,11 @@ class NarrativeAI:
         location_context = rhythm_result.get("location_context", {}) if isinstance(rhythm_result.get("location_context"), dict) else {}
         feasible = bool(rhythm_result.get("feasible", True))
         hint = str(rhythm_result.get("hint") or "").strip()
+        follow_arrival_reaction_context = (
+            rhythm_result.get("follow_arrival_reaction_context", {})
+            if isinstance(rhythm_result.get("follow_arrival_reaction_context"), dict)
+            else {}
+        )
 
         if not feasible and hint:
             return {
@@ -790,7 +820,12 @@ class NarrativeAI:
             return self._build_local_threat_arrival_narrative(threat_entity_context, location_context)
 
         if self._is_arrival_mode(normalized_action, rhythm_result) and npc_context:
-            return self._build_local_npc_arrival_narrative(npc_guide, npc_context, location_context)
+            return self._build_local_npc_arrival_narrative(
+                npc_guide,
+                npc_context,
+                location_context,
+                follow_arrival_reaction_context,
+            )
 
         if isinstance(normalized_action, dict) and normalized_action.get("target_kind") == "threat_entity" and threat_entity_context:
             return self._build_local_threat_response(player_input, normalized_action, threat_entity_context, location_context)
@@ -868,7 +903,7 @@ class NarrativeAI:
     def _build_local_npc_reply(self, player_input: str, npc_guide: dict, npc_context: dict) -> dict:
         focus_npc = npc_guide.get("focus_npc") if isinstance(npc_guide, dict) else None
         npc_data = npc_context.get(focus_npc, {}) if focus_npc in npc_context else {}
-        fallback_config = npc_data.get("narrative_fallback", {}) if isinstance(npc_data.get("narrative_fallback"), dict) else {}
+        fallback_config = get_entity_narrative_fallback(npc_data)
         npc_name = focus_npc or self._get_nested_config(fallback_config, ("anonymous_label",), "未知来客")
 
         if self._is_nonverbal_npc(npc_name, npc_data):
@@ -904,7 +939,7 @@ class NarrativeAI:
         must_acknowledge = self._sanitize_string_list(npc_guide.get("must_acknowledge"), limit=3)
         revealable_info = npc_guide.get("revealable_info", [])
         revealable_info = revealable_info if isinstance(revealable_info, list) else []
-        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
+        key_info = get_entity_reveal_text_map(npc_data)
         runtime_state = npc_data.get("runtime_state", {}) if isinstance(runtime_state := npc_data.get("runtime_state"), dict) else {}
         npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
         conversation_flags = npc_memory.get("conversation_flags", {}) if isinstance(npc_memory.get("conversation_flags"), dict) else {}
@@ -932,8 +967,8 @@ class NarrativeAI:
         )
 
         # 信任阶段阈值
-        trust_gates = npc_data.get("trust_gates", {})
-        high_min = float(trust_gates.get("high", {}).get("min", npc_data.get("trust_threshold", 0.5)))
+        trust_gates = get_entity_trust_gates(npc_data)
+        high_min = float(trust_gates.get("high", {}).get("min", get_entity_trust_threshold(npc_data, 0.5)))
         medium_min = float(trust_gates.get("medium", {}).get("min", 0.2))
 
         # 基于记忆的重复追问防护（用player_facts替代conversation_flags）
@@ -1260,7 +1295,13 @@ class NarrativeAI:
             "summary": summary,
         }
 
-    def _build_local_npc_arrival_narrative(self, npc_guide: dict, npc_context: dict, location_context: dict) -> dict:
+    def _build_local_npc_arrival_narrative(
+        self,
+        npc_guide: dict,
+        npc_context: dict,
+        location_context: dict,
+        follow_arrival_reaction_context: dict | None = None,
+    ) -> dict:
         focus_npc = npc_guide.get("focus_npc") if isinstance(npc_guide, dict) else None
         if focus_npc and focus_npc in npc_context:
             npc_name = focus_npc
@@ -1275,11 +1316,40 @@ class NarrativeAI:
             or location_context.get("runtime_description")
             or ""
         ).strip()
+        reaction_context = (
+            follow_arrival_reaction_context
+            if isinstance(follow_arrival_reaction_context, dict)
+            else {}
+        )
+        npc_reaction_map = reaction_context.get("npcs", {}) if isinstance(reaction_context.get("npcs"), dict) else {}
+        npc_reaction = npc_reaction_map.get(npc_name, {}) if isinstance(npc_reaction_map.get(npc_name), dict) else {}
+        location_reaction = npc_reaction.get("location", {}) if isinstance(npc_reaction.get("location"), dict) else {}
+        object_reactions = npc_reaction.get("objects", {}) if isinstance(npc_reaction.get("objects"), dict) else {}
+        follow_arrival_hint = str(
+            location_reaction.get("follow_arrival")
+            or location_reaction.get("knowledge")
+            or location_reaction.get("comment")
+            or ""
+        ).strip()
+        object_follow_hint = ""
+        for _, object_reaction in object_reactions.items():
+            if not isinstance(object_reaction, dict):
+                continue
+            object_follow_hint = str(
+                object_reaction.get("recognition")
+                or object_reaction.get("comment")
+                or object_reaction.get("knowledge")
+                or ""
+            ).strip()
+            if object_follow_hint:
+                break
 
         if self._is_nonverbal_npc(npc_name, npc_data):
             arrival_hint = str(
+                follow_arrival_hint
+                or
                 location_context.get("active_npc_present_description")
-                or npc_data.get("current_state")
+                or get_entity_profile_text(npc_data, "current_state")
                 or ""
             ).strip()
             parts = [f"你来到了{location_name}。"]
@@ -1294,9 +1364,11 @@ class NarrativeAI:
             }
 
         arrival_hint = str(
-            npc_data.get("first_appearance")
+            follow_arrival_hint
+            or
+            get_entity_first_appearance(npc_data)
             or location_context.get("active_npc_present_description")
-            or npc_data.get("current_state")
+            or get_entity_profile_text(npc_data, "current_state")
             or ""
         ).strip()
         attitude = str(npc_guide.get("attitude") or npc_data.get("initial_attitude") or "").strip()
@@ -1309,6 +1381,8 @@ class NarrativeAI:
         elif attitude:
             parts.append(f"{npc_name}显然已经察觉到了你的到来，态度{attitude}。")
 
+        if object_follow_hint:
+            parts.append(object_follow_hint)
         narrative = "\n\n".join(part for part in parts if part)
         return {
             "narrative": narrative,
@@ -1511,9 +1585,9 @@ class NarrativeAI:
             npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
             compact[name] = {
                 "name": data.get("name", name) if isinstance(data, dict) else name,
-                "appearance": self._trim_text(data.get("appearance", ""), 80) if isinstance(data, dict) else "",
-                "current_state": self._trim_text(data.get("current_state", ""), 100) if isinstance(data, dict) else "",
-                "first_appearance": self._trim_text(data.get("first_appearance", ""), 100) if isinstance(data, dict) else "",
+                "appearance": self._trim_text(get_entity_profile_text(data, "appearance"), 80) if isinstance(data, dict) else "",
+                "current_state": self._trim_text(get_entity_profile_text(data, "current_state"), 100) if isinstance(data, dict) else "",
+                "first_appearance": self._trim_text(get_entity_first_appearance(data), 100) if isinstance(data, dict) else "",
                 "attitude": runtime_state.get("attitude"),
                 "trust_level": runtime_state.get("trust_level"),
                 "soft_state": runtime_state.get("soft_state", {}),
@@ -1538,10 +1612,10 @@ class NarrativeAI:
         return {
             "focus_npc": focus_npc,
             "persona": {
-                "appearance": self._trim_text(npc_data.get("appearance", ""), 80),
-                "personality": self._trim_text(npc_data.get("personality", ""), 90),
-                "background_summary": self._trim_text(npc_data.get("background", ""), 140),
-                "current_state": self._trim_text(npc_data.get("current_state", ""), 100),
+                "appearance": self._trim_text(get_entity_profile_text(npc_data, "appearance"), 80),
+                "personality": self._trim_text(get_entity_profile_text(npc_data, "personality"), 90),
+                "background_summary": self._trim_text(get_entity_profile_text(npc_data, "background"), 140),
+                "current_state": self._trim_text(get_entity_profile_text(npc_data, "current_state"), 100),
                 "soft_state_summary": self._trim_text(((runtime_state.get("soft_state") or {}).get("summary") if isinstance(runtime_state.get("soft_state"), dict) else ""), 120),
                 "speaking_style": self._trim_text(npc_action_guide.get("voice_style", ""), 100),
             },

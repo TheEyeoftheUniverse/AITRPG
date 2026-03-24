@@ -3,6 +3,9 @@ from astrbot.api.star import Context
 from ..game_state.location_context import (
     build_adjacent_locations_context,
     build_runtime_location_context,
+    get_entity_first_appearance,
+    get_entity_profile_text,
+    get_entity_trust_threshold,
     get_cross_wall_npcs,
     get_module_npcs,
     get_module_threat_entities,
@@ -1030,10 +1033,10 @@ class RuleAI:
                 "enabled_systems": list(npc_data.get("enabled_systems", []) or []),
                 "cross_wall": bool(npc_data.get("cross_wall")),
                 "cross_wall_from_room": npc_data.get("cross_wall_from_room", ""),
-                "appearance": self._trim_text(str(npc_data.get("appearance") or ""), 80),
-                "current_state": self._trim_text(str(npc_data.get("current_state") or ""), 120),
-                "first_appearance": self._trim_text(str(npc_data.get("first_appearance") or ""), 100),
-                "trust_threshold": npc_data.get("trust_threshold"),
+                "appearance": self._trim_text(get_entity_profile_text(npc_data, "appearance"), 80),
+                "current_state": self._trim_text(get_entity_profile_text(npc_data, "current_state"), 120),
+                "first_appearance": self._trim_text(get_entity_first_appearance(npc_data), 100),
+                "trust_threshold": get_entity_trust_threshold(npc_data),
                 "available_trust_reasons": list(npc_data.get("available_trust_reasons", []) or [])[:20],
                 "reveal_state": reveal_state,
                 "runtime_state": {
@@ -1062,8 +1065,8 @@ class RuleAI:
             compact[entity_name] = {
                 "name": entity_data.get("name", entity_name),
                 "enabled_systems": list(entity_data.get("enabled_systems", []) or []),
-                "appearance": self._trim_text(str(entity_data.get("appearance") or ""), 80),
-                "current_state": self._trim_text(str(entity_data.get("current_state") or ""), 120),
+                "appearance": self._trim_text(get_entity_profile_text(entity_data, "appearance"), 80),
+                "current_state": self._trim_text(get_entity_profile_text(entity_data, "current_state"), 120),
                 "behavior": entity_data.get("behavior", {}) if isinstance(entity_data.get("behavior"), dict) else {},
                 "runtime_state": {
                     "location": runtime_state.get("location"),
