@@ -13,6 +13,8 @@ from .usage_metrics import extract_usage_metrics
 
 import json
 import os
+import re
+from typing import Any
 
 
 class RhythmAI:
@@ -197,8 +199,19 @@ class RhythmAI:
             '    "trust_change_reasons": ["available_trust_reasons中的key1", "key2"]\n'
             "  }\n"
             "}\n\n"
+            "# 结局请求任务\n"
+            "- 如果你判断当前状态已经满足某个结局的进入时机，可以输出 ending_request。\n"
+            "- ending_request 只是请求，不是直接执行。系统会再次校验。\n"
+            "- 只有当你能明确指出是哪个 ending_id，以及为什么此刻应该进入结局时，才输出 requested=true。\n"
+            "- 如果条件还不够，必须输出 requested=false，不要抢跑结局。\n\n"
+            "## ending_request schema\n"
+            "{\n"
+            '  "requested": false,\n'
+            '  "ending_id": null,\n'
+            '  "reason": null\n'
+            "}\n\n"
             "# Output note\n"
-            "You may add npc_action_guide and npc_memory_updates alongside the existing JSON fields.\n\n"
+            "You may add npc_action_guide, npc_memory_updates and ending_request alongside the existing JSON fields.\n\n"
             "# 隔墙交流补充规则\n"
             "- 如果NPC上下文中包含 interaction_mode=cross_wall_voice_only，说明该NPC通过墙壁交流，只能听到声音，不能看到对方。\n"
             "- 隔墙交流时，npc_action_guide的response_strategy应体现隔墙的物理隔断感。\n"
@@ -226,6 +239,8 @@ class RhythmAI:
         if not isinstance(npc_data, dict):
             return False
         if is_threat_entity(npc_name, npc_data):
+            return True
+        if not isinstance(npc_data.get("dialogue"), dict):
             return True
         if npc_data.get("is_hostile") and not npc_data.get("dialogue_guide") and not npc_data.get("key_info"):
             return True
@@ -259,14 +274,17 @@ class RhythmAI:
         raw_trust = runtime_state.get("trust_level", 0.0)
         trust_level = float(raw_trust) if isinstance(raw_trust, (int, float, str)) else 0.0
         trust_gates = npc_data.get("trust_gates", {})
-        high_min = float(trust_gates.get("high", {}).get("min", npc_data.get("trust_threshold", 0.5)))
-        medium_min = float(trust_gates.get("medium", {}).get("min", 0.2))
+        if isinstance(npc_data.get("trust"), dict):
+            trust_gates = npc_data.get("trust", {}).get("gates", trust_gates)
+        high_min = float(((trust_gates.get("high") or {}).get("min", npc_data.get("trust_threshold", 0.5))) or 0.5)
+        medium_min = float(((trust_gates.get("medium") or {}).get("min", 0.2)) or 0.2)
         npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
         normalized_player_facts = self._normalize_player_facts(npc_memory.get("player_facts", {}))
         evidence_seen = npc_memory.get("evidence_seen", []) if isinstance(npc_memory.get("evidence_seen"), list) else []
         promises = npc_memory.get("promises", []) if isinstance(npc_memory.get("promises"), list) else []
         topics_discussed = npc_memory.get("topics_discussed", []) if isinstance(npc_memory.get("topics_discussed"), list) else []
         known_fact_keys = set(normalized_player_facts.keys())
+        revealed_info_keys = self._normalize_revealed_info_keys(npc_memory.get("revealed_info", []))
 
         # 隔墙交流首次接触检查
         is_cross_wall = bool(npc_data.get("cross_wall"))
@@ -303,8 +321,28 @@ class RhythmAI:
             if isinstance(npc_data.get("dialogue_guide"), dict)
             else {}
         )
-        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
+        dialogue_cfg = npc_data.get("dialogue", {}) if isinstance(npc_data.get("dialogue"), dict) else {}
+        if isinstance(dialogue_cfg.get("guide"), dict):
+            dialogue_guide = dialogue_cfg.get("guide", {})
+        reveal_state = self._build_reveal_state(npc_data, game_state, runtime_state)
+        reveal_text_map = self._get_reveal_text_map(npc_data)
+        currently_allowed_reveals = [
+            key for key, info in reveal_state.items()
+            if isinstance(info, dict)
+            and info.get("allowed")
+            and (
+                key not in revealed_info_keys
+                or self._is_repeat_reveal_requested(player_input, key, reveal_text_map.get(key, ""))
+            )
+        ]
         lower_input = str(player_input or "").lower()
+        companion_cmd = (rule_plan or {}).get("companion_command", {}) if isinstance(rule_plan, dict) else {}
+        explicit_exit_requested = bool(companion_cmd.get("explicit_exit")) if isinstance(companion_cmd, dict) else False
+        if not explicit_exit_requested:
+            explicit_exit_requested = any(
+                keyword in str(player_input or "")
+                for keyword in ["开门", "打开门", "把门打开", "出来", "出门", "出来吧"]
+            )
         module_data = (game_state or {}).get("module_data", {}) if isinstance(game_state, dict) else {}
         primary_threat_name = get_primary_pursuer_name(module_data)
 
@@ -321,26 +359,28 @@ class RhythmAI:
             response_strategy = (
                 dialogue_guide.get("high_trust")
                 or dialogue_guide.get("cooperation")
+                or ((runtime_state.get("soft_state") or {}).get("summary"))
                 or npc_data.get("current_state")
                 or "Stay alert but cooperate."
             )
-            revealable_info = list(key_info.keys())
-            should_open_door = "open" in lower_input or "cooperate" in lower_input
+            revealable_info = list(currently_allowed_reveals)
+            should_open_door = explicit_exit_requested or "open" in lower_input or "cooperate" in lower_input
         elif trust_level >= emergency_threshold and is_requesting_help:
             # 紧急协助：信任达到紧急阈值且玩家在求助
             response_strategy = (
                 dialogue_guide.get("emergency_help")
                 or "在确认主要威胁实体位置安全后，愿意执行一次短时协助动作"
             )
-            revealable_info = list(key_info.keys())[:1]
+            revealable_info = list(currently_allowed_reveals)[:1]
             should_open_door = False
         elif trust_level >= medium_min:
             response_strategy = (
                 dialogue_guide.get("medium_trust")
+                or ((runtime_state.get("soft_state") or {}).get("summary"))
                 or npc_data.get("current_state")
                 or "Keep probing but share a small amount of information."
             )
-            revealable_info = list(key_info.keys())[:1]
+            revealable_info = list(currently_allowed_reveals)[:1]
             should_open_door = False
         else:
             response_strategy = (
@@ -452,6 +492,22 @@ class RhythmAI:
         if not isinstance(normalized.get("npc_memory_updates"), dict):
             normalized["npc_memory_updates"] = {}
 
+        ending_request = normalized.get("ending_request")
+        if not isinstance(ending_request, dict):
+            ending_request = {}
+        raw_requested = ending_request.get("requested", False)
+        if isinstance(raw_requested, bool):
+            requested = raw_requested
+        else:
+            requested = str(raw_requested or "").strip().lower() in {"1", "true", "yes"}
+        normalized["ending_request"] = {
+            "requested": requested,
+            "ending_id": str(ending_request.get("ending_id") or "").strip() or None,
+            "reason": str(ending_request.get("reason") or "").strip() or None,
+        }
+        if not normalized["ending_request"]["ending_id"]:
+            normalized["ending_request"]["requested"] = False
+
         return normalized
 
     def _build_scene_context(self, game_state: dict, module_data: dict, rule_plan: dict) -> str:
@@ -524,16 +580,27 @@ class RhythmAI:
 
             merged_npc = dict(npc_data)
             merged_npc.setdefault("name", npc_name)
+            merged_npc["enabled_systems"] = [
+                system_name
+                for system_name in ("position", "dialogue", "trust", "memory", "reveal", "soft_state", "companion")
+                if merged_npc.get(system_name) is not None
+            ]
             merged_npc["runtime_state"] = {
                 "location": npc_location,
                 "attitude": runtime_state.get("attitude", npc_data.get("initial_attitude", "neutral")),
                 "trust_level": runtime_state.get("trust_level", 0.0),
                 "memory": runtime_state.get("memory", {}),
-                "companion_state": runtime_state.get("companion_state", "inactive"),
+                "memory_long_term": runtime_state.get("memory_long_term", {}),
+                "soft_state": runtime_state.get("soft_state", {}),
+                "relationship": runtime_state.get("relationship", {}),
+                "companion_mode": runtime_state.get("companion_mode", runtime_state.get("companion_state", "wait")),
+                "companion_state": runtime_state.get("companion_state", runtime_state.get("companion_mode", "wait")),
+                "companion_task": runtime_state.get("companion_task", {}),
             }
             trust_map = npc_data.get("trust_map", {})
             if isinstance(trust_map, dict) and trust_map:
                 merged_npc["available_trust_reasons"] = list(trust_map.keys())
+            merged_npc["reveal_state"] = self._build_reveal_state(merged_npc, game_state, runtime_state)
             scene_npcs[npc_name] = merged_npc
 
         # 追加隔墙可交流NPC
@@ -549,12 +616,22 @@ class RhythmAI:
 
             merged_npc = dict(npc_data)
             merged_npc.setdefault("name", npc_name)
+            merged_npc["enabled_systems"] = [
+                system_name
+                for system_name in ("position", "dialogue", "trust", "memory", "reveal", "soft_state", "companion")
+                if merged_npc.get(system_name) is not None
+            ]
             merged_npc["runtime_state"] = {
                 "location": npc_location,
                 "attitude": runtime_state.get("attitude", npc_data.get("initial_attitude", "neutral")),
                 "trust_level": runtime_state.get("trust_level", 0.0),
                 "memory": runtime_state.get("memory", {}),
-                "companion_state": runtime_state.get("companion_state", "inactive"),
+                "memory_long_term": runtime_state.get("memory_long_term", {}),
+                "soft_state": runtime_state.get("soft_state", {}),
+                "relationship": runtime_state.get("relationship", {}),
+                "companion_mode": runtime_state.get("companion_mode", runtime_state.get("companion_state", "wait")),
+                "companion_state": runtime_state.get("companion_state", runtime_state.get("companion_mode", "wait")),
+                "companion_task": runtime_state.get("companion_task", {}),
             }
             merged_npc["cross_wall"] = True
             merged_npc["cross_wall_type"] = cross_info.get("wall_type", "voice_only")
@@ -563,6 +640,7 @@ class RhythmAI:
             trust_map = npc_data.get("trust_map", {})
             if isinstance(trust_map, dict) and trust_map:
                 merged_npc["available_trust_reasons"] = list(trust_map.keys())
+            merged_npc["reveal_state"] = self._build_reveal_state(merged_npc, game_state, runtime_state)
             scene_npcs[npc_name] = merged_npc
 
         return scene_npcs
@@ -629,6 +707,11 @@ class RhythmAI:
             "creative_additions": {},
             "continuity_flag": None,
             "npc_memory_updates": {},
+            "ending_request": {
+                "requested": False,
+                "ending_id": None,
+                "reason": None,
+            },
         }
 
     def _merge_world_changes(self, base_changes: dict, result_changes: dict) -> dict:
@@ -686,7 +769,7 @@ class RhythmAI:
         return normalized
 
     def _build_allowed_reveals(self, npc_data: dict, revealable_keys: list) -> list:
-        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
+        key_info = self._get_reveal_text_map(npc_data)
         allowed = []
         seen = set()
         for key in revealable_keys or []:
@@ -703,7 +786,7 @@ class RhythmAI:
         return allowed
 
     def _build_forbidden_reveals(self, npc_data: dict, allowed_reveals: list) -> list:
-        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
+        key_info = self._get_reveal_text_map(npc_data)
         allowed_keys = {
             str(item.get("key") or "").strip()
             for item in allowed_reveals or []
@@ -844,7 +927,7 @@ class RhythmAI:
         return base
 
     def _build_knowledge_boundary(self, npc_data: dict, allowed_reveals: list, is_cross_wall: bool) -> str:
-        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
+        key_info = self._get_reveal_text_map(npc_data)
         allowed_keys = [
             str(item.get("key") or "").strip()
             for item in allowed_reveals or []
@@ -873,7 +956,7 @@ class RhythmAI:
             return dict(base_guide)
 
         npc_data = npc_context.get(focus_npc, {})
-        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
+        key_info = self._get_reveal_text_map(npc_data)
         base_allowed = [
             item for item in base_guide.get("allowed_reveals", [])
             if isinstance(item, dict) and str(item.get("key") or "").strip() in key_info
@@ -952,6 +1035,132 @@ class RhythmAI:
         if bool(npc_guide.get("cross_wall_heard_only") or base_guide.get("cross_wall_heard_only")):
             sanitized["cross_wall_heard_only"] = True
         return sanitized
+
+    def _get_reveal_text_map(self, npc_data: dict) -> dict:
+        reveal_cfg = npc_data.get("reveal", {}) if isinstance(npc_data.get("reveal"), dict) else {}
+        reveal_items = reveal_cfg.get("items", {}) if isinstance(reveal_cfg.get("items"), dict) else {}
+        if reveal_items:
+            return {
+                key: str(item.get("text") or "").strip()
+                for key, item in reveal_items.items()
+                if isinstance(item, dict) and str(item.get("text") or "").strip()
+            }
+        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
+        return {
+            key: str(value or "").strip()
+            for key, value in key_info.items()
+            if isinstance(key, str) and str(value or "").strip()
+        }
+
+    def _normalize_revealed_info_keys(self, revealed_info: Any) -> set:
+        keys = set()
+        if not isinstance(revealed_info, list):
+            return keys
+        for item in revealed_info:
+            if isinstance(item, dict):
+                key = str(item.get("key") or "").strip()
+            else:
+                key = str(item or "").strip()
+            if key:
+                keys.add(key)
+        return keys
+
+    def _extract_reveal_match_tokens(self, reveal_key: str, reveal_text: str) -> list:
+        combined = " ".join([
+            str(reveal_key or "").strip(),
+            str(reveal_text or "").strip(),
+        ]).strip()
+        if not combined:
+            return []
+
+        tokens = []
+        seen = set()
+        for token in re.findall(r"[\u4e00-\u9fffA-Za-z]{2,12}", combined):
+            token = token.strip()
+            if not token or token in seen:
+                continue
+            seen.add(token)
+            tokens.append(token)
+        return tokens[:12]
+
+    def _is_repeat_reveal_requested(self, player_input: str, reveal_key: str, reveal_text: str) -> bool:
+        text = str(player_input or "").strip()
+        if not text:
+            return False
+        lowered = text.lower()
+        cn_query_markers = [
+            "？", "?", "怎么", "什么", "为何", "为什么", "详细", "具体", "再说", "再讲",
+            "告诉我", "什么意思", "怎么做", "办法", "规则", "计划", "细说",
+        ]
+        en_query_markers = ["what", "why", "how", "explain", "detail", "again"]
+        if not any(marker in text for marker in cn_query_markers) and not any(marker in lowered for marker in en_query_markers):
+            return False
+
+        if reveal_key and reveal_key in text:
+            return True
+
+        for token in self._extract_reveal_match_tokens(reveal_key, reveal_text):
+            if token in text or token.lower() in lowered:
+                return True
+        return False
+
+    def _build_reveal_state(self, npc_data: dict, game_state: dict, runtime_state: dict = None) -> dict:
+        runtime_state = runtime_state if isinstance(runtime_state, dict) else {}
+        reveal_cfg = npc_data.get("reveal", {}) if isinstance(npc_data.get("reveal"), dict) else {}
+        reveal_items = reveal_cfg.get("items", {}) if isinstance(reveal_cfg.get("items"), dict) else {}
+        if not reveal_items:
+            reveal_items = {
+                key: {"text": value}
+                for key, value in self._get_reveal_text_map(npc_data).items()
+            }
+
+        inventory = set((game_state or {}).get("player", {}).get("inventory", []) or [])
+        clues = set((game_state or {}).get("world_state", {}).get("clues_found", []) or [])
+        flags = (game_state or {}).get("world_state", {}).get("flags", {}) or {}
+        npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
+        evidence_seen = {
+            str((item.get("key") if isinstance(item, dict) else item) or "").strip()
+            for item in npc_memory.get("evidence_seen", [])
+            if str((item.get("key") if isinstance(item, dict) else item) or "").strip()
+        }
+        triggered_events = {
+            str(item or "").strip()
+            for item in npc_memory.get("triggered_events", [])
+            if str(item or "").strip()
+        }
+        trust_level = float(runtime_state.get("trust_level", 0.0) or 0.0)
+
+        state = {}
+        for key, item in reveal_items.items():
+            if not isinstance(item, dict):
+                continue
+            min_trust = float(item.get("min_trust", 0.0) or 0.0)
+            requires_items = [str(value or "").strip() for value in item.get("requires_items", []) if str(value or "").strip()]
+            requires_clues = [str(value or "").strip() for value in item.get("requires_clues", []) if str(value or "").strip()]
+            requires_flags = [str(value or "").strip() for value in item.get("requires_flags", []) if str(value or "").strip()]
+            requires_evidence = [str(value or "").strip() for value in item.get("requires_evidence", []) if str(value or "").strip()]
+            requires_events = [str(value or "").strip() for value in item.get("requires_events", []) if str(value or "").strip()]
+            missing_conditions = []
+            if trust_level < min_trust:
+                missing_conditions.append(f"trust>={min_trust}")
+            missing_conditions.extend([value for value in requires_items if value not in inventory])
+            missing_conditions.extend([value for value in requires_clues if value not in clues])
+            missing_conditions.extend([value for value in requires_flags if not flags.get(value)])
+            missing_conditions.extend([value for value in requires_evidence if value not in evidence_seen])
+            missing_conditions.extend([value for value in requires_events if value not in triggered_events])
+            allowed = not missing_conditions
+            if allowed:
+                reason = "条件已满足"
+            elif trust_level < min_trust:
+                reason = "信任不足，暂不能透露"
+            else:
+                reason = "缺少必要条件，暂不能透露"
+            state[key] = {
+                "allowed": allowed,
+                "reason": reason,
+                "missing_conditions": missing_conditions,
+            }
+        return state
 
     def _sanitize_string_list(self, values, fallback=None, limit: int = 3) -> list:
         source = values if isinstance(values, list) else fallback if isinstance(fallback, list) else []

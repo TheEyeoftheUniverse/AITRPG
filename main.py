@@ -615,14 +615,18 @@ class AITRPGPlugin(Star):
                     cmd_target = companion_cmd["target_npc"]
                     cmd_action = companion_cmd["command"]
                     if cmd_action in ("follow", "wait", "bait"):
-                        companion_result = self.session_manager.set_companion_state(session_id, cmd_target, cmd_action)
+                        companion_result = self.session_manager.set_companion_state(
+                            session_id,
+                            cmd_target,
+                            cmd_action,
+                            companion_cmd,
+                        )
                         logger.info(f"[AITRPG] 同伴指令: {cmd_target} -> {cmd_action}, 结果: {companion_result}")
                         if companion_result.get("success"):
-                            hard_changes.setdefault("npc_updates", {}).setdefault(cmd_target, {})["companion_state"] = cmd_action
-                            # 诱饵指令：执行诱饵行动
-                            if cmd_action == "bait":
-                                bait_result = self.session_manager.execute_bait_action(session_id, cmd_target)
-                                logger.info(f"[AITRPG] 诱饵行动结果: {bait_result}")
+                            npc_update = hard_changes.setdefault("npc_updates", {}).setdefault(cmd_target, {})
+                            npc_update["companion_mode"] = cmd_action
+                            npc_update["companion_state"] = cmd_action
+                            npc_update["companion_task"] = companion_result.get("task", {})
 
                 # 缓存规则AI结果（用于重试）
                 cache["intent"] = intent
@@ -664,6 +668,7 @@ class AITRPGPlugin(Star):
                 self._apply_memory_updates(rhythm_result, merged_changes)
                 # 根据trust_change_reasons查模组trust_map，计算信任增量（支持多reason叠加+一次性去重）
                 self._apply_trust_changes(rhythm_result, module_data, merged_changes, state)
+                self._apply_soft_state_updates(rhythm_result, merged_changes, state)
 
                 rhythm_result["feasible"] = bool(rule_plan.get("feasibility", {}).get("ok", True))
                 if not rhythm_result.get("hint"):
@@ -692,6 +697,29 @@ class AITRPGPlugin(Star):
                     state = self.session_manager.get_session(session_id)
                     flags = state.get("world_state", {}).get("flags", {})
                     ending_text = flags.get("ending_hardcoded_text", "你的理智已经崩溃。")
+                    self._skip_progress_step(session_id, "narrative", "结局触发，跳过文案AI")
+                    return self._finalize_action_result(
+                        session_id,
+                        {
+                            "rule_plan": rule_plan,
+                            "rule_result": rule_result,
+                            "hard_changes": hard_changes,
+                            "rhythm_result": rhythm_result,
+                            "narrative_result": {"narrative": ending_text, "summary": "结局触发"},
+                            "sancheck_result": sancheck_result,
+                            "game_state": state,
+                        },
+                        message="结局触发",
+                    )
+
+                ending_request_result = self.session_manager.process_ending_request(session_id, rhythm_result)
+                rhythm_result["ending_request_result"] = ending_request_result
+                if ending_request_result.get("requested") and not ending_request_result.get("triggered"):
+                    logger.info(f"[AITRPG] 结局请求未通过校验: {ending_request_result}")
+                if ending_request_result.get("triggered"):
+                    state = self.session_manager.get_session(session_id)
+                    flags = state.get("world_state", {}).get("flags", {})
+                    ending_text = flags.get("ending_hardcoded_text", "结局已触发。")
                     self._skip_progress_step(session_id, "narrative", "结局触发，跳过文案AI")
                     return self._finalize_action_result(
                         session_id,
@@ -782,6 +810,7 @@ class AITRPGPlugin(Star):
             )
             self._finish_progress_step(session_id, "narrative", self.narrative_ai.pop_call_metric(narrative_trace_id), "叙述生成完成")
             logger.info(f"[AITRPG] 文案生成完成")
+            self._record_revealed_info(session_id, rhythm_result, narrative_result)
 
             return self._finalize_action_result(
                 session_id,
@@ -1466,6 +1495,92 @@ class AITRPGPlugin(Star):
                 for r in newly_applied:
                     if r not in applied_list:
                         applied_list.append(r)
+
+    def _record_revealed_info(self, session_id: str, rhythm_result: dict, narrative_result: dict):
+        npc_guide = rhythm_result.get("npc_action_guide", {}) if isinstance(rhythm_result, dict) else {}
+        if not isinstance(npc_guide, dict):
+            return
+
+        focus_npc = str(npc_guide.get("focus_npc") or "").strip()
+        if not focus_npc:
+            return
+
+        allowed_reveals = npc_guide.get("allowed_reveals", [])
+        if not isinstance(allowed_reveals, list) or not allowed_reveals:
+            return
+
+        narrative_text = str((narrative_result or {}).get("narrative") or "").strip()
+        disclosed = []
+        for item in allowed_reveals:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("key") or "").strip()
+            text = str(item.get("text") or "").strip()
+            if not key:
+                continue
+            if len(allowed_reveals) == 1:
+                disclosed.append({"key": key, "text": text})
+                continue
+            if text and text in narrative_text:
+                disclosed.append({"key": key, "text": text})
+
+        if not disclosed:
+            first = allowed_reveals[0]
+            if isinstance(first, dict):
+                key = str(first.get("key") or "").strip()
+                text = str(first.get("text") or "").strip()
+                if key:
+                    disclosed.append({"key": key, "text": text})
+
+        if not disclosed:
+            return
+
+        state = self.session_manager.get_session(session_id) or {}
+        round_no = int(state.get("round_count", 0) or 0)
+        self.session_manager.record_npc_revealed_info(session_id, focus_npc, disclosed, round_no=round_no)
+
+    def _apply_soft_state_updates(self, rhythm_result: dict, merged_changes: dict, game_state: dict = None):
+        npc_guide = rhythm_result.get("npc_action_guide", {})
+        if not isinstance(npc_guide, dict):
+            return
+
+        focus_npc = str(npc_guide.get("focus_npc") or "").strip()
+        if not focus_npc:
+            return
+
+        dialogue_act = str(npc_guide.get("dialogue_act") or "").strip().lower()
+        tag_map = {
+            "refuse": "guarded",
+            "probe": "guarded",
+            "listen": "testing",
+            "acknowledge": "engaged",
+            "warn": "cautious",
+            "reveal": "softened",
+            "confirm_help": "ready_to_help",
+            "propose_plan": "cooperative",
+        }
+        tag = tag_map.get(dialogue_act, "engaged")
+        response_strategy = str(npc_guide.get("response_strategy") or "").strip()
+        next_line_goal = str(npc_guide.get("next_line_goal") or "").strip()
+        summary = response_strategy or next_line_goal or str(npc_guide.get("attitude") or "").strip()
+        if not summary:
+            return
+
+        round_no = 0
+        if isinstance(game_state, dict):
+            round_no = int(game_state.get("round_count", 0) or 0) + 1
+
+        npc_updates = merged_changes.setdefault("npc_updates", {})
+        npc_entry = npc_updates.setdefault(focus_npc, {})
+        if not isinstance(npc_entry, dict):
+            npc_entry = {}
+            npc_updates[focus_npc] = npc_entry
+
+        npc_entry["soft_state"] = {
+            "tag": tag,
+            "summary": summary,
+            "updated_round": round_no,
+        }
 
     def _merge_world_changes(self, hard_changes: dict, soft_changes: dict) -> dict:
         """合并规则层硬变化与节奏层软变化，避免状态更新分散在多处。"""

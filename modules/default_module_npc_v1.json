@@ -379,6 +379,185 @@
       "location": "guest_bedroom",
       "initial_attitude": "冷淡",
       "can_escape_together": true,
+      "position": {
+        "initial_location": "guest_bedroom"
+      },
+      "dialogue": {
+        "guide": {
+          "low_trust": "警惕但不是审讯。用短句试探，但当玩家主动分享信息或表达善意时，给予简短的正向回应（如沉默片刻后语气稍缓、简短致谢）。不要连续追问，给玩家说话的空间。已回答的问题绝不重复。",
+          "medium_trust": "开始认真倾听，语气依然直接但不再施压。会主动分享她观察到的管家规律。偶有讽刺，但更多是理性判断式表达，如\"继续说\"\"我在听\"\"先说重点\"。",
+          "high_trust": "明显转暖，表现出合作意愿。主动提出计划、分享关键信息。语气果断但不再防御，偶尔流露关心。",
+          "cooperation": "冷静果断的行动模式。会主动提出由自己来引开管家。说话简洁有力，偶有轻描淡写的狠话掩盖恐惧。",
+          "emergency_help": "在信任尚未完全建立、但已确认管家位置不在次卧门前时，愿意冒险执行一次短暂的协助动作。语气紧张但果断，强调\"只有这一次\"和\"你最好说的都是真的\"。"
+        },
+        "first_appearance": "当玩家靠近次卧时，会听到冰冷的女声。她不会立刻开门，需要玩家通过对话建立信任。",
+        "narrative_fallback": {
+          "anonymous_label": "未知来客",
+          "heard_only": {
+            "narrative": "你朝隔壁墙壁喊了一声。没有人回应——但隔壁似乎有一瞬间的安静，像是有什么动静停了下来。",
+            "summary": "向隔壁喊话，无人回应"
+          },
+          "preface": {
+            "cross_wall": "隔壁安静了片刻。",
+            "high_trust": "门后很快传来回应。",
+            "prior_conversation": "门后沉默了一瞬。",
+            "default": "门后安静了一瞬，像是在判断你这句话值不值得相信。"
+          },
+          "door_line": {
+            "cross_wall": "声音从墙壁另一侧传来，闷沉而真实。",
+            "opening": "随后门锁轻轻一响，门却只松开了一道极窄的缝。",
+            "closed": "门没有开，只是那道贴在门后的呼吸声变得更清晰了一些。"
+          },
+          "spoken_lines": {
+            "refuse": "“还不够。先让我相信你说的都是真的。”",
+            "confirm_help_with_reveal": "“如果你说的都是真的，{reveal_text}”",
+            "confirm_help_default": "“如果情况真像你说的那样，我可以帮你一次。但只有这一次。”",
+            "propose_plan_with_reveal": "“听好，{reveal_text}”",
+            "propose_plan_default": "“好。别浪费时间，我们先把做法定下来。”",
+            "warn_with_reveal": "“听好，{reveal_text}”",
+            "warn_default_medium": "“先别乱动。最重要的是别做错第一步。”",
+            "warn_default_low": "“别急着动。先弄清楚状况。”",
+            "acknowledge_with_reveal": "“我听到了。{reveal_text}”",
+            "acknowledge_default": "“我听到了。继续说。”",
+            "acknowledge_fresh": "“我在听。”",
+            "listen_high": "“我在听，你接着说。”",
+            "listen_medium": "“我听到了。继续。”",
+            "listen_low_continue": "“……继续。”",
+            "listen_fresh": "“谁？”",
+            "ask_name_low": "“名字。”",
+            "ask_name_medium": "“你叫什么？”",
+            "ask_origin": "“你怎么到这儿来的？”",
+            "ask_evidence": "“光靠嘴说不够。有证据吗？”",
+            "direct_reveal": "“{reveal_text}”",
+            "continue_medium": "“我听到了。继续说。”",
+            "continue_low": "“……继续。”",
+            "ask_who_default": "“谁？”"
+          },
+          "tone": {
+            "high_with_style": "{npc_name}的语气比以往缓和了许多，带着{style}。",
+            "high_default": "{npc_name}的语气比以往缓和了许多。",
+            "medium_with_style": "{npc_name}的语气依旧直接，但少了之前的防备，带着{style}。",
+            "medium_default": "{npc_name}的语气依旧直接，但少了之前的防备。",
+            "guarded_with_style_prior": "{npc_name}的语气依旧{attitude}，带着{style}。",
+            "guarded_with_style_fresh": "{npc_name}的语气{attitude}，带着{style}。",
+            "guarded_default_prior": "{npc_name}的语气依旧{attitude}。",
+            "guarded_default_fresh": "{npc_name}的语气{attitude}。"
+          }
+        }
+      },
+      "trust": {
+        "initial": 0.0,
+        "threshold": 0.5,
+        "gates": {
+          "low": {
+            "max": 0.2
+          },
+          "medium": {
+            "min": 0.2,
+            "max": 0.5
+          },
+          "high": {
+            "min": 0.5
+          }
+        },
+        "map": {
+          "shared_personal_info": 0.1,
+          "showed_evidence": 0.15,
+          "showed_real_estate_ad": 0.18,
+          "made_promise_to_help": 0.1,
+          "mentioned_shared_experience": 0.08,
+          "asked_about_her": 0.08,
+          "showed_empathy": 0.1,
+          "patient_and_respectful": 0.06,
+          "offered_useful_info": 0.1,
+          "reported_butler_position": 0.12,
+          "described_safe_plan": 0.15,
+          "respected_her_boundary": 0.08,
+          "consistent_under_pressure": 0.1,
+          "calm_communication": 0.06,
+          "confirmed_safety_for_her": 0.15,
+          "disclosed_cross_wall_words": 0.04,
+          "aggressive_behavior": -0.1,
+          "contradicted_self": -0.12,
+          "tried_to_force_door": -0.15,
+          "pressured_without_confirmation": -0.18,
+          "dismissed_her_concerns": -0.08
+        }
+      },
+      "memory": {
+        "long_term": {
+          "identity": "1957年的独居女性，同样是被低价房产广告吸引而住进这里的人。",
+          "appearance": "看起来二十多岁的年轻女性，穿着款式非常旧的连衣裙，已经有些皱褶。眼神锐利，带着明显的疲惫，但没有丧失神采。",
+          "personality": "独立、理性、有主见，行动力强。个性偏英气，说话直接，偶尔毒舌，但这掩盖不了她骨子里的坚强。在极端困境下依然能保持冷静，不轻易崩溃。",
+          "background": "1957年的独居女性，同样是被低价房产广告吸引而住进这里，随后被卷入中间带。她已经在次卧里困了很久，久到那本反复翻阅的书都能倒背如流。她总结出了关于管家的基本规律，但也因管家的规律无法独自行动。",
+          "current_situation": "把自己锁在次卧里，反复翻阅同一本书（已能背诵）。当听到门外有动静时会高度警惕。",
+          "safety_boundary": "她绝不会从门缝窥视外面，也不会在缺乏确认的情况下贸然开门。",
+          "goals": [
+            "活下去",
+            "确认玩家是否可信",
+            "寻找可执行的逃离方案"
+          ],
+          "speech_style": "短句、直接、理性，警惕时带轻微讽刺。"
+        },
+        "runtime_defaults": {
+          "player_facts": {},
+          "topics_discussed": [],
+          "pending_questions": [],
+          "answered_questions": [],
+          "promises": [],
+          "evidence_seen": [],
+          "trust_signals": [],
+          "last_impression": {},
+          "applied_trust_reasons": [],
+          "overheard_remote_dialogue": [],
+          "emergency_context": {},
+          "interaction_history": [],
+          "revealed_info": [],
+          "triggered_events": []
+        }
+      },
+      "reveal": {
+        "items": {
+          "管家只靠视觉追踪": {
+            "text": "它只有视觉，听不到声音。",
+            "min_trust": 0.2
+          },
+          "不要进入管家的视野": {
+            "text": "不要进入它的视野，绝对不能跟它对视；我见过一个人被管家看了一眼，除了惨叫以外就没剩下别的……",
+            "min_trust": 0.2
+          },
+          "关门能暂时挡住管家": {
+            "text": "关门可以暂时挡住它，它不会主动开门。但它会在门外等很久，你无法判断它会什么时候离开。",
+            "min_trust": 0.2
+          },
+          "不要随便开门确认管家是否离开": {
+            "text": "绝对，绝对，绝对不能随便开门确认管家是不是已经离开。",
+            "min_trust": 0.2
+          },
+          "玩家可把管家引到主卧门口": {
+            "text": "如果由你吸引管家注意力，把它暂时引到主卧门口，我就能趁这段时间行动。",
+            "min_trust": 0.5
+          },
+          "艾米莉可趁机完成调查并带回离开线索": {
+            "text": "只要窗口够安全，我可以完成房子里的关键调查，最后把真正离开的线索带回来。",
+            "min_trust": 0.5
+          }
+        }
+      },
+      "soft_state": {
+        "initial_tag": "guarded",
+        "initial_summary": "把自己锁在次卧里，反复翻阅同一本书（已能背诵）。当听到门外有动静时会高度警惕。她【绝对】不会试着从门缝去看玩家，因为她知道管家的存在，不看门缝是出于谨慎。"
+      },
+      "companion": {
+        "enabled_modes": [
+          "follow",
+          "wait",
+          "bait"
+        ],
+        "default_mode": "wait",
+        "require_explicit_exit": true,
+        "unlock_trust": 0.5
+      },
       "trust_threshold": 0.5,
       "appearance": "看起来二十多岁的年轻女性，穿着款式非常旧的连衣裙，已经有些皱褶。眼神锐利，带着明显的疲惫，但没有丧失神采。",
       "personality": "独立、理性、有主见，行动力强。个性偏英气，说话直接，偶尔毒舌，但这掩盖不了她骨子里的坚强。在极端困境下依然能保持冷静，不轻易崩溃。",
@@ -446,8 +625,12 @@
         }
       },
       "key_info": {
-        "管家规律": "它只有视觉，听不到声音。不要进入它的视野，绝对不能跟它对视，我见过一个人被管家看了一眼，除了惨叫以外就没剩下别的……关门可以暂时挡住它，它不会主动开门的。但它会在门外等很久，你无法判断它会什么时候离开……绝对，绝对，绝对不能随便开门。",
-        "提出由自己（玩家）来引开管家": "由玩家吸引管家注意力的话，将管家暂时吸引在主卧门口的话，她可以完美地在房子里完成所有线索调查并最终来解救玩家，跟玩家分享正确离开的线索。"
+        "管家只靠视觉追踪": "它只有视觉，听不到声音。",
+        "不要进入管家的视野": "不要进入它的视野，绝对不能跟它对视；我见过一个人被管家看了一眼，除了惨叫以外就没剩下别的……",
+        "关门能暂时挡住管家": "关门可以暂时挡住它，它不会主动开门。但它会在门外等很久，你无法判断它会什么时候离开。",
+        "不要随便开门确认管家是否离开": "绝对，绝对，绝对不能随便开门确认管家是不是已经离开。",
+        "玩家可把管家引到主卧门口": "如果由你吸引管家注意力，把它暂时引到主卧门口，我就能趁这段时间行动。",
+        "艾米莉可趁机完成调查并带回离开线索": "只要窗口够安全，我可以完成房子里的关键调查，最后把真正离开的线索带回来。"
       },
       "trust_map": {
         "shared_personal_info": 0.1,
@@ -504,6 +687,22 @@
       "can_escape_together": false,
       "is_hostile": true,
       "is_threat_entity": true,
+      "entity_type": "threat_entity",
+      "position": {
+        "initial_location": "living_room"
+      },
+      "dialogue": null,
+      "trust": null,
+      "memory": null,
+      "reveal": null,
+      "soft_state": null,
+      "companion": {
+        "enabled_modes": [
+          "follow",
+          "wait"
+        ],
+        "default_mode": "wait"
+      },
       "appearance": "人形存在，穿着一套老式执事服，剪裁考究但属于某个不确定的年代。它有呼吸——你能看到它的背部随着呼吸轻微起伏，这让它看起来像是活着的。",
       "appearance_warning": "【绝对禁止描写管家的脸部或正面】玩家永远只能看管家的背影或侧影或头部以下的位置。与管家对视意味着即时疯狂结局，因此其脸部在整个游戏中必须保持未知。",
       "nature": "神话生物目光的具现化。它不是真正的存在，而是某个超越理解的存在投射在这个空间里的注视，被中间带具现化成人形。它没有恶意，只是本能地凝视空间内的活物。",
@@ -513,6 +712,7 @@
         "pursuing": "一旦锁定目标，会缓慢但持续地朝目标移动。无法被声音吸引，只跟随视觉。",
         "blocked": "当门关上阻挡视线时，会在门外静止等待，呼吸声隐约可闻。等待时间不定，玩家无法判断它是否离开。"
       },
+      "current_state": "在客厅背对入口，凝视老式电话。若有活物进入视野，它会缓慢靠近并试图凝视对方；若被门阻挡视线，则会在门外静止等待。",
       "gaze_consequence": "与管家对视会导致疯狂结局。玩家看到了不该被人类所见的东西。",
       "distraction_method": "管家不会说话，因此无法交流，对触碰也没有任何反应，但玩家不可能存在足以放倒它的力量。但当有其他活物进入视野时，管家立刻会转向新目标。可以利用此特性与NPC合作，让管家离开凝视的物品，或让管家离开卧室门前。",
       "narrative_fallback": {

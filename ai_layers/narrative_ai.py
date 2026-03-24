@@ -1516,6 +1516,9 @@ class NarrativeAI:
                 "first_appearance": self._trim_text(data.get("first_appearance", ""), 100) if isinstance(data, dict) else "",
                 "attitude": runtime_state.get("attitude"),
                 "trust_level": runtime_state.get("trust_level"),
+                "soft_state": runtime_state.get("soft_state", {}),
+                "enabled_systems": list(data.get("enabled_systems", []) or []) if isinstance(data, dict) else [],
+                "reveal_state": data.get("reveal_state", {}) if isinstance(data, dict) else {},
                 "memory": self._compact_npc_memory(npc_memory),
             }
         return compact
@@ -1539,6 +1542,7 @@ class NarrativeAI:
                 "personality": self._trim_text(npc_data.get("personality", ""), 90),
                 "background_summary": self._trim_text(npc_data.get("background", ""), 140),
                 "current_state": self._trim_text(npc_data.get("current_state", ""), 100),
+                "soft_state_summary": self._trim_text(((runtime_state.get("soft_state") or {}).get("summary") if isinstance(runtime_state.get("soft_state"), dict) else ""), 120),
                 "speaking_style": self._trim_text(npc_action_guide.get("voice_style", ""), 100),
             },
             "relationship": {
@@ -1548,6 +1552,8 @@ class NarrativeAI:
                 "cross_wall": bool(npc_action_guide.get("cross_wall") or npc_data.get("cross_wall")),
                 "cross_wall_heard_only": bool(npc_action_guide.get("cross_wall_heard_only")),
             },
+            "enabled_systems": list(npc_data.get("enabled_systems", []) or []),
+            "reveal_state": npc_data.get("reveal_state", {}) if isinstance(npc_data.get("reveal_state"), dict) else {},
             "memory": self._compact_npc_memory(npc_memory),
             "dialogue_plan": {
                 "dialogue_act": str(npc_action_guide.get("dialogue_act") or "").strip(),
@@ -1588,7 +1594,7 @@ class NarrativeAI:
         return compact
 
     def _is_nonverbal_npc(self, npc_name: str, npc_data: dict) -> bool:
-        return is_threat_entity(npc_name, npc_data)
+        return is_threat_entity(npc_name, npc_data) or not isinstance((npc_data or {}).get("dialogue"), dict)
 
     def _compact_location_context(self, location_context: dict) -> dict:
         if not isinstance(location_context, dict):

@@ -42,6 +42,9 @@ class RuleAI:
         如果包含则硬编码判定为"对话"，防止AI将台词误判为实际行动。"""
         return any(ch in self.DIALOGUE_QUOTE_CHARS for ch in (text or ""))
 
+    def _npc_can_speak(self, npc_data: dict) -> bool:
+        return isinstance((npc_data or {}).get("dialogue"), dict)
+
     def _load_rules(self):
         return """
 # COC 7 core rules
@@ -358,6 +361,8 @@ class RuleAI:
         scene_objects = self._get_scene_objects(game_state, module_data)
         scene_npcs = self._get_scene_npcs(game_state, module_data)
         scene_threat_entities = self._get_scene_threat_entities(game_state, module_data)
+        prompt_scene_npcs = self._compact_npc_context_for_prompt(scene_npcs)
+        prompt_threat_entities = self._compact_threat_context_for_prompt(scene_threat_entities)
         inventory = game_state.get("player", {}).get("inventory", [])
         clues_found = game_state.get("world_state", {}).get("clues_found", [])
         reachable = sorted(self._get_reachable_locations(game_state, module_data))
@@ -367,7 +372,7 @@ class RuleAI:
         prompt = prompt.replace("{current_location}", current_location)
         prompt = prompt.replace("{location_context}", json.dumps(location_context, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{scene_objects}", json.dumps(scene_objects, ensure_ascii=False, indent=2))
-        prompt = prompt.replace("{scene_npcs}", json.dumps(scene_npcs, ensure_ascii=False, indent=2))
+        prompt = prompt.replace("{scene_npcs}", json.dumps(prompt_scene_npcs, ensure_ascii=False, indent=2))
         adjacent_context = build_adjacent_locations_context(game_state, module_data, current_location)
         prompt = prompt.replace("{adjacent_locations}", json.dumps(adjacent_context, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{inventory}", json.dumps(inventory, ensure_ascii=False))
@@ -381,7 +386,7 @@ class RuleAI:
         )
         prompt += (
             "\n\n# 当前场景威胁实体字段\n"
-            f"{json.dumps(scene_threat_entities, ensure_ascii=False, indent=2)}\n\n"
+            f"{json.dumps(prompt_threat_entities, ensure_ascii=False, indent=2)}\n\n"
             "# 额外约束\n"
             "- threat_entity_context 必须是当前场景威胁实体的原始字段；若没有命中则为 null。\n"
             "- threat entity 不是 NPC。它不能说话，不能被当作普通对话对象。\n"
@@ -547,6 +552,21 @@ class RuleAI:
             npc_context = scene_npcs
         normalized["npc_context"] = npc_context
 
+        companion_command = normalized.get("companion_command")
+        normalized["companion_command"] = self._normalize_companion_command(
+            companion_command,
+            normalized_action,
+            player_input,
+            scene_npcs,
+            module_data,
+        )
+
+        if normalized_action.get("target_kind") == "npc" and target_key in scene_npcs:
+            npc_data = scene_npcs.get(target_key, {})
+            if str(normalized_action.get("verb") or "").lower() == "talk" and not self._npc_can_speak(npc_data):
+                feasibility["ok"] = False
+                feasibility["reason"] = feasibility["reason"] or "这个对象不能正常说话，不会回应交谈"
+
         check_data = normalized.get("check")
         if not isinstance(check_data, dict):
             check_data = {}
@@ -606,6 +626,14 @@ class RuleAI:
                 "skill": None,
                 "difficulty": "无需判定",
             },
+            "companion_command": {
+                "target_npc": None,
+                "command": None,
+                "follow_target": None,
+                "lag": 0,
+                "target_entity": None,
+                "destination": None,
+            },
             "on_success": {
                 "discover_clues": [],
                 "add_inventory": [],
@@ -634,6 +662,16 @@ class RuleAI:
             plan["normalized_action"]["target_key"] = npc_key
             if not plan["normalized_action"].get("raw_target_text"):
                 plan["normalized_action"]["raw_target_text"] = npc_key
+            if verb == "talk" and not self._npc_can_speak(scene_npcs.get(npc_key, {})):
+                plan["feasibility"]["ok"] = False
+                plan["feasibility"]["reason"] = "这个对象不能正常说话，不会回应交谈"
+            plan["companion_command"] = self._normalize_companion_command(
+                plan.get("companion_command"),
+                plan["normalized_action"],
+                player_input,
+                scene_npcs,
+                module_data,
+            )
             return plan
 
         if threat_key:
@@ -687,7 +725,136 @@ class RuleAI:
             return plan
 
         self._apply_close_door_override(plan, player_input, game_state, module_data)
+        plan["companion_command"] = self._normalize_companion_command(
+            plan.get("companion_command"),
+            plan["normalized_action"],
+            player_input,
+            scene_npcs,
+            module_data,
+        )
         return plan
+
+    def _normalize_companion_command(
+        self,
+        command_data: Any,
+        normalized_action: dict,
+        player_input: str,
+        scene_npcs: Dict[str, Dict[str, Any]],
+        module_data: dict,
+    ) -> dict:
+        normalized = {
+            "target_npc": None,
+            "command": None,
+            "follow_target": None,
+            "lag": 0,
+            "target_entity": None,
+            "destination": None,
+            "explicit_exit": False,
+        }
+        source = command_data if isinstance(command_data, dict) else {}
+        if normalized_action.get("target_kind") == "npc" and normalized_action.get("target_key") in scene_npcs:
+            normalized["target_npc"] = normalized_action.get("target_key")
+
+        for key in ("target_npc", "command", "follow_target", "target_entity"):
+            value = str(source.get(key) or "").strip()
+            if value:
+                normalized[key] = value
+
+        if source.get("lag") not in (None, ""):
+            try:
+                normalized["lag"] = max(0, int(source.get("lag", 0) or 0))
+            except (TypeError, ValueError):
+                normalized["lag"] = 0
+
+        destination = self._match_location_target(str(source.get("destination") or "").strip(), module_data)
+        if destination:
+            normalized["destination"] = destination
+
+        text = str(player_input or "").strip()
+        lowered = text.lower()
+        if isinstance(source.get("explicit_exit"), bool):
+            normalized["explicit_exit"] = bool(source.get("explicit_exit"))
+        elif str(source.get("explicit_exit") or "").strip().lower() in {"true", "1", "yes"}:
+            normalized["explicit_exit"] = True
+
+        if not normalized["command"]:
+            if any(keyword in text for keyword in ["跟我走", "跟着我", "跟上", "一起行动"]) or any(keyword in lowered for keyword in ["follow me", "come with me"]):
+                normalized["command"] = "follow"
+            elif any(keyword in text for keyword in ["你在这等", "待在这", "留在这里", "别动", "原地待命"]) or any(keyword in lowered for keyword in ["wait here", "stay here", "hold position"]):
+                normalized["command"] = "wait"
+            elif any(keyword in text for keyword in ["引开", "诱饵", "带到", "引到", "拖到"]) or any(keyword in lowered for keyword in ["bait", "distract", "draw away", "lead to"]):
+                normalized["command"] = "bait"
+
+        if self._requests_explicit_exit(text):
+            normalized["explicit_exit"] = True
+
+        if normalized["command"] == "follow":
+            normalized["follow_target"] = normalized["follow_target"] or "player"
+            if source.get("lag") in (None, ""):
+                normalized["lag"] = 0
+        elif normalized["command"] == "bait":
+            if not normalized["target_entity"]:
+                normalized["target_entity"] = self._match_companion_target(text, module_data, exclude=normalized["target_npc"])
+            if not normalized["destination"]:
+                normalized["destination"] = self._match_location_target(text, module_data)
+        else:
+            normalized["follow_target"] = None
+            normalized["lag"] = 0
+            normalized["target_entity"] = None
+            normalized["destination"] = None
+
+        if normalized["command"] not in {"follow", "wait", "bait"}:
+            normalized["command"] = None
+            normalized["target_npc"] = None if not source.get("target_npc") else normalized["target_npc"]
+
+        if not normalized["target_npc"] and len(scene_npcs) == 1 and normalized["command"]:
+            normalized["target_npc"] = next(iter(scene_npcs))
+
+        return normalized
+
+    def _requests_explicit_exit(self, player_input: str) -> bool:
+        text = str(player_input or "").strip()
+        lowered = text.lower()
+        if not text:
+            return False
+        zh_keywords = ["开门", "把门打开", "出来", "出门", "出来吧", "出来跟我", "跟我出来"]
+        en_keywords = ["open the door", "come out", "step out", "open up"]
+        return any(keyword in text for keyword in zh_keywords) or any(keyword in lowered for keyword in en_keywords)
+
+    def _match_location_target(self, target_text: str, module_data: dict) -> str:
+        text = str(target_text or "").strip()
+        if not text:
+            return None
+        locations = module_data.get("locations", {}) if isinstance(module_data, dict) else {}
+        candidates = {}
+        for location_key, location_data in locations.items():
+            if isinstance(location_data, dict):
+                candidates[location_key] = {
+                    "name": location_data.get("name", location_key),
+                    "hidden_name": location_data.get("hidden_name", ""),
+                }
+        lowered = text.lower()
+        for key, data in candidates.items():
+            names = [str(key), str(data.get("name") or ""), str(data.get("hidden_name") or "")]
+            if any(name and (name == text or name.lower() == lowered or name in text or name.lower() in lowered) for name in names):
+                return key
+        return None
+
+    def _match_companion_target(self, target_text: str, module_data: dict, exclude: str = "") -> str:
+        text = str(target_text or "").strip()
+        if not text:
+            return None
+        exclude = str(exclude or "").strip()
+        candidates = {}
+        for entity_name, entity_data in get_module_npcs(module_data).items():
+            if entity_name == exclude:
+                continue
+            candidates[entity_name] = entity_data
+        for entity_name, entity_data in get_module_threat_entities(module_data).items():
+            if entity_name == exclude:
+                continue
+            candidates[entity_name] = entity_data
+        return self._match_target(text, candidates)
 
     def _requirements_met(self, requirements: Any, game_state: dict) -> bool:
         requirements = self._ensure_list(requirements)
@@ -761,11 +928,22 @@ class RuleAI:
 
             merged_npc = dict(npc_data)
             merged_npc.setdefault("name", npc_name)
+            merged_npc["enabled_systems"] = [
+                system_name
+                for system_name in ("position", "dialogue", "trust", "memory", "reveal", "soft_state", "companion")
+                if merged_npc.get(system_name) is not None
+            ]
             merged_npc["runtime_state"] = {
                 "location": npc_location,
                 "attitude": runtime_state.get("attitude", npc_data.get("initial_attitude", "中立")),
                 "trust_level": runtime_state.get("trust_level", 0.0),
                 "memory": runtime_state.get("memory", {}),
+                "memory_long_term": runtime_state.get("memory_long_term", {}),
+                "soft_state": runtime_state.get("soft_state", {}),
+                "relationship": runtime_state.get("relationship", {}),
+                "companion_mode": runtime_state.get("companion_mode", runtime_state.get("companion_state", "wait")),
+                "companion_state": runtime_state.get("companion_state", runtime_state.get("companion_mode", "wait")),
+                "companion_task": runtime_state.get("companion_task", {}),
             }
             scene_npcs[npc_name] = merged_npc
 
@@ -782,11 +960,22 @@ class RuleAI:
 
             merged_npc = dict(npc_data)
             merged_npc.setdefault("name", npc_name)
+            merged_npc["enabled_systems"] = [
+                system_name
+                for system_name in ("position", "dialogue", "trust", "memory", "reveal", "soft_state", "companion")
+                if merged_npc.get(system_name) is not None
+            ]
             merged_npc["runtime_state"] = {
                 "location": npc_location,
                 "attitude": runtime_state.get("attitude", npc_data.get("initial_attitude", "中立")),
                 "trust_level": runtime_state.get("trust_level", 0.0),
                 "memory": runtime_state.get("memory", {}),
+                "memory_long_term": runtime_state.get("memory_long_term", {}),
+                "soft_state": runtime_state.get("soft_state", {}),
+                "relationship": runtime_state.get("relationship", {}),
+                "companion_mode": runtime_state.get("companion_mode", runtime_state.get("companion_state", "wait")),
+                "companion_state": runtime_state.get("companion_state", runtime_state.get("companion_mode", "wait")),
+                "companion_task": runtime_state.get("companion_task", {}),
             }
             merged_npc["cross_wall"] = True
             merged_npc["cross_wall_type"] = cross_info.get("wall_type", "voice_only")
@@ -807,14 +996,88 @@ class RuleAI:
 
             merged_entity = dict(entity_data)
             merged_entity.setdefault("name", entity_name)
+            merged_entity["enabled_systems"] = [
+                system_name
+                for system_name in ("position", "dialogue", "trust", "memory", "reveal", "soft_state", "companion")
+                if merged_entity.get(system_name) is not None
+            ]
             merged_entity["runtime_state"] = {
                 "location": entity_location,
                 "attitude": runtime_state.get("attitude", entity_data.get("initial_attitude", "中立")),
                 "trust_level": runtime_state.get("trust_level", 0.0),
                 "memory": runtime_state.get("memory", {}),
+                "memory_long_term": runtime_state.get("memory_long_term", {}),
+                "soft_state": runtime_state.get("soft_state", {}),
+                "relationship": runtime_state.get("relationship", {}),
+                "companion_mode": runtime_state.get("companion_mode", runtime_state.get("companion_state")),
+                "companion_state": runtime_state.get("companion_state", runtime_state.get("companion_mode")),
+                "companion_task": runtime_state.get("companion_task", {}),
             }
             scene_threat_entities[entity_name] = merged_entity
         return scene_threat_entities
+
+    def _compact_npc_context_for_prompt(self, scene_npcs: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        compact = {}
+        for npc_name, npc_data in (scene_npcs or {}).items():
+            if not isinstance(npc_data, dict):
+                continue
+            runtime_state = npc_data.get("runtime_state", {}) if isinstance(npc_data.get("runtime_state"), dict) else {}
+            companion_task = runtime_state.get("companion_task", {}) if isinstance(runtime_state.get("companion_task"), dict) else {}
+            memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
+            reveal_state = npc_data.get("reveal_state", {}) if isinstance(npc_data.get("reveal_state"), dict) else {}
+            compact[npc_name] = {
+                "name": npc_data.get("name", npc_name),
+                "enabled_systems": list(npc_data.get("enabled_systems", []) or []),
+                "cross_wall": bool(npc_data.get("cross_wall")),
+                "cross_wall_from_room": npc_data.get("cross_wall_from_room", ""),
+                "appearance": self._trim_text(str(npc_data.get("appearance") or ""), 80),
+                "current_state": self._trim_text(str(npc_data.get("current_state") or ""), 120),
+                "first_appearance": self._trim_text(str(npc_data.get("first_appearance") or ""), 100),
+                "trust_threshold": npc_data.get("trust_threshold"),
+                "available_trust_reasons": list(npc_data.get("available_trust_reasons", []) or [])[:20],
+                "reveal_state": reveal_state,
+                "runtime_state": {
+                    "location": runtime_state.get("location"),
+                    "attitude": runtime_state.get("attitude"),
+                    "trust_level": runtime_state.get("trust_level"),
+                    "soft_state": runtime_state.get("soft_state", {}),
+                    "companion_mode": runtime_state.get("companion_mode"),
+                    "companion_task": companion_task,
+                    "memory": {
+                        "player_facts": memory.get("player_facts", {}),
+                        "evidence_seen": memory.get("evidence_seen", []),
+                        "topics_discussed": memory.get("topics_discussed", []),
+                        "answered_questions": memory.get("answered_questions", []),
+                    },
+                },
+            }
+        return compact
+
+    def _compact_threat_context_for_prompt(self, scene_threat_entities: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        compact = {}
+        for entity_name, entity_data in (scene_threat_entities or {}).items():
+            if not isinstance(entity_data, dict):
+                continue
+            runtime_state = entity_data.get("runtime_state", {}) if isinstance(entity_data.get("runtime_state"), dict) else {}
+            compact[entity_name] = {
+                "name": entity_data.get("name", entity_name),
+                "enabled_systems": list(entity_data.get("enabled_systems", []) or []),
+                "appearance": self._trim_text(str(entity_data.get("appearance") or ""), 80),
+                "current_state": self._trim_text(str(entity_data.get("current_state") or ""), 120),
+                "behavior": entity_data.get("behavior", {}) if isinstance(entity_data.get("behavior"), dict) else {},
+                "runtime_state": {
+                    "location": runtime_state.get("location"),
+                    "companion_mode": runtime_state.get("companion_mode"),
+                    "companion_task": runtime_state.get("companion_task", {}) if isinstance(runtime_state.get("companion_task"), dict) else {},
+                },
+            }
+        return compact
+
+    def _trim_text(self, text: str, limit: int) -> str:
+        value = str(text or "").strip()
+        if len(value) <= limit:
+            return value
+        return value[: max(0, limit - 1)] + "…"
 
     def _get_reachable_locations(self, game_state: dict, module_data: dict):
         current_location = game_state.get("current_location", "master_bedroom")

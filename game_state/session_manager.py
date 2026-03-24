@@ -5,11 +5,13 @@ import random
 from collections import deque
 from typing import Dict, Any, List, Set
 from .location_context import (
+    DEFAULT_RUNTIME_MEMORY_TEMPLATE,
     build_runtime_location_context,
     get_module_all_entities,
     get_module_npcs,
     get_primary_pursuer_name,
     get_primary_pursuer_settings,
+    normalize_module_data,
 )
 
 
@@ -103,10 +105,10 @@ class SessionManager:
         try:
             with open(module_path, "r", encoding="utf-8") as f:
                 module_data = json.load(f)
-            return module_data
+            return normalize_module_data(module_data)
         except FileNotFoundError:
             # 如果文件不存在，返回一个最小化的默认模组
-            return {
+            return normalize_module_data({
                 "module_info": {
                     "name": "默认模组",
                     "theme": "克苏鲁恐怖",
@@ -116,7 +118,7 @@ class SessionManager:
                 "objects": {},
                 "npcs": {},
                 "escape_conditions": {}
-            }
+            })
         except json.JSONDecodeError as e:
             raise ValueError(f"模组JSON格式错误: {e}")
 
@@ -185,33 +187,58 @@ class SessionManager:
         module_npcs = get_module_npcs(module_data)
         primary_pursuer_name = self._get_primary_pursuer_name(module_data)
         for npc_name, npc_data in get_module_all_entities(module_data).items():
+            trust_module = npc_data.get("trust") if isinstance(npc_data.get("trust"), dict) else {}
+            initial_trust = float(trust_module.get("initial", 0.0) or 0.0)
+            memory_module = npc_data.get("memory") if isinstance(npc_data.get("memory"), dict) else None
+            companion_module = npc_data.get("companion") if isinstance(npc_data.get("companion"), dict) else None
+            soft_state_module = npc_data.get("soft_state") if isinstance(npc_data.get("soft_state"), dict) else None
             npc_states[npc_name] = {
                 "attitude": npc_data.get("initial_attitude", "中立"),
-                "trust_level": 0.0,
-                "memory": self._build_initial_npc_memory(),
+                "relationship": {
+                    "trust": round(initial_trust, 2),
+                },
+                "trust_level": round(initial_trust, 2),
+                "memory": self._build_initial_npc_memory(memory_module),
+                "memory_long_term": self._build_initial_npc_long_term_memory(memory_module),
             }
-            if npc_data.get("location"):
-                npc_states[npc_name]["location"] = npc_data["location"]
+            initial_location = str(
+                npc_data.get("location")
+                or ((npc_data.get("position") or {}).get("initial_location") if isinstance(npc_data.get("position"), dict) else "")
+                or ""
+            ).strip()
+            if initial_location:
+                npc_states[npc_name]["location"] = initial_location
+            if soft_state_module:
+                npc_states[npc_name]["soft_state"] = self._build_initial_soft_state(soft_state_module)
             if primary_pursuer_name and npc_name == primary_pursuer_name:
                 npc_states[npc_name]["chase_state"] = self._build_default_butler_chase_state()
-            # 非威胁NPC初始化同伴状态
-            if npc_name in module_npcs:
-                npc_states[npc_name]["companion_state"] = "inactive"
+            if companion_module and npc_name in module_npcs:
+                default_mode = str(companion_module.get("default_mode") or "wait").strip() or "wait"
+                npc_states[npc_name]["companion_mode"] = default_mode
+                npc_states[npc_name]["companion_state"] = default_mode
+                npc_states[npc_name]["companion_task"] = {}
         return npc_states
 
-    def _build_initial_npc_memory(self) -> Dict[str, Any]:
+    def _build_initial_npc_memory(self, memory_module: Dict[str, Any] = None) -> Dict[str, Any]:
+        runtime_memory = copy.deepcopy(DEFAULT_RUNTIME_MEMORY_TEMPLATE)
+        if isinstance(memory_module, dict):
+            runtime_defaults = memory_module.get("runtime_defaults", {})
+            if isinstance(runtime_defaults, dict):
+                for key, value in runtime_defaults.items():
+                    runtime_memory[key] = copy.deepcopy(value)
+        return runtime_memory
+
+    def _build_initial_npc_long_term_memory(self, memory_module: Dict[str, Any] = None) -> Dict[str, Any]:
+        if not isinstance(memory_module, dict):
+            return {}
+        long_term = memory_module.get("long_term", {})
+        return copy.deepcopy(long_term) if isinstance(long_term, dict) else {}
+
+    def _build_initial_soft_state(self, soft_state_module: Dict[str, Any]) -> Dict[str, Any]:
         return {
-            "player_facts": {},
-            "topics_discussed": [],
-            "pending_questions": [],
-            "answered_questions": [],
-            "promises": [],
-            "evidence_seen": [],
-            "trust_signals": [],
-            "last_impression": {},
-            "applied_trust_reasons": [],
-            "overheard_remote_dialogue": [],
-            "emergency_context": {},
+            "tag": str(soft_state_module.get("initial_tag") or "neutral").strip() or "neutral",
+            "summary": str(soft_state_module.get("initial_summary") or "").strip(),
+            "updated_round": 0,
         }
 
     def _build_default_butler_chase_state(self) -> Dict[str, Any]:
@@ -223,6 +250,47 @@ class SessionManager:
             "last_target_location": None,
             "same_location_rounds": 0,
         }
+
+    def _sync_single_npc_runtime_state(self, npc_state: Dict[str, Any], npc_data: Dict[str, Any] = None):
+        if not isinstance(npc_state, dict):
+            return
+
+        npc_data = npc_data if isinstance(npc_data, dict) else {}
+        trust_cfg = npc_data.get("trust") if isinstance(npc_data.get("trust"), dict) else {}
+        relationship = npc_state.get("relationship")
+        if not isinstance(relationship, dict):
+            relationship = {}
+            npc_state["relationship"] = relationship
+        trust_value = npc_state.get("trust_level", relationship.get("trust", trust_cfg.get("initial", 0.0)))
+        trust_value = round(float(trust_value or 0.0), 2)
+        relationship["trust"] = trust_value
+        npc_state["trust_level"] = trust_value
+
+        memory_cfg = npc_data.get("memory") if isinstance(npc_data.get("memory"), dict) else None
+        if not isinstance(npc_state.get("memory"), dict):
+            npc_state["memory"] = self._build_initial_npc_memory(memory_cfg)
+        if "memory_long_term" not in npc_state or not isinstance(npc_state.get("memory_long_term"), dict):
+            npc_state["memory_long_term"] = self._build_initial_npc_long_term_memory(memory_cfg)
+
+        soft_state_cfg = npc_data.get("soft_state") if isinstance(npc_data.get("soft_state"), dict) else None
+        if soft_state_cfg:
+            soft_state = npc_state.get("soft_state")
+            if not isinstance(soft_state, dict):
+                soft_state = self._build_initial_soft_state(soft_state_cfg)
+                npc_state["soft_state"] = soft_state
+            soft_state.setdefault("tag", str(soft_state_cfg.get("initial_tag") or "neutral").strip() or "neutral")
+            soft_state.setdefault("summary", str(soft_state_cfg.get("initial_summary") or "").strip())
+            soft_state.setdefault("updated_round", 0)
+
+        companion_cfg = npc_data.get("companion") if isinstance(npc_data.get("companion"), dict) else None
+        if companion_cfg:
+            default_mode = str(companion_cfg.get("default_mode") or "wait").strip() or "wait"
+            companion_mode = str(npc_state.get("companion_mode") or npc_state.get("companion_state") or default_mode).strip() or default_mode
+            npc_state["companion_mode"] = companion_mode
+            npc_state["companion_state"] = companion_mode
+            companion_task = npc_state.get("companion_task")
+            if not isinstance(companion_task, dict):
+                npc_state["companion_task"] = {}
 
     def _get_primary_pursuer_name(self, module_data: Dict[str, Any]) -> str:
         return get_primary_pursuer_name(module_data)
@@ -267,6 +335,7 @@ class SessionManager:
     def _build_default_influence_dimensions(self) -> Dict[str, Any]:
         return {
             "escape_success": False,
+            "ritual_destroyed": False,
             "npc_together": False,
             "truth_revealed": False,
             "butler_gaze": False,
@@ -304,12 +373,14 @@ class SessionManager:
                 runtime_state = {}
                 npc_states[npc_name] = runtime_state
             runtime_state.setdefault("attitude", npc_data.get("initial_attitude", "中立"))
-            runtime_state.setdefault("trust_level", 0.0)
-            runtime_state.setdefault("memory", self._build_initial_npc_memory())
-            if npc_data.get("location"):
-                runtime_state.setdefault("location", npc_data.get("location"))
-            if npc_name in friendly_npcs:
-                runtime_state.setdefault("companion_state", "inactive")
+            initial_location = str(
+                npc_data.get("location")
+                or ((npc_data.get("position") or {}).get("initial_location") if isinstance(npc_data.get("position"), dict) else "")
+                or ""
+            ).strip()
+            if initial_location:
+                runtime_state.setdefault("location", initial_location)
+            self._sync_single_npc_runtime_state(runtime_state, npc_data)
             if primary_pursuer_name and npc_name == primary_pursuer_name:
                 chase_state = runtime_state.setdefault("chase_state", {})
                 if not isinstance(chase_state, dict):
@@ -334,6 +405,32 @@ class SessionManager:
         player = state.setdefault("player", {})
         world_state = state.setdefault("world_state", {})
         flags = world_state.setdefault("flags", {})
+        inventory = player.get("inventory", []) if isinstance(player.get("inventory"), list) else []
+        clues_found = world_state.get("clues_found", []) if isinstance(world_state.get("clues_found"), list) else []
+        current_location = str(state.get("current_location") or "").strip()
+        module_npcs = get_module_npcs(state.get("module_data", {}))
+        npc_states = world_state.get("npcs", {}) if isinstance(world_state.get("npcs"), dict) else {}
+
+        ritual_destroyed = bool(
+            flags.get("ritual_destroyed")
+            or flags.get("仪式已破坏")
+            or flags.get("carpet_burned")
+            or flags.get("符咒地毯已焚毁")
+            or "已破坏仪式" in clues_found
+            or "已破坏仪式" in inventory
+        )
+        npc_together = False
+        for npc_name, npc_cfg in module_npcs.items():
+            if not isinstance(npc_cfg, dict) or not npc_cfg.get("can_escape_together"):
+                continue
+            runtime = npc_states.get(npc_name, {})
+            npc_location = str((runtime or {}).get("location") or npc_cfg.get("location") or "").strip()
+            if current_location and npc_location == current_location:
+                npc_together = True
+                break
+
+        influence["ritual_destroyed"] = ritual_destroyed
+        influence["npc_together"] = bool(flags.get("npc_together", npc_together))
         influence["truth_revealed"] = bool(flags.get("truth_revealed", influence.get("truth_revealed", False)))
         influence["san_remaining"] = int(player.get("san", 0) or 0)
         influence["rounds_used"] = int(state.get("round_count", 0) or 0)
@@ -448,10 +545,253 @@ class SessionManager:
         warning_location = self._get_primary_pursuer_warning_location(self.get_module_data(session_id))
         return bool(target_key) and target_key == warning_location
 
+    def _resolve_entity_location_from_state(self, state: Dict[str, Any], entity_name: str) -> str:
+        if not isinstance(state, dict):
+            return ""
+        entity_name = str(entity_name or "").strip()
+        if not entity_name:
+            return ""
+        if entity_name == "player":
+            return str(state.get("current_location") or "").strip()
+        world_npcs = state.get("world_state", {}).get("npcs", {})
+        npc_state = world_npcs.get(entity_name, {}) if isinstance(world_npcs, dict) else {}
+        return str(npc_state.get("location") or "").strip()
+
+    def _merge_runtime_changes(self, base: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+        base = copy.deepcopy(base) if isinstance(base, dict) else {}
+        incoming = incoming if isinstance(incoming, dict) else {}
+        for key, value in incoming.items():
+            if isinstance(value, dict) and isinstance(base.get(key), dict):
+                base[key] = self._merge_runtime_changes(base[key], value)
+            elif isinstance(value, list) and isinstance(base.get(key), list):
+                merged = list(base[key])
+                for item in value:
+                    if item not in merged:
+                        merged.append(item)
+                base[key] = merged
+            else:
+                base[key] = copy.deepcopy(value)
+        return base
+
+    def _find_shortest_path(
+        self,
+        module_data: Dict[str, Any],
+        start: str,
+        destination: str,
+        blocked_edges: Set[tuple] = None,
+    ) -> List[str]:
+        if not start or not destination or start == destination:
+            return [start] if start else []
+        graph = self._get_adjacency_graph(module_data)
+        if start not in graph or destination not in graph:
+            return []
+        blocked_edges = blocked_edges if isinstance(blocked_edges, set) else set()
+        queue = deque([[start]])
+        visited = {start}
+        while queue:
+            path = queue.popleft()
+            node = path[-1]
+            for neighbor in graph.get(node, []):
+                if (node, neighbor) in blocked_edges:
+                    continue
+                if neighbor in visited:
+                    continue
+                next_path = path + [neighbor]
+                if neighbor == destination:
+                    return next_path
+                visited.add(neighbor)
+                queue.append(next_path)
+        return []
+
+    def _advance_companion_tasks(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(state, dict):
+            return {}
+
+        module_data = state.get("module_data", {})
+        session_id = str(state.get("session_id") or "").strip()
+        locked_exits = self._get_locked_exits(session_id) if session_id else set()
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        module_npcs = get_module_npcs(module_data)
+        changes: Dict[str, Any] = {}
+
+        for npc_name, npc_cfg in module_npcs.items():
+            npc_runtime = npc_states.get(npc_name, {})
+            if not isinstance(npc_runtime, dict):
+                continue
+            mode = str(npc_runtime.get("companion_mode") or npc_runtime.get("companion_state") or "").strip()
+            task = npc_runtime.get("companion_task", {})
+            if not isinstance(task, dict):
+                task = {}
+                npc_runtime["companion_task"] = task
+
+            if mode == "follow":
+                target_entity = str(task.get("target_entity") or "player").strip() or "player"
+                lag = max(0, int(task.get("lag", 0) or 0))
+                target_location = self._resolve_entity_location_from_state(state, target_entity)
+                if self._coerce_companion_flag(task.get("awaiting_exit_release")):
+                    if target_location and target_location == str(npc_runtime.get("location") or "").strip():
+                        task["awaiting_exit_release"] = False
+                    else:
+                        continue
+                desired_location = target_location
+                if lag > 0:
+                    desired_location = str(task.get("last_target_location") or "").strip()
+                    task["last_target_location"] = target_location
+                if desired_location and desired_location != npc_runtime.get("location"):
+                    npc_runtime["location"] = desired_location
+                    changes = self._merge_runtime_changes(changes, {"npc_locations": {npc_name: desired_location}})
+                continue
+
+            if mode != "bait":
+                continue
+
+            destination = str(task.get("destination") or "").strip()
+            target_entity = str(task.get("target_entity") or "").strip()
+            current_location = str(npc_runtime.get("location") or "").strip()
+            if not destination or destination not in module_data.get("locations", {}):
+                continue
+
+            if current_location and current_location != destination:
+                path = self._find_shortest_path(module_data, current_location, destination, blocked_edges=locked_exits)
+                if len(path) >= 2:
+                    next_location = path[1]
+                    npc_runtime["location"] = next_location
+                    changes = self._merge_runtime_changes(changes, {"npc_locations": {npc_name: next_location}})
+
+            if target_entity:
+                primary_pursuer = self._get_primary_pursuer_name_from_state(state)
+                if target_entity == primary_pursuer:
+                    pursuer_state = self._get_butler_runtime_state(state)
+                    chase_state = pursuer_state.setdefault("chase_state", self._build_default_butler_chase_state())
+                    chase_state["active"] = True
+                    if chase_state.get("status") == "blocked":
+                        chase_state["status"] = "pursuing"
+                        chase_state.pop("blocked_at", None)
+                    else:
+                        chase_state["status"] = "alerted"
+                    chase_state["target"] = npc_name
+                else:
+                    target_runtime = npc_states.get(target_entity, {})
+                    if isinstance(target_runtime, dict):
+                        target_runtime["companion_mode"] = "follow"
+                        target_runtime["companion_state"] = "follow"
+                        target_runtime["companion_task"] = {
+                            "type": "follow",
+                            "target_entity": npc_name,
+                            "lag": max(0, int(task.get("target_follow_lag", 1) or 1)),
+                            "last_target_location": None,
+                        }
+
+        return changes
+
+    def _finalize_companion_tasks(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(state, dict):
+            return {}
+
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        changes: Dict[str, Any] = {}
+        primary_pursuer = self._get_primary_pursuer_name_from_state(state)
+
+        for npc_name, npc_runtime in npc_states.items():
+            if not isinstance(npc_runtime, dict):
+                continue
+            if str(npc_runtime.get("companion_mode") or "") != "bait":
+                continue
+            task = npc_runtime.get("companion_task", {})
+            if not isinstance(task, dict):
+                continue
+            destination = str(task.get("destination") or "").strip()
+            target_entity = str(task.get("target_entity") or "").strip()
+            if not destination or not target_entity:
+                continue
+
+            target_reached = False
+            if target_entity == primary_pursuer:
+                pursuer_state = self._get_butler_runtime_state(state)
+                chase_state = pursuer_state.get("chase_state", {})
+                target_reached = (
+                    str(pursuer_state.get("location") or "").strip() == destination
+                    or str(chase_state.get("blocked_at") or "").strip() == destination
+                )
+            else:
+                target_reached = self._resolve_entity_location_from_state(state, target_entity) == destination
+
+            if not target_reached:
+                continue
+
+            npc_runtime["companion_mode"] = str(task.get("on_complete_self") or "wait").strip() or "wait"
+            npc_runtime["companion_state"] = npc_runtime["companion_mode"]
+            npc_runtime["companion_task"] = {}
+            changes = self._merge_runtime_changes(changes, {
+                "npc_updates": {
+                    npc_name: {
+                        "companion_mode": npc_runtime["companion_mode"],
+                        "companion_state": npc_runtime["companion_state"],
+                        "companion_task": {},
+                    }
+                }
+            })
+
+            target_runtime = npc_states.get(target_entity, {})
+            if target_entity != primary_pursuer and isinstance(target_runtime, dict):
+                target_runtime["companion_mode"] = str(task.get("on_complete_target") or "wait").strip() or "wait"
+                target_runtime["companion_state"] = target_runtime["companion_mode"]
+                target_runtime["companion_task"] = {}
+                changes = self._merge_runtime_changes(changes, {
+                    "npc_updates": {
+                        target_entity: {
+                            "companion_mode": target_runtime["companion_mode"],
+                            "companion_state": target_runtime["companion_state"],
+                            "companion_task": {},
+                        }
+                    }
+                })
+
+            if target_entity == primary_pursuer:
+                pursuer_state = self._get_butler_runtime_state(state)
+                chase_state = pursuer_state.setdefault("chase_state", self._build_default_butler_chase_state())
+                chase_state["active"] = False
+                chase_state["status"] = "waiting"
+                chase_state["target"] = None
+                chase_state["activation_round"] = None
+                chase_state["last_target_location"] = destination
+
+        return changes
+
     # ── 同伴状态管理 ──
 
-    def set_companion_state(self, session_id: str, npc_name: str, target_state: str) -> Dict[str, Any]:
-        """设置NPC同伴状态。需要信任达到高信任门阈值。"""
+    def _coerce_companion_flag(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        return str(value or "").strip().lower() in {"1", "true", "yes"}
+
+    def _should_hold_remote_follow(
+        self,
+        module_data: Dict[str, Any],
+        npc_module: Dict[str, Any],
+        companion_cfg: Dict[str, Any],
+        npc_state: Dict[str, Any],
+        target_location: str,
+        explicit_exit: bool,
+    ) -> bool:
+        if explicit_exit or not target_location:
+            return False
+        npc_location = str(npc_state.get("location") or npc_module.get("location") or "").strip()
+        if not npc_location or npc_location == target_location:
+            return False
+        location_data = module_data.get("locations", {}).get(npc_location, {})
+        if not isinstance(location_data, dict) or not location_data.get("has_door"):
+            return False
+        if self._coerce_companion_flag(companion_cfg.get("require_explicit_exit")):
+            return True
+        return bool(
+            isinstance(npc_module.get("dialogue"), dict)
+            or isinstance(npc_module.get("dialogue_guide"), dict)
+            or str(npc_module.get("first_appearance") or "").strip()
+        )
+
+    def set_companion_state(self, session_id: str, npc_name: str, target_state: str, command_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        """设置 NPC 的硬行为模式，并在需要时写入任务参数。"""
         state = self.sessions.get(session_id)
         if not state:
             return {"success": False, "message": "会话不存在"}
@@ -460,38 +800,95 @@ class SessionManager:
         if not npc_state or not isinstance(npc_state, dict):
             return {"success": False, "message": f"NPC {npc_name} 不存在"}
 
-        current_companion = npc_state.get("companion_state")
-        if current_companion is None:
+        module_data = self.get_module_data(session_id)
+        npc_module = get_module_npcs(module_data).get(npc_name) or {}
+        companion_cfg = npc_module.get("companion") if isinstance(npc_module.get("companion"), dict) else None
+        if not companion_cfg:
             return {"success": False, "message": f"{npc_name} 不是可同伴化的NPC"}
 
-        # 检查信任门阈值
-        module_data = self.get_module_data(session_id)
-        npc_module = (module_data or {}).get("npcs", {}).get(npc_name, {})
-        trust_gates = npc_module.get("trust_gates", {})
-        high_min = float(trust_gates.get("high", {}).get("min", npc_module.get("trust_threshold", 0.5)))
-        trust_level = float(npc_state.get("trust_level", 0.0))
+        allowed_modes = companion_cfg.get("enabled_modes", [])
+        if target_state not in allowed_modes:
+            return {"success": False, "message": f"{npc_name} 不支持{target_state}模式"}
 
-        if trust_level < high_min:
+        unlock_trust = float(companion_cfg.get("unlock_trust", 0.5) or 0.5)
+        trust_level = float(npc_state.get("trust_level", 0.0))
+        if trust_level < unlock_trust:
             return {"success": False, "message": f"{npc_name}的信任不足，拒绝了你的请求"}
 
-        # 首次解锁
-        if current_companion == "inactive":
-            npc_state["companion_state"] = target_state
-        else:
-            npc_state["companion_state"] = target_state
-
-        # follow时同步位置
+        payload = command_payload if isinstance(command_payload, dict) else {}
+        task = {}
         if target_state == "follow":
-            npc_state["location"] = state["current_location"]
+            follow_target = str(
+                payload.get("follow_target")
+                or payload.get("target_entity")
+                or "player"
+            ).strip() or "player"
+            lag = max(0, int(payload.get("lag", 0) or 0))
+            explicit_exit = self._coerce_companion_flag(payload.get("explicit_exit"))
+            current_target_location = self._resolve_entity_location_from_state(state, follow_target)
+            awaiting_exit_release = self._should_hold_remote_follow(
+                module_data,
+                npc_module,
+                companion_cfg,
+                npc_state,
+                str(current_target_location or "").strip(),
+                explicit_exit,
+            )
+            task = {
+                "type": "follow",
+                "target_entity": follow_target,
+                "lag": lag,
+                "last_target_location": None,
+                "awaiting_exit_release": awaiting_exit_release,
+            }
+            if current_target_location and lag == 0 and not awaiting_exit_release:
+                npc_state["location"] = current_target_location
+        elif target_state == "bait":
+            target_entity = str(
+                payload.get("target_entity")
+                or self._get_primary_pursuer_name(module_data)
+                or ""
+            ).strip()
+            destination = str(
+                payload.get("destination")
+                or payload.get("target_room")
+                or self._resolve_entity_location_from_state(state, npc_name)
+                or ""
+            ).strip()
+            if not target_entity:
+                return {"success": False, "message": "诱饵任务缺少 target_entity"}
+            if not destination:
+                return {"success": False, "message": "诱饵任务缺少 destination"}
+            if destination not in module_data.get("locations", {}):
+                return {"success": False, "message": "诱饵任务目标地点无效"}
+            task = {
+                "type": "bait",
+                "target_entity": target_entity,
+                "destination": destination,
+                "target_follow_lag": max(0, int(payload.get("target_follow_lag", 1) or 1)),
+                "complete_when": "target_reaches_destination",
+                "on_complete_self": str(payload.get("on_complete_self") or "wait").strip() or "wait",
+                "on_complete_target": str(payload.get("on_complete_target") or "wait").strip() or "wait",
+            }
 
-        return {"success": True, "message": f"{npc_name}状态变更为{target_state}", "new_state": target_state}
+        npc_state["companion_mode"] = target_state
+        npc_state["companion_state"] = target_state
+        npc_state["companion_task"] = task
+
+        return {
+            "success": True,
+            "message": f"{npc_name}状态变更为{target_state}",
+            "new_state": target_state,
+            "task": copy.deepcopy(task),
+        }
 
     def get_companion_state(self, session_id: str, npc_name: str) -> str:
         """获取NPC同伴状态。"""
         state = self.sessions.get(session_id)
         if not state:
-            return "inactive"
-        return state["world_state"].get("npcs", {}).get(npc_name, {}).get("companion_state", "inactive")
+            return "wait"
+        npc_state = state["world_state"].get("npcs", {}).get(npc_name, {})
+        return str(npc_state.get("companion_mode") or npc_state.get("companion_state") or "wait")
 
     def get_following_companions(self, session_id: str) -> list:
         """获取所有处于follow状态的NPC名列表。"""
@@ -500,42 +897,31 @@ class SessionManager:
             return []
         companions = []
         for npc_name, npc_data in state["world_state"].get("npcs", {}).items():
-            if isinstance(npc_data, dict) and npc_data.get("companion_state") == "follow":
+            task = npc_data.get("companion_task", {}) if isinstance(npc_data, dict) else {}
+            if (
+                isinstance(npc_data, dict)
+                and str(npc_data.get("companion_mode") or npc_data.get("companion_state") or "") == "follow"
+                and str(task.get("target_entity") or "player").strip() == "player"
+                and not self._coerce_companion_flag(task.get("awaiting_exit_release"))
+            ):
                 companions.append(npc_name)
         return companions
 
     def execute_bait_action(self, session_id: str, bait_entity: str, target_room: str = None) -> Dict[str, Any]:
-        """执行诱饵行动：将主要追逐威胁引到有门房间，然后关门阻隔。"""
-        state = self.sessions.get(session_id)
-        if not state:
-            return {"success": False, "message": "会话不存在"}
-
-        module_data = self.get_module_data(session_id)
-        locations = module_data.get("locations", {})
-
-        # 确定诱饵位置
-        if bait_entity == "player":
-            bait_location = state["current_location"]
-        else:
-            npc_state = state["world_state"].get("npcs", {}).get(bait_entity, {})
-            bait_location = npc_state.get("location")
-
-        if not bait_location:
-            return {"success": False, "message": "无法确定诱饵位置"}
-
-        room = target_room or bait_location
-        room_data = locations.get(room, {})
-        if not room_data.get("has_door"):
-            return {"success": False, "message": "这个房间没有门可以关"}
-
-        # 主要追逐威胁的目标切换到诱饵
-        butler_state = self._get_butler_runtime_state(state)
-        chase_state = butler_state.get("chase_state", {})
-        chase_state["target"] = bait_entity
-        chase_state["last_target_location"] = room
-        chase_state["active"] = True
-
-        return {"success": True, "butler_target": bait_entity, "bait_room": room}
+        """兼容旧调用：默认将主要追逐威胁引到指定房间。"""
+        primary_pursuer = self._get_primary_pursuer_name(self.get_module_data(session_id))
+        if not primary_pursuer:
+            return {"success": False, "message": "当前模组没有主要追逐威胁"}
+        return self.set_companion_state(
+            session_id,
+            bait_entity,
+            "bait",
+            {
+                "target_entity": primary_pursuer,
+                "destination": target_room,
+                "target_follow_lag": 1,
+            },
+        )
 
     def block_butler_with_current_room_door(self, session_id: str) -> Dict[str, Any]:
         state = self.sessions.get(session_id)
@@ -909,6 +1295,153 @@ class SessionManager:
             "round_count": state.get("round_count", 0),
         }
 
+    def _normalize_ending_rule_list(self, values) -> List[str]:
+        if not isinstance(values, list):
+            return []
+        return [str(item or "").strip() for item in values if str(item or "").strip()]
+
+    def _get_ending_validation_config(self, state: Dict[str, Any], ending_id: str) -> Dict[str, Any]:
+        if not isinstance(state, dict) or not ending_id:
+            return {}
+        module_data = state.get("module_data", {})
+        endings = module_data.get("endings", {}) if isinstance(module_data.get("endings"), dict) else {}
+        ending_conditions = endings.get("ending_conditions", {}) if isinstance(endings.get("ending_conditions"), dict) else {}
+        ending_data = ending_conditions.get(ending_id, {}) if isinstance(ending_conditions.get(ending_id), dict) else {}
+        validation = ending_data.get("validation", {})
+        return validation if isinstance(validation, dict) else {}
+
+    def ending_requires_ai_request(self, session_id: str, ending_id: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+        validation = self._get_ending_validation_config(state, ending_id)
+        return bool(validation.get("require_ai_request"))
+
+    def _is_effective_ritual_destroyed(self, state: Dict[str, Any]) -> bool:
+        if not isinstance(state, dict):
+            return False
+        world_state = state.get("world_state", {})
+        flags = world_state.get("flags", {}) if isinstance(world_state.get("flags"), dict) else {}
+        clues = world_state.get("clues_found", []) if isinstance(world_state.get("clues_found"), list) else []
+        inventory = state.get("player", {}).get("inventory", []) if isinstance(state.get("player", {}).get("inventory"), list) else []
+        return bool(
+            flags.get("ritual_destroyed")
+            or flags.get("仪式已破坏")
+            or flags.get("carpet_burned")
+            or flags.get("符咒地毯已焚毁")
+            or "已破坏仪式" in clues
+            or "已破坏仪式" in inventory
+        )
+
+    def _get_effective_npc_together(self, state: Dict[str, Any]) -> bool:
+        if not isinstance(state, dict):
+            return False
+        current_location = str(state.get("current_location") or "").strip()
+        module_npcs = get_module_npcs(state.get("module_data", {}))
+        npc_states = state.get("world_state", {}).get("npcs", {}) if isinstance(state.get("world_state", {}).get("npcs"), dict) else {}
+        for npc_name, npc_cfg in module_npcs.items():
+            if not isinstance(npc_cfg, dict) or not npc_cfg.get("can_escape_together"):
+                continue
+            runtime = npc_states.get(npc_name, {})
+            npc_location = str((runtime or {}).get("location") or npc_cfg.get("location") or "").strip()
+            if current_location and npc_location == current_location:
+                return True
+        return False
+
+    def _get_effective_ending_flag(self, state: Dict[str, Any], flag_name: str) -> bool:
+        if not isinstance(state, dict) or not flag_name:
+            return False
+        key = str(flag_name).strip()
+        world_state = state.get("world_state", {})
+        flags = world_state.get("flags", {}) if isinstance(world_state.get("flags"), dict) else {}
+        influence = state.get("influence_dimensions", {}) if isinstance(state.get("influence_dimensions"), dict) else {}
+        if key in {"ritual_destroyed", "仪式已破坏", "carpet_burned", "符咒地毯已焚毁"}:
+            return self._is_effective_ritual_destroyed(state)
+        if key == "npc_together":
+            return bool(flags.get("npc_together")) or self._get_effective_npc_together(state) or bool(influence.get("npc_together"))
+        if key == "truth_revealed":
+            return bool(flags.get("truth_revealed")) or bool(influence.get("truth_revealed"))
+        if key == "escape_success":
+            return bool(flags.get("escape_success")) or bool(influence.get("escape_success"))
+        if key == "butler_gaze":
+            return bool(flags.get("butler_gaze")) or bool(influence.get("butler_gaze"))
+        if key in flags:
+            return bool(flags.get(key))
+        if key in influence:
+            return bool(influence.get(key))
+        return False
+
+    def validate_ending_request(self, session_id: str, ending_id: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {"valid": False, "errors": ["session_missing"], "ending_id": ending_id}
+        validation = self._get_ending_validation_config(state, ending_id)
+        if not validation:
+            return {"valid": True, "errors": [], "ending_id": ending_id}
+
+        errors = []
+        required_flags = self._normalize_ending_rule_list(validation.get("required_flags"))
+        for flag_name in required_flags:
+            if not self._get_effective_ending_flag(state, flag_name):
+                errors.append(f"missing_flag:{flag_name}")
+
+        required_any_flags = self._normalize_ending_rule_list(validation.get("required_any_flags"))
+        if required_any_flags and not any(self._get_effective_ending_flag(state, flag_name) for flag_name in required_any_flags):
+            errors.append(f"missing_any_flag:{'|'.join(required_any_flags)}")
+
+        current_location = str(state.get("current_location") or "").strip()
+        required_locations = self._normalize_ending_rule_list(
+            validation.get("required_current_locations") or validation.get("required_player_locations") or validation.get("allowed_current_locations")
+        )
+        if required_locations and current_location not in required_locations:
+            errors.append(f"wrong_location:{current_location or 'unknown'}")
+
+        if bool(validation.get("require_npc_together")) and not self._get_effective_npc_together(state):
+            errors.append("npc_not_together")
+
+        return {"valid": not errors, "errors": errors, "ending_id": ending_id}
+
+    def process_ending_request(self, session_id: str, rhythm_result: Dict[str, Any] = None) -> Dict[str, Any]:
+        result = {
+            "requested": False,
+            "triggered": False,
+            "ending_id": None,
+            "reason": None,
+            "validation_errors": [],
+        }
+        state = self.sessions.get(session_id)
+        if not state or self.get_ending_phase(session_id):
+            return result
+
+        ending_request = (rhythm_result or {}).get("ending_request", {}) if isinstance(rhythm_result, dict) else {}
+        if not isinstance(ending_request, dict) or not ending_request.get("requested"):
+            return result
+
+        ending_id = str(ending_request.get("ending_id") or "").strip()
+        result["requested"] = True
+        result["ending_id"] = ending_id or None
+        result["reason"] = str(ending_request.get("reason") or "").strip() or None
+        if not ending_id:
+            result["validation_errors"] = ["missing_ending_id"]
+            return result
+        if not self.ending_requires_ai_request(session_id, ending_id):
+            result["validation_errors"] = ["ending_not_ai_driven"]
+            return result
+
+        validation = self.validate_ending_request(session_id, ending_id)
+        if not validation.get("valid"):
+            result["validation_errors"] = validation.get("errors", [])
+            return result
+
+        influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions())
+        if ending_id == "escaped":
+            influence["ritual_destroyed"] = self._is_effective_ritual_destroyed(state)
+            influence["escape_success"] = True
+        influence["npc_together"] = self._get_effective_npc_together(state)
+        self.trigger_ending(session_id, ending_id)
+        result["triggered"] = True
+        return result
+
     def check_san_ending(self, session_id: str) -> bool:
         """Check if SAN <= 0 and trigger insane ending if so. Returns True if ending triggered."""
         state = self.sessions.get(session_id)
@@ -944,21 +1477,17 @@ class SessionManager:
             return False
         if self.get_ending_phase(session_id):
             return False
-        flags = state.get("world_state", {}).get("flags", {})
-        clues = state.get("world_state", {}).get("clues_found", [])
-        inventory = state.get("player", {}).get("inventory", [])
-        # Check multiple possible flag names the RuleAI might use
-        ritual_destroyed = (
-            flags.get("ritual_destroyed")
-            or flags.get("仪式已破坏")
-            or "已破坏仪式" in clues
-            or "已破坏仪式" in inventory
-            or flags.get("carpet_burned")
-            or flags.get("符咒地毯已焚毁")
-        )
+        if self.ending_requires_ai_request(session_id, "escaped"):
+            return False
+        ritual_destroyed = self._is_effective_ritual_destroyed(state)
         if ritual_destroyed:
+            validation = self.validate_ending_request(session_id, "escaped")
+            if not validation.get("valid"):
+                return False
             influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions())
+            influence["ritual_destroyed"] = True
             influence["escape_success"] = True
+            influence["npc_together"] = self._get_effective_npc_together(state)
             self.trigger_ending(session_id, "escaped")
             return True
         return False
@@ -1126,6 +1655,8 @@ class SessionManager:
         module_data = restored_state.get("module_data")
         if not module_data:
             module_data = self._load_module(module_filename)
+        else:
+            module_data = normalize_module_data(module_data)
 
         restored_state["module_filename"] = module_filename
         restored_state["module_data"] = module_data
@@ -1163,13 +1694,15 @@ class SessionManager:
             "truth_revealed": False
         })
         world_state.setdefault("npcs", self._build_initial_npc_state(module_data))
+        module_entities = get_module_all_entities(module_data)
         for npc_name, npc_state in list(world_state.get("npcs", {}).items()):
             if not isinstance(npc_state, dict):
                 world_state["npcs"][npc_name] = {
-                    "memory": self._build_initial_npc_memory()
+                    "memory": self._build_initial_npc_memory((module_entities.get(npc_name) or {}).get("memory"))
                 }
                 continue
-            npc_state.setdefault("memory", self._build_initial_npc_memory())
+            npc_state.setdefault("memory", self._build_initial_npc_memory((module_entities.get(npc_name) or {}).get("memory")))
+            self._sync_single_npc_runtime_state(npc_state, module_entities.get(npc_name, {}))
         restored_state["world_state"] = world_state
 
         restored_state["influence_dimensions"] = dict(
@@ -1235,6 +1768,7 @@ class SessionManager:
 
             if "npc_updates" in changes and isinstance(changes["npc_updates"], dict):
                 npc_state = state["world_state"].setdefault("npcs", {})
+                module_entities = get_module_all_entities(state.get("module_data", {}))
                 for npc_name, update in changes["npc_updates"].items():
                     if npc_name not in npc_state:
                         npc_state[npc_name] = {}
@@ -1242,13 +1776,14 @@ class SessionManager:
                         # 提取trust_delta（瞬态字段，不存入状态）
                         trust_delta = update.pop("trust_delta", None)
                         self._deep_merge_dict(npc_state[npc_name], update)
-                        npc_state[npc_name].setdefault("memory", self._build_initial_npc_memory())
+                        npc_state[npc_name].setdefault("memory", self._build_initial_npc_memory((module_entities.get(npc_name) or {}).get("memory")))
                         # 应用信任增量
                         if isinstance(trust_delta, (int, float)):
                             current_trust = float(npc_state[npc_name].get("trust_level", 0.0))
                             npc_state[npc_name]["trust_level"] = round(
                                 max(0.0, min(1.0, current_trust + trust_delta)), 2
                             )
+                        self._sync_single_npc_runtime_state(npc_state[npc_name], module_entities.get(npc_name, {}))
                     elif isinstance(update, str):
                         npc_state[npc_name]["location"] = update
 
@@ -1264,11 +1799,13 @@ class SessionManager:
 
             if "threat_entity_updates" in changes and isinstance(changes["threat_entity_updates"], dict):
                 npc_state = state["world_state"].setdefault("npcs", {})
+                module_entities = get_module_all_entities(state.get("module_data", {}))
                 for entity_name, update in changes["threat_entity_updates"].items():
                     if entity_name not in npc_state:
                         npc_state[entity_name] = {}
                     if isinstance(update, dict):
                         self._deep_merge_dict(npc_state[entity_name], update)
+                        self._sync_single_npc_runtime_state(npc_state[entity_name], module_entities.get(entity_name, {}))
                     elif isinstance(update, str):
                         npc_state[entity_name]["location"] = update
 
@@ -1280,7 +1817,9 @@ class SessionManager:
         })
         runtime_changes = {}
         if not bool(state.get("influence_dimensions", {}).get("butler_gaze")):
-            runtime_changes = self._advance_butler_chase(state)
+            runtime_changes = self._merge_runtime_changes(runtime_changes, self._advance_companion_tasks(state))
+            runtime_changes = self._merge_runtime_changes(runtime_changes, self._advance_butler_chase(state))
+            runtime_changes = self._merge_runtime_changes(runtime_changes, self._finalize_companion_tasks(state))
             self._evaluate_butler_exposure(state)
         self._sync_influence_dimensions(state)
         return runtime_changes
@@ -1612,7 +2151,16 @@ class SessionManager:
 
         # 跟随状态的NPC一起移动
         for npc_name, npc_data in state["world_state"].get("npcs", {}).items():
-            if isinstance(npc_data, dict) and npc_data.get("companion_state") == "follow":
+            if not isinstance(npc_data, dict):
+                continue
+            if str(npc_data.get("companion_mode") or npc_data.get("companion_state") or "") != "follow":
+                continue
+            task = npc_data.get("companion_task", {})
+            if not isinstance(task, dict):
+                continue
+            follow_target = str(task.get("target_entity") or "player").strip() or "player"
+            lag = max(0, int(task.get("lag", 0) or 0))
+            if follow_target == "player" and lag == 0 and not self._coerce_companion_flag(task.get("awaiting_exit_release")):
                 npc_data["location"] = target_key
 
         # 标记已访问
@@ -1782,6 +2330,50 @@ class SessionManager:
             return {}
         module_data = self.get_module_data(session_id)
         return build_runtime_location_context(state, module_data, location_key)
+
+    def record_npc_revealed_info(self, session_id: str, npc_name: str, reveals: List[Dict[str, Any]], round_no: int = None):
+        state = self.sessions.get(session_id)
+        if not state or not npc_name:
+            return
+
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        npc_state = npc_states.get(npc_name)
+        if not isinstance(npc_state, dict):
+            return
+
+        module_entities = get_module_all_entities(self.get_module_data(session_id))
+        npc_state.setdefault("memory", self._build_initial_npc_memory((module_entities.get(npc_name) or {}).get("memory")))
+        memory = npc_state.get("memory", {})
+        if not isinstance(memory, dict):
+            return
+
+        revealed_info = memory.setdefault("revealed_info", [])
+        if not isinstance(revealed_info, list):
+            revealed_info = []
+            memory["revealed_info"] = revealed_info
+
+        existing_keys = set()
+        for item in revealed_info:
+            if isinstance(item, dict):
+                key = str(item.get("key") or "").strip()
+            else:
+                key = str(item or "").strip()
+            if key:
+                existing_keys.add(key)
+
+        source_round = int(round_no if round_no is not None else state.get("round_count", 0) or 0)
+        for item in reveals or []:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("key") or "").strip()
+            text = str(item.get("text") or "").strip()
+            if not key or key in existing_keys:
+                continue
+            entry = {"key": key, "round": source_round}
+            if text:
+                entry["text"] = text
+            revealed_info.append(entry)
+            existing_keys.add(key)
 
     def _serialize_value(self, value):
         """递归序列化会话状态中的 deque 等对象"""
