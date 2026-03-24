@@ -13,6 +13,7 @@ from .usage_metrics import extract_usage_metrics, merge_usage_metrics
 
 import json
 import os
+import re
 
 
 class NarrativeAI:
@@ -135,7 +136,7 @@ class NarrativeAI:
             response_text = self._strip_json_fence(response_text)
             result = json.loads(response_text)
 
-            narrative = str(result.get("narrative") or "").strip()
+            narrative = self._normalize_narrative_text(result.get("narrative")).strip()
             summary = str(result.get("summary") or "").strip()
             if not narrative:
                 return self._build_local_fallback_narrative(player_input, rule_plan, rule_result, rhythm_result)
@@ -154,7 +155,7 @@ class NarrativeAI:
             if trace_id:
                 self._call_metrics[trace_id] = usage_metrics
             return {
-                "narrative": response_text,
+                "narrative": self._normalize_narrative_text(response_text),
                 "summary": self._build_default_summary(player_input),
             }
         except Exception as e:
@@ -189,7 +190,7 @@ class NarrativeAI:
                 )
                 retry_text = self._strip_json_fence(retry_text)
                 retry_result = json.loads(retry_text)
-                narrative = str(retry_result.get("narrative") or "").strip()
+                narrative = self._normalize_narrative_text(retry_result.get("narrative")).strip()
                 summary = str(retry_result.get("summary") or "").strip()
                 if narrative:
                     if trace_id:
@@ -220,7 +221,7 @@ class NarrativeAI:
                 )
                 fresh_text = self._strip_json_fence(fresh_text)
                 fresh_result = json.loads(fresh_text)
-                narrative = str(fresh_result.get("narrative") or "").strip()
+                narrative = self._normalize_narrative_text(fresh_result.get("narrative")).strip()
                 summary = str(fresh_result.get("summary") or "").strip()
                 if narrative:
                     if trace_id:
@@ -250,6 +251,12 @@ class NarrativeAI:
         if text.endswith("```"):
             text = text[:-3]
         return text.strip()
+
+    def _normalize_narrative_text(self, text: str) -> str:
+        content = str(text or "")
+        if not content:
+            return ""
+        return re.sub(r"<br\s*/?>", "\n", content, flags=re.IGNORECASE)
 
     def _build_history_text(self, narrative_history: list, recent_turn_count: int = RECENT_DIALOGUE_TURNS) -> str:
         history_list = list(narrative_history) if narrative_history else []
