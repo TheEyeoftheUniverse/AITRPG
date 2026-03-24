@@ -261,6 +261,8 @@ class RhythmAI:
         normalized_action = (rule_plan or {}).get("normalized_action", {})
         target_key = normalized_action.get("target_key")
         target_kind = normalized_action.get("target_kind")
+        input_classification = str((rule_plan or {}).get("input_classification") or "").strip().lower()
+        is_dialogue_turn = input_classification == "dialogue" or str(normalized_action.get("verb") or "").strip().lower() == "talk"
         follow_arrival_reaction_context = (
             (rule_plan or {}).get("follow_arrival_reaction_context")
             if isinstance((rule_plan or {}).get("follow_arrival_reaction_context"), dict)
@@ -280,7 +282,7 @@ class RhythmAI:
                 if not self._should_suppress_npc_dialogue(npc_name, candidate):
                     focused_npc = npc_name
                     break
-        elif len(npc_context) == 1:
+        elif len(npc_context) == 1 and is_dialogue_turn:
             only_npc = next(iter(npc_context))
             candidate = npc_context.get(only_npc, {})
             if not self._should_suppress_npc_dialogue(only_npc, candidate):

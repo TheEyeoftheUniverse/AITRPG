@@ -880,6 +880,15 @@ class NarrativeAI:
         if self._is_arrival_mode(normalized_action, {}):
             return False
 
+        text = str(player_input or "").strip()
+        lowered = text.lower()
+        speech_markers = ["\u201c", "\"", "\uff1a", ":", "\u4f60\u597d", "\u6211\u662f", "\u8bf7\u95ee", "\u8c01", "hello", "hi", "i am", "i'm"]
+        looks_like_dialogue = bool(
+            str((normalized_action or {}).get("verb") or "").strip().lower() == "talk"
+            or any(marker in text for marker in speech_markers[:8])
+            or any(marker in lowered for marker in speech_markers[8:])
+        )
+
         if isinstance(normalized_action, dict) and normalized_action.get("target_kind") == "npc":
             target_key = normalized_action.get("target_key")
             target_data = npc_context.get(target_key, {}) if target_key in npc_context else {}
@@ -891,14 +900,9 @@ class NarrativeAI:
         if focus_npc and focus_npc in npc_context:
             if self._is_nonverbal_npc(focus_npc, npc_context.get(focus_npc, {})):
                 return False
-            return True
+            return looks_like_dialogue
 
-        text = str(player_input or "").strip()
-        if not text:
-            return False
-        lowered = text.lower()
-        speech_markers = ["\u201c", "\"", "\uff1a", ":", "\u4f60\u597d", "\u6211\u662f", "\u8bf7\u95ee", "\u8c01", "hello", "hi", "i am", "i'm"]
-        return any(marker in text for marker in speech_markers[:8]) or any(marker in lowered for marker in speech_markers[8:])
+        return looks_like_dialogue
 
     def _build_local_npc_reply(self, player_input: str, npc_guide: dict, npc_context: dict) -> dict:
         focus_npc = npc_guide.get("focus_npc") if isinstance(npc_guide, dict) else None

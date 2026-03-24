@@ -9,8 +9,15 @@ class ButlerDoorGuardTests(unittest.TestCase):
         self.session_id = "door-guard-test"
         self.manager.create_session(self.session_id, "default_module")
         self.state = self.manager.get_session(self.session_id)
-        self.state["player"]["skills"]["闪避"] = 100
-        self.butler = self.state["world_state"]["npcs"]["管家"]
+        self.butler_name, self.butler = next(
+            (name, npc)
+            for name, npc in self.state["world_state"]["npcs"].items()
+            if isinstance(npc, dict) and "chase_state" in npc
+        )
+
+    def _set_all_skills(self, value: int):
+        for skill_name in list(self.state["player"]["skills"].keys()):
+            self.state["player"]["skills"][skill_name] = value
 
     def _set_butler_chase(self, *, location: str, status: str, blocked_at: str | None = None, target="player"):
         self.butler["location"] = location
@@ -25,6 +32,29 @@ class ButlerDoorGuardTests(unittest.TestCase):
                 "blocked_at": blocked_at,
             }
         )
+
+    def _set_waiting_butler(self, location: str):
+        self.butler["location"] = location
+        self.butler["companion_mode"] = "wait"
+        self.butler["companion_state"] = "wait"
+        self.butler["chase_state"].update(
+            {
+                "active": False,
+                "status": "waiting",
+                "target": None,
+                "activation_round": None,
+                "last_target_location": None,
+                "same_location_rounds": 0,
+                "blocked_at": None,
+            }
+        )
+
+    def _activate_butler(self):
+        activation_changes = self.manager.build_butler_activation_changes(
+            self.session_id,
+            "player_entered_waiting_butler_room",
+        )
+        self.manager.update_state(self.session_id, {"world_changes": activation_changes})
 
     def test_same_room_capture_requires_one_extra_round(self):
         self.state["current_location"] = "living_room"
@@ -41,7 +71,39 @@ class ButlerDoorGuardTests(unittest.TestCase):
             "stayed_with_butler_too_long",
         )
 
+    def test_waiting_butler_room_entry_activates_pursuit_generically(self):
+        self.state["current_location"] = "second_floor_hallway"
+        self._set_waiting_butler("guest_bedroom")
+
+        move_result = self.manager.move_player(self.session_id, "guest_bedroom")
+        self.assertTrue(move_result["success"])
+        self.assertTrue(self.manager.should_activate_butler_on_entry(self.session_id, "guest_bedroom"))
+
+        self._activate_butler()
+
+        self.assertTrue(self.butler["chase_state"]["active"])
+        self.assertEqual(self.butler["chase_state"]["target"], "player")
+        self.assertEqual(self.butler["chase_state"]["activation_round"], self.state["round_count"])
+        self.assertEqual(self.butler["chase_state"]["same_location_rounds"], 1)
+
+    def test_newly_activated_butler_allows_escape_without_dodge(self):
+        self._set_all_skills(0)
+        self.state["current_location"] = "second_floor_hallway"
+        self._set_waiting_butler("guest_bedroom")
+
+        enter_result = self.manager.move_player(self.session_id, "guest_bedroom")
+        self.assertTrue(enter_result["success"])
+
+        self._activate_butler()
+
+        escape_result = self.manager.move_player(self.session_id, "second_floor_hallway")
+        self.assertTrue(escape_result["success"])
+        self.assertIsNone(escape_result.get("check_result"))
+        self.assertEqual(self.state["current_location"], "second_floor_hallway")
+        self.assertFalse(self.manager.is_ending_triggered(self.session_id))
+
     def test_guarded_room_does_not_force_false_dodge_in_hallway(self):
+        self._set_all_skills(100)
         self.state["current_location"] = "second_floor_hallway"
         self._set_butler_chase(location="guest_bedroom", status="blocked", blocked_at="guest_bedroom", target=None)
 
@@ -79,11 +141,11 @@ class ButlerDoorGuardTests(unittest.TestCase):
         )
 
     def test_bait_completion_keeps_door_destination_in_guard_state(self):
-        bait_npc = next(name for name in self.state["world_state"]["npcs"] if name != "管家")
+        bait_npc = next(name for name in self.state["world_state"]["npcs"] if name != self.butler_name)
         self.state["world_state"]["npcs"][bait_npc]["companion_mode"] = "bait"
         self.state["world_state"]["npcs"][bait_npc]["companion_task"] = {
             "destination": "guest_bedroom",
-            "target_entity": "管家",
+            "target_entity": self.butler_name,
             "on_complete_self": "wait",
         }
         self._set_butler_chase(location="guest_bedroom", status="blocked", blocked_at="guest_bedroom", target=bait_npc)

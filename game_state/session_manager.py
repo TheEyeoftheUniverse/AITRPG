@@ -2447,7 +2447,12 @@ class SessionManager:
         movement_note = None
         if self.is_butler_active(session_id):
             butler_location = self._get_butler_contact_location_from_state(state)
-            needs_dodge = bool(butler_location) and (current == butler_location or target_key == butler_location)
+            activation_grace_exit = self._is_butler_activation_grace_exit(state, current, target_key)
+            needs_dodge = (
+                bool(butler_location)
+                and (current == butler_location or target_key == butler_location)
+                and not activation_grace_exit
+            )
             if needs_dodge:
                 dodge_result = self._roll_skill_check(state.get("player", {}), "闪避", "普通")
                 if not dodge_result.get("success"):
