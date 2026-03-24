@@ -610,6 +610,10 @@ class AITRPGPlugin(Star):
                     game_state=state,
                     sancheck_result=sancheck_result,
                 )
+                hard_changes = self._merge_world_changes(
+                    hard_changes,
+                    self._derive_runtime_hard_changes(rule_plan, rule_result),
+                )
                 if self.session_manager.should_activate_butler_for_action(session_id, player_input):
                     hard_changes = self._merge_world_changes(
                         hard_changes,
@@ -1404,6 +1408,42 @@ class AITRPGPlugin(Star):
         finalized = dict(result or {})
         finalized["telemetry"] = self.get_action_progress(session_id)
         return finalized
+
+    def _derive_runtime_hard_changes(self, rule_plan: dict, rule_result: dict) -> dict:
+        if not isinstance(rule_plan, dict) or not isinstance(rule_result, dict):
+            return {}
+        if not rule_result.get("success"):
+            return {}
+
+        normalized_action = rule_plan.get("normalized_action", {})
+        if not isinstance(normalized_action, dict):
+            return {}
+
+        verb = str(normalized_action.get("verb") or "").strip().lower()
+        target_kind = str(normalized_action.get("target_kind") or "").strip().lower()
+        target_key = str(normalized_action.get("target_key") or "").strip()
+        if verb != "destroy" or target_kind != "object" or not target_key:
+            return {}
+
+        if target_key == "粗绳":
+            return {
+                "flags": {
+                    "粗绳已切断": True,
+                },
+                "clues": ["粗绳已切断"],
+            }
+
+        if target_key == "符咒地毯":
+            return {
+                "flags": {
+                    "ritual_destroyed": True,
+                    "carpet_burned": True,
+                    "符咒地毯已焚毁": True,
+                },
+                "clues": ["已破坏仪式"],
+            }
+
+        return {}
 
     def _advance_passive_move_round(self, session_id: str, module_data: dict, rhythm_result: dict | None = None) -> dict:
         rhythm_result = dict(rhythm_result or {})

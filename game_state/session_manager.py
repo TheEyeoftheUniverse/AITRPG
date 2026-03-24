@@ -2241,7 +2241,13 @@ class SessionManager:
         clues_found = state.get("world_state", {}).get("clues_found", [])
         all_items = set(inventory) | set(clues_found)
 
-        return any(cond in all_items for cond in conditions)
+        for cond in conditions:
+            if cond in all_items:
+                return True
+            if self._get_effective_ending_flag(state, str(cond or "").strip()):
+                return True
+
+        return False
 
     def _is_location_visible(self, session_id: str, location_key: str) -> bool:
         """判断地点是否已经满足显示条件。"""
@@ -2346,6 +2352,8 @@ class SessionManager:
             return location_key
 
         if not is_visited:
+            if loc_data.get("show_name_when_visible"):
+                return str(loc_data.get("hidden_name") or loc_data.get("name") or location_key)
             return "?"
 
         hidden_name = loc_data.get("hidden_name")
@@ -2575,7 +2583,10 @@ class SessionManager:
             # 计算显示名（三层逻辑）
             is_visited = key in visited_locations
             if not is_visited:
-                display_name = "?"
+                if loc_data.get("show_name_when_visible"):
+                    display_name = str(loc_data.get("hidden_name") or loc_data.get("name") or key)
+                else:
+                    display_name = "?"
             else:
                 # 已访问，检查是否有hidden_name且true_name条件未满足
                 hidden_name = loc_data.get("hidden_name")

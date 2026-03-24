@@ -252,13 +252,14 @@
                                                                    },
                                              "description":  "你终于来到了暗门后的密室。地面上画着复杂的召唤阵，粗绳从四个方向延伸，束缚着中央的符咒地毯。空气中弥漫着令人作呕的气息，不知道是来源于地面上的暗红色，还是别的什么。",
                                              "objects":  [
-                                                             "召唤阵",
-                                                             "粗绳",
-                                                             "符咒地毯"
-                                                         ],
+                                                              "召唤阵",
+                                                              "粗绳",
+                                                              "符咒地毯"
+                                                          ],
                                              "exits":  [
-                                                           "地下室"
-                                                       ],
+                                                            "地下室",
+                                                            "纯黑地洞"
+                                                        ],
                                              "floor":  -1,
                                              "is_final_location":  true,
                                              "atmosphere":  0.85,
@@ -267,8 +268,36 @@
                                                                                "follow_arrival":  "艾米莉会立刻把注意力放到中央布置和四向束缚结构上，快速判断该先破坏哪一部分。",
                                                                                "knowledge":  "她能看出粗绳和地毯不是并列道具，而是仪式里的束缚部分与核心部分。"
                                                                            }
-                                                               }
-                                         }
+                                                                }
+                                          }
+                      ,
+                      "black_pit":  {
+                                         "name":  "纯黑地洞",
+                                         "hidden":  true,
+                                         "show_name_when_visible":  true,
+                                         "reveal_conditions":  {
+                                                                   "node_visible":  [
+                                                                                        "ritual_destroyed"
+                                                                                    ]
+                                                               },
+                                         "description":  "符咒地毯焚毁后，中央的地面向下塌开，露出一个吞没所有光线的圆形深洞。洞口下方没有火光，没有回声，也看不见任何尽头，像一块被撕开的纯黑缺口。",
+                                         "objects":  [
+
+                                                     ],
+                                         "exits":  [
+                                                       "仪式现场"
+                                                   ],
+                                         "floor":  -2,
+                                         "atmosphere":  1.0,
+                                         "is_ending_location":  true,
+                                         "ending_id":  "escaped",
+                                         "npc_reactions":  {
+                                                               "艾米莉":  {
+                                                                           "follow_arrival":  "如果她也来到这里，她不会再犹豫，只会催你立刻跳下去。",
+                                                                           "knowledge":  "她会把这个黑洞判断成仪式崩毁后唯一稳定的脱离口，继续停留只会被坍塌和追逐一起困死。"
+                                                                       }
+                                                           }
+                                     }
                   },
     "objects":  {
                     "房产广告":  {
@@ -853,17 +882,16 @@
                                               "escaped":  {
                                                               "trigger":  "escape_success===true AND amnesia===false",
                                                               "priority":  3,
-                                                              "description":  "逃脱结局：根据各维度细化，最终输出类似于后日谈的结局",
+                                                              "description":  "逃脱结局：仪式焚毁后，进入纯黑地洞，脱离中间带。",
                                                               "validation":  {
-                                                                                 "require_ai_request":  true,
                                                                                  "required_flags":  [
                                                                                                         "ritual_destroyed"
                                                                                                     ],
                                                                                  "required_current_locations":  [
-                                                                                                                    "ritual_chamber"
+                                                                                                                    "black_pit"
                                                                                                                 ]
                                                                              },
-                                                              "hardcoded_text":  "随着符咒地毯被火焰吞噬，整栋房子开始剧烈颤动。地下室的墙壁出现了裂缝，灰尘从天花板上簌簌落下。那股一直压迫着你的无形力量正在消散——仪式被破坏了。你感觉到周围的空间在松动，像是某种束缚被解除了。"
+                                                              "hardcoded_text":  "你扑向那道在仪式残骸中央张开的纯黑地洞。下坠的瞬间，身后的震动、热浪和那栋房子的压迫感一下子被拉远，像整片中间带都在你身后塌陷。黑暗彻底吞没了你的视野。"
                                                           },
                                               "getlost":  {
                                                               "trigger":  "",
