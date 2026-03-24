@@ -151,6 +151,7 @@ class SessionManager:
                 "clues_found": [],
                 "npcs": self._build_initial_npc_state(module_data),
                 "triggered_sanchecks": [],
+                "follow_arrival_seen": {},
                 "flags": {
                     "door_unlocked": False,
                     "truth_revealed": False
@@ -249,6 +250,7 @@ class SessionManager:
             "activation_round": None,
             "last_target_location": None,
             "same_location_rounds": 0,
+            "blocked_at": None,
         }
 
     def _sync_single_npc_runtime_state(self, npc_state: Dict[str, Any], npc_data: Dict[str, Any] = None):
@@ -363,6 +365,27 @@ class SessionManager:
         module_data = module_data or state.get("module_data") or self.default_module_data
         world_state = state.setdefault("world_state", {})
         npc_states = world_state.setdefault("npcs", {})
+        follow_arrival_seen = world_state.setdefault("follow_arrival_seen", {})
+        if not isinstance(follow_arrival_seen, dict):
+            follow_arrival_seen = {}
+            world_state["follow_arrival_seen"] = follow_arrival_seen
+        valid_locations = set((module_data.get("locations") or {}).keys()) if isinstance(module_data, dict) else set()
+        normalized_follow_seen = {}
+        for npc_name, seen_locations in follow_arrival_seen.items():
+            if not npc_name:
+                continue
+            values = seen_locations if isinstance(seen_locations, list) else [seen_locations]
+            cleaned = []
+            for location_key in values:
+                key = str(location_key or "").strip()
+                if not key:
+                    continue
+                if valid_locations and key not in valid_locations:
+                    continue
+                if key not in cleaned:
+                    cleaned.append(key)
+            normalized_follow_seen[str(npc_name)] = cleaned
+        world_state["follow_arrival_seen"] = normalized_follow_seen
         module_npcs_map = get_module_all_entities(module_data) if isinstance(module_data, dict) else {}
         friendly_npcs = set(get_module_npcs(module_data).keys()) if isinstance(module_data, dict) else set()
         primary_pursuer_name = self._get_primary_pursuer_name(module_data)
@@ -479,6 +502,46 @@ class SessionManager:
         butler_state = self._get_butler_runtime_state(state)
         return str(butler_state.get("location") or "").strip()
 
+    def _get_butler_guard_room_from_state(self, state: Dict[str, Any]) -> str:
+        if not isinstance(state, dict):
+            return ""
+        butler_state = self._get_butler_runtime_state(state)
+        chase_state = butler_state.get("chase_state", {})
+        if not isinstance(chase_state, dict) or not chase_state.get("active"):
+            return ""
+        if str(chase_state.get("status") or "").strip() != "blocked":
+            return ""
+        return str(chase_state.get("blocked_at") or butler_state.get("location") or "").strip()
+
+    def get_butler_guard_room(self, session_id: str) -> str:
+        state = self.sessions.get(session_id)
+        return self._get_butler_guard_room_from_state(state)
+
+    def _get_butler_contact_location_from_state(self, state: Dict[str, Any]) -> str:
+        if not isinstance(state, dict):
+            return ""
+        butler_state = self._get_butler_runtime_state(state)
+        chase_state = butler_state.get("chase_state", {})
+        if not isinstance(chase_state, dict) or not chase_state.get("active"):
+            return ""
+        if str(chase_state.get("status") or "").strip() == "blocked":
+            return ""
+        return str(butler_state.get("location") or "").strip()
+
+    def get_butler_contact_location(self, session_id: str) -> str:
+        state = self.sessions.get(session_id)
+        return self._get_butler_contact_location_from_state(state)
+
+    def _classify_butler_door_transition(self, state: Dict[str, Any], current: str, target: str) -> str | None:
+        guard_room = self._get_butler_guard_room_from_state(state)
+        if not guard_room or not current or not target or current == target:
+            return None
+        if current == guard_room:
+            return "exit_guarded_room"
+        if target == guard_room:
+            return "enter_guarded_room"
+        return None
+
     def get_butler_chase_context(self, session_id: str) -> Dict[str, Any]:
         state = self.sessions.get(session_id)
         if not state:
@@ -499,12 +562,13 @@ class SessionManager:
 
         current_location = str(state.get("current_location") or "").strip()
         butler_location = str(butler_state.get("location") or "").strip()
-        blocked_at = str(chase_state.get("blocked_at") or "").strip()
+        blocked_at = self._get_butler_guard_room_from_state(state)
+        contact_location = self._get_butler_contact_location_from_state(state)
         target = chase_state.get("target")
 
         relation = "unknown"
         if butler_location and current_location:
-            if butler_location == current_location:
+            if contact_location and contact_location == current_location:
                 relation = "same_room"
             elif blocked_at and blocked_at == current_location:
                 relation = "blocked_outside_current_room"
@@ -518,7 +582,9 @@ class SessionManager:
             "entity_name": pursuer_name or None,
             "butler_location": butler_location or None,
             "entity_location": butler_location or None,
+            "contact_location": contact_location or None,
             "player_location": current_location or None,
+            "guard_room": blocked_at or None,
             "blocked_at": blocked_at or None,
             "last_target_location": chase_state.get("last_target_location"),
             "same_location_rounds": int(chase_state.get("same_location_rounds", 0) or 0),
@@ -534,7 +600,7 @@ class SessionManager:
         state = self.sessions.get(session_id)
         if not state or not self.is_butler_active(session_id):
             return False
-        return state.get("current_location") == self.get_butler_location(session_id)
+        return state.get("current_location") == self.get_butler_contact_location(session_id)
 
     def should_use_butler_arrival_judgement(self, session_id: str, target_key: str) -> bool:
         state = self.sessions.get(session_id)
@@ -666,6 +732,8 @@ class SessionManager:
                     chase_state["active"] = True
                     if chase_state.get("status") == "blocked":
                         chase_state["status"] = "pursuing"
+                        chase_state["activation_round"] = None
+                        chase_state["same_location_rounds"] = 0
                         chase_state.pop("blocked_at", None)
                     else:
                         chase_state["status"] = "alerted"
@@ -750,11 +818,52 @@ class SessionManager:
             if target_entity == primary_pursuer:
                 pursuer_state = self._get_butler_runtime_state(state)
                 chase_state = pursuer_state.setdefault("chase_state", self._build_default_butler_chase_state())
-                chase_state["active"] = False
-                chase_state["status"] = "waiting"
-                chase_state["target"] = None
                 chase_state["activation_round"] = None
                 chase_state["last_target_location"] = destination
+                chase_state["same_location_rounds"] = 0
+                destination_data = state.get("module_data", {}).get("locations", {}).get(destination, {})
+                if isinstance(destination_data, dict) and destination_data.get("has_door"):
+                    pursuer_state["location"] = destination
+                    chase_state["active"] = True
+                    chase_state["status"] = "blocked"
+                    chase_state["target"] = None
+                    chase_state["blocked_at"] = destination
+                    changes = self._merge_runtime_changes(changes, {
+                        "npc_updates": {
+                            primary_pursuer: {
+                                "location": destination,
+                                "chase_state": {
+                                    "active": True,
+                                    "status": "blocked",
+                                    "target": None,
+                                    "activation_round": None,
+                                    "last_target_location": destination,
+                                    "same_location_rounds": 0,
+                                    "blocked_at": destination,
+                                },
+                            }
+                        }
+                    })
+                else:
+                    chase_state["active"] = False
+                    chase_state["status"] = "waiting"
+                    chase_state["target"] = None
+                    chase_state["blocked_at"] = None
+                    changes = self._merge_runtime_changes(changes, {
+                        "npc_updates": {
+                            primary_pursuer: {
+                                "chase_state": {
+                                    "active": False,
+                                    "status": "waiting",
+                                    "target": None,
+                                    "activation_round": None,
+                                    "last_target_location": destination,
+                                    "same_location_rounds": 0,
+                                    "blocked_at": None,
+                                }
+                            }
+                        }
+                    })
 
         return changes
 
@@ -907,6 +1016,150 @@ class SessionManager:
                 companions.append(npc_name)
         return companions
 
+    def _is_player_follow_companion(self, npc_state: Dict[str, Any]) -> bool:
+        if not isinstance(npc_state, dict):
+            return False
+        task = npc_state.get("companion_task", {}) if isinstance(npc_state.get("companion_task"), dict) else {}
+        return (
+            str(npc_state.get("companion_mode") or npc_state.get("companion_state") or "").strip() == "follow"
+            and str(task.get("target_entity") or "player").strip() == "player"
+            and not self._coerce_companion_flag(task.get("awaiting_exit_release"))
+        )
+
+    def get_follow_companions_at_location(self, session_id: str, location_key: str) -> List[str]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return []
+        target_location = str(location_key or "").strip()
+        if not target_location:
+            return []
+
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        companions = []
+        for npc_name in get_module_npcs(self.get_module_data(session_id)).keys():
+            npc_state = npc_states.get(npc_name, {})
+            npc_location = str((npc_state or {}).get("location") or "").strip()
+            if npc_location != target_location:
+                continue
+            if self._is_player_follow_companion(npc_state):
+                companions.append(npc_name)
+        return companions
+
+    def has_non_follow_present_npc(self, session_id: str, location_key: str) -> bool:
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+        target_location = str(location_key or "").strip()
+        if not target_location:
+            return False
+
+        module_npcs = get_module_npcs(self.get_module_data(session_id))
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        for npc_name, npc_module in module_npcs.items():
+            npc_state = npc_states.get(npc_name, {})
+            npc_location = str(
+                (npc_state or {}).get("location")
+                or (npc_module.get("location") if isinstance(npc_module, dict) else "")
+                or ""
+            ).strip()
+            if npc_location != target_location:
+                continue
+            if not self._is_player_follow_companion(npc_state):
+                return True
+        return False
+
+    def _normalize_npc_reaction_entry(self, entry: Any, default_field: str) -> Dict[str, Any]:
+        if isinstance(entry, dict):
+            return copy.deepcopy(entry)
+        text = str(entry or "").strip()
+        if not text:
+            return {}
+        return {default_field: text}
+
+    def get_follow_arrival_reaction_context(self, session_id: str, location_key: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+
+        module_data = self.get_module_data(session_id)
+        locations = module_data.get("locations", {}) if isinstance(module_data, dict) else {}
+        objects = module_data.get("objects", {}) if isinstance(module_data, dict) else {}
+        target_location = str(location_key or "").strip()
+        location_data = locations.get(target_location, {})
+        if not isinstance(location_data, dict):
+            return {}
+
+        self._ensure_runtime_defaults(state, module_data)
+        follow_arrival_seen = state.get("world_state", {}).get("follow_arrival_seen", {})
+        if not isinstance(follow_arrival_seen, dict):
+            follow_arrival_seen = {}
+
+        payload = {
+            "location_key": target_location,
+            "location_name": str(location_data.get("name") or target_location).strip() or target_location,
+            "triggered_npcs": [],
+            "npcs": {},
+        }
+
+        location_reactions = location_data.get("npc_reactions", {})
+        if not isinstance(location_reactions, dict):
+            location_reactions = {}
+
+        for npc_name in self.get_follow_companions_at_location(session_id, target_location):
+            seen_locations = follow_arrival_seen.get(npc_name, [])
+            if isinstance(seen_locations, list) and target_location in seen_locations:
+                continue
+
+            npc_payload = {}
+            location_entry = self._normalize_npc_reaction_entry(location_reactions.get(npc_name), "follow_arrival")
+            if location_entry:
+                npc_payload["location"] = location_entry
+
+            object_payload = {}
+            for object_name in location_data.get("objects", []):
+                object_data = objects.get(object_name, {})
+                if not isinstance(object_data, dict):
+                    continue
+                object_reactions = object_data.get("npc_reactions", {})
+                if not isinstance(object_reactions, dict):
+                    continue
+                object_entry = self._normalize_npc_reaction_entry(object_reactions.get(npc_name), "comment")
+                if object_entry:
+                    object_payload[object_name] = object_entry
+
+            if not location_entry and not object_payload:
+                continue
+
+            payload["triggered_npcs"].append(npc_name)
+            if object_payload:
+                npc_payload["objects"] = object_payload
+            payload["npcs"][npc_name] = npc_payload
+
+        return payload if payload["triggered_npcs"] else {}
+
+    def mark_follow_arrival_reactions_seen(self, session_id: str, reaction_context: Dict[str, Any]):
+        state = self.sessions.get(session_id)
+        if not state or not isinstance(reaction_context, dict):
+            return
+
+        target_location = str(reaction_context.get("location_key") or "").strip()
+        triggered_npcs = reaction_context.get("triggered_npcs", [])
+        if not target_location or not isinstance(triggered_npcs, list):
+            return
+
+        self._ensure_runtime_defaults(state)
+        follow_arrival_seen = state.get("world_state", {}).setdefault("follow_arrival_seen", {})
+        for npc_name in triggered_npcs:
+            name = str(npc_name or "").strip()
+            if not name:
+                continue
+            seen_locations = follow_arrival_seen.setdefault(name, [])
+            if not isinstance(seen_locations, list):
+                seen_locations = []
+                follow_arrival_seen[name] = seen_locations
+            if target_location not in seen_locations:
+                seen_locations.append(target_location)
+
     def execute_bait_action(self, session_id: str, bait_entity: str, target_room: str = None) -> Dict[str, Any]:
         """兼容旧调用：默认将主要追逐威胁引到指定房间。"""
         primary_pursuer = self._get_primary_pursuer_name(self.get_module_data(session_id))
@@ -949,11 +1202,13 @@ class SessionManager:
             chase_state = self._build_default_butler_chase_state()
             butler_state["chase_state"] = chase_state
 
+        butler_state["location"] = current_location
         chase_state["active"] = True
         chase_state["status"] = "blocked"
         chase_state["target"] = "player"
         chase_state["blocked_at"] = current_location
         chase_state["last_target_location"] = current_location
+        chase_state["same_location_rounds"] = 0
         self._sync_influence_dimensions(state)
         return {
             "success": True,
@@ -975,6 +1230,8 @@ class SessionManager:
         if chase_state.get("status") == "blocked":
             chase_state["status"] = "pursuing"
             chase_state["target"] = new_target
+            chase_state["activation_round"] = None
+            chase_state["same_location_rounds"] = 0
             chase_state.pop("blocked_at", None)
 
     def has_butler_living_room_warning(self, session_id: str) -> bool:
@@ -1003,6 +1260,8 @@ class SessionManager:
         chase_state["target"] = None
         chase_state["activation_round"] = None
         chase_state["last_target_location"] = state.get("current_location")
+        chase_state["same_location_rounds"] = 0
+        chase_state["blocked_at"] = None
 
     def trigger_butler_living_room_warning(self, session_id: str, reason: str) -> Dict[str, Any]:
         state = self.sessions.get(session_id)
@@ -1122,6 +1381,7 @@ class SessionManager:
                         "activation_round": None,
                         "last_target_location": current_location,
                         "same_location_rounds": 0,
+                        "blocked_at": None,
                     },
                 }
             },
@@ -1524,9 +1784,10 @@ class SessionManager:
             chase_state["same_location_rounds"] = 0
             return False
 
-        if state.get("current_location") == butler_state.get("location"):
+        contact_location = self._get_butler_contact_location_from_state(state)
+        if contact_location and state.get("current_location") == contact_location:
             chase_state["same_location_rounds"] = int(chase_state.get("same_location_rounds", 0) or 0) + 1
-            if chase_state["same_location_rounds"] >= 3:
+            if chase_state["same_location_rounds"] >= 2:
                 self._capture_player_by_butler_state(state, "stayed_with_butler_too_long")
                 return True
             return False
@@ -1546,6 +1807,7 @@ class SessionManager:
             chase_state["target"] = None
             chase_state["activation_round"] = None
             chase_state["last_target_location"] = None
+            chase_state["blocked_at"] = None
             return {}
 
         # 主要追逐威胁被门阻隔时不移动
@@ -1553,6 +1815,7 @@ class SessionManager:
             return {}
 
         chase_state["status"] = "pursuing"
+        chase_state["blocked_at"] = None
         target = chase_state.get("target", "player")
 
         current_round = int(state.get("round_count", 0) or 0)
@@ -1581,9 +1844,17 @@ class SessionManager:
         dest_location_data = module_data.get("locations", {}).get(destination, {})
         if dest_location_data.get("has_door") and destination != previous_butler_location:
             # 目标进入了有门的房间，主要追逐威胁被阻隔在门外
+            butler_state["location"] = destination
             chase_state["status"] = "blocked"
             chase_state["blocked_at"] = destination
             chase_state["last_target_location"] = target_location
+            pursuer_name = self._get_primary_pursuer_name_from_state(state)
+            if pursuer_name and destination != previous_butler_location:
+                return {
+                    "npc_locations": {
+                        pursuer_name: destination
+                    }
+                }
             return {}
 
         butler_state["location"] = destination
@@ -1991,6 +2262,8 @@ class SessionManager:
                 continue
             if not self._is_location_visible(session_id, neighbor_key):
                 continue
+            if self._classify_butler_door_transition(state, current, neighbor_key):
+                continue
             available_moves.add(neighbor_key)
 
         return available_moves
@@ -2074,6 +2347,29 @@ class SessionManager:
         if target_key == current:
             return {"success": True, "message": "已在该位置"}
 
+        door_transition = self._classify_butler_door_transition(state, current, target_key)
+        if door_transition == "exit_guarded_room":
+            self.capture_player_by_butler(session_id, "opened_guarded_door")
+            return {
+                "success": False,
+                "caught": True,
+                "message": self._get_primary_pursuer_message_from_state(
+                    state,
+                    "opened_guarded_door",
+                    "你一推开门，那道早已守在门外的视线立刻迎了上来。",
+                ),
+            }
+        if door_transition == "enter_guarded_room":
+            return {
+                "success": False,
+                "warning_blocked": True,
+                "message": self._get_primary_pursuer_message_from_state(
+                    state,
+                    "guarded_room_blocked",
+                    "{entity_name}还守在门后。现在开门，只会把自己送进它的视线里。",
+                ),
+            }
+
         # BFS检查可达性
         available_moves = self._get_available_moves(session_id)
         if target_key not in available_moves:
@@ -2121,8 +2417,8 @@ class SessionManager:
         dodge_result = None
         movement_note = None
         if self.is_butler_active(session_id):
-            butler_location = self.get_butler_location(session_id)
-            needs_dodge = current == butler_location or target_key == butler_location
+            butler_location = self._get_butler_contact_location_from_state(state)
+            needs_dodge = bool(butler_location) and (current == butler_location or target_key == butler_location)
             if needs_dodge:
                 dodge_result = self._roll_skill_check(state.get("player", {}), "闪避", "普通")
                 if not dodge_result.get("success"):

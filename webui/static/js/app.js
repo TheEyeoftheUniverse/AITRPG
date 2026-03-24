@@ -821,11 +821,14 @@ function addMessage(role, content, animate = true) {
     if (!animate) msg.style.animation = "none";
 
     const avatarIcon = role === "user" ? "mdi-account" : "mdi-robot";
+    const bubbleContent = role === "assistant"
+        ? renderWhitelistedInlineHtml(content)
+        : escapeHtml(content);
     msg.innerHTML = `
         <div class="message-avatar">
             <span class="mdi ${avatarIcon}"></span>
         </div>
-        <div class="message-bubble">${escapeHtml(content)}</div>
+        <div class="message-bubble">${bubbleContent}</div>
     `;
     container.appendChild(msg);
     scrollToBottom();
@@ -1134,6 +1137,14 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function renderWhitelistedInlineHtml(text) {
+    const escaped = escapeHtml(text);
+    return escaped.replace(
+        /&lt;(\/?)(b|strong|i|em|s|del)&gt;/gi,
+        (_, closingSlash, tagName) => `<${closingSlash}${String(tagName || "").toLowerCase()}>`
+    );
+}
+
 // ─── 演出效果系统 ───
 
 function theatricalSleep(ms) {
@@ -1222,7 +1233,7 @@ async function effectSystemEcho(content) {
     const container = document.getElementById("chat-messages");
     const msg = document.createElement("div");
     msg.className = "message system-echo";
-    msg.innerHTML = `<div class="system-echo-bubble">${escapeHtml(content)}</div>`;
+    msg.innerHTML = `<div class="system-echo-bubble">${renderWhitelistedInlineHtml(content)}</div>`;
     container.appendChild(msg);
     scrollToBottom();
     await theatricalSleep(300);

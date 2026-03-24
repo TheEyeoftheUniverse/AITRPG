@@ -468,10 +468,15 @@ def build_runtime_location_context(
     if isinstance(chase_state, dict) and chase_state.get("active"):
         current_loc = current_location
         pursuer_location = str((pursuer_state or {}).get("location") or "").strip()
-        blocked_at = str(chase_state.get("blocked_at") or "").strip()
+        status = str(chase_state.get("status") or "idle")
+        blocked_at = ""
+        contact_location = pursuer_location
+        if status == "blocked":
+            blocked_at = str(chase_state.get("blocked_at") or pursuer_location or "").strip()
+            contact_location = ""
         relation = "unknown"
         if pursuer_location and current_loc:
-            if pursuer_location == current_loc:
+            if contact_location and contact_location == current_loc:
                 relation = "same_room"
             elif blocked_at and blocked_at == current_loc:
                 relation = "blocked_outside_current_room"
@@ -479,10 +484,12 @@ def build_runtime_location_context(
                 relation = "separate_rooms"
         chase_context = {
             "active": True,
-            "status": str(chase_state.get("status") or "idle"),
+            "status": status,
             "target": chase_state.get("target"),
             "entity_name": primary_pursuer_name or None,
             "entity_location": pursuer_location or None,
+            "contact_location": contact_location or None,
+            "guard_room": blocked_at or None,
             "player_location": current_loc,
             "blocked_at": blocked_at or None,
             "player_relation": relation,
