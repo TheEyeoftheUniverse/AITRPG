@@ -6,6 +6,7 @@ from ..game_state.location_context import (
     get_cross_wall_npcs,
     get_module_npcs,
     get_module_threat_entities,
+    get_primary_pursuer_name,
     is_threat_entity,
 )
 from .usage_metrics import extract_usage_metrics
@@ -151,13 +152,20 @@ class RhythmAI:
         prompt += (
             "\n\n# Additional tasks\n"
             "5. If the current scene has an interactable NPC, also output npc_action_guide for the narrative layer.\n"
-            "6. npc_action_guide must only use known NPC data and runtime state.\n\n"
+            "6. npc_action_guide must only use known NPC data and runtime state.\n"
+            "7. Treat npc_action_guide as a hard dialogue contract. The narrative layer should not decide secrets on its own.\n\n"
             "# npc_action_guide schema\n"
             "{\n"
             '  "focus_npc": "npc name or null",\n'
             '  "attitude": "current attitude toward the player",\n'
+            '  "dialogue_act": "acknowledge/probe/reveal/warn/propose_plan/confirm_help/refuse/listen",\n'
             '  "response_strategy": "how the NPC should respond this turn",\n'
             '  "next_line_goal": "what the NPC wants to confirm or push this turn",\n'
+            '  "voice_style": "brief note on tone and phrasing",\n'
+            '  "must_acknowledge": ["what in the latest player input must be directly reacted to"],\n'
+            '  "allowed_reveals": [{"key": "info key", "text": "approved text that may be revealed this turn"}],\n'
+            '  "forbidden_reveals": ["info keys that must stay hidden this turn"],\n'
+            '  "knowledge_boundary": "what the NPC must not invent or overstate",\n'
             '  "revealable_info": ["keys that may be naturally revealed this turn"],\n'
             '  "should_open_door": false\n'
             "}\n\n"
@@ -194,6 +202,11 @@ class RhythmAI:
             "# 隔墙交流补充规则\n"
             "- 如果NPC上下文中包含 interaction_mode=cross_wall_voice_only，说明该NPC通过墙壁交流，只能听到声音，不能看到对方。\n"
             "- 隔墙交流时，npc_action_guide的response_strategy应体现隔墙的物理隔断感。\n"
+            "- allowed_reveals 是文案层本轮唯一允许说出的NPC情报。没有列入 allowed_reveals 的信息，不得让文案层自行补出。\n"
+            "- forbidden_reveals 用于明确本轮绝对不能泄露的 key_info 或计划信息。\n"
+            "- 当 dialogue_act 为 probe 时，只保留一个最关键的问题，不要连续盘问。\n"
+            "- 当 dialogue_act 为 reveal、warn、propose_plan 或 confirm_help 时，allowed_reveals 应给出可以直接说出的批准文本。\n"
+            "- must_acknowledge 应优先覆盖玩家本轮刚刚提供的关键信息、善意、求助、证据或对主要威胁实体位置的报告。\n"
             "- 如果NPC记忆中已有answered_questions或player_facts记录了某信息，不要在next_line_goal中重复追问这些已回答的问题。\n"
             "- 重复追问已回答信息是BUG。NPC应根据记忆推进对话，而非循环问同样的问题。\n"
             "- NPC对话节奏原则：NPC不是审讯者。当玩家展示善意（分享信息、表达关心、提供帮助）时，NPC应该给予正向反馈（感谢、放松语气、分享一点自己的信息），而不是立刻抛出下一个质疑。next_line_goal应该是自然的对话推进，不是连续追问清单。\n"
@@ -210,10 +223,10 @@ class RhythmAI:
         return prompt
 
     def _should_suppress_npc_dialogue(self, npc_name: str, npc_data: dict) -> bool:
-        if npc_name == "管家":
-            return True
         if not isinstance(npc_data, dict):
             return False
+        if is_threat_entity(npc_name, npc_data):
+            return True
         if npc_data.get("is_hostile") and not npc_data.get("dialogue_guide") and not npc_data.get("key_info"):
             return True
         return False
@@ -248,17 +261,22 @@ class RhythmAI:
         trust_gates = npc_data.get("trust_gates", {})
         high_min = float(trust_gates.get("high", {}).get("min", npc_data.get("trust_threshold", 0.5)))
         medium_min = float(trust_gates.get("medium", {}).get("min", 0.2))
+        npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
+        normalized_player_facts = self._normalize_player_facts(npc_memory.get("player_facts", {}))
+        evidence_seen = npc_memory.get("evidence_seen", []) if isinstance(npc_memory.get("evidence_seen"), list) else []
+        promises = npc_memory.get("promises", []) if isinstance(npc_memory.get("promises"), list) else []
+        topics_discussed = npc_memory.get("topics_discussed", []) if isinstance(npc_memory.get("topics_discussed"), list) else []
+        known_fact_keys = set(normalized_player_facts.keys())
 
         # 隔墙交流首次接触检查
         is_cross_wall = bool(npc_data.get("cross_wall"))
         if is_cross_wall:
-            npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
             visited = (game_state or {}).get("visited_locations", []) if game_state else []
             npc_from_room = npc_data.get("cross_wall_from_room", "")
             has_prior_contact = bool(
-                npc_memory.get("player_facts")
-                or npc_memory.get("topics_discussed")
-                or npc_memory.get("evidence_seen")
+                normalized_player_facts
+                or topics_discussed
+                or evidence_seen
                 or trust_level > 0
                 or npc_from_room in visited
             )
@@ -268,8 +286,14 @@ class RhythmAI:
                     "cross_wall_heard_only": True,
                     "cross_wall": True,
                     "attitude": attitude,
+                    "dialogue_act": "listen",
                     "response_strategy": "",
-                    "next_line_goal": "",
+                    "next_line_goal": "先判断门外的人是否可信，不主动泄露信息",
+                    "voice_style": self._build_npc_voice_style(npc_data, trust_level, medium_min, high_min, True),
+                    "must_acknowledge": [],
+                    "allowed_reveals": [],
+                    "forbidden_reveals": self._build_forbidden_reveals(npc_data, []),
+                    "knowledge_boundary": self._build_knowledge_boundary(npc_data, [], True),
                     "revealable_info": [],
                     "should_open_door": False,
                 }
@@ -281,11 +305,17 @@ class RhythmAI:
         )
         key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
         lower_input = str(player_input or "").lower()
+        module_data = (game_state or {}).get("module_data", {}) if isinstance(game_state, dict) else {}
+        primary_threat_name = get_primary_pursuer_name(module_data)
 
         # 紧急协助阈值（低于正式入队阈值）
         emergency_threshold = float(npc_data.get("emergency_help_threshold", high_min))
-        help_keywords = ["帮", "救", "引开", "help", "bait", "distract", "管家", "堵"]
+        help_keywords = ["帮", "救", "引开", "help", "bait", "distract", "堵"]
+        if primary_threat_name:
+            help_keywords.append(primary_threat_name.lower())
+            help_keywords.append(primary_threat_name)
         is_requesting_help = any(kw in lower_input for kw in help_keywords)
+        must_acknowledge = self._build_acknowledgement_targets(player_input, threat_name=primary_threat_name)
 
         if trust_level >= high_min:
             response_strategy = (
@@ -300,7 +330,7 @@ class RhythmAI:
             # 紧急协助：信任达到紧急阈值且玩家在求助
             response_strategy = (
                 dialogue_guide.get("emergency_help")
-                or "在确认管家位置安全后，愿意执行一次短时协助动作"
+                or "在确认主要威胁实体位置安全后，愿意执行一次短时协助动作"
             )
             revealable_info = list(key_info.keys())[:1]
             should_open_door = False
@@ -321,11 +351,42 @@ class RhythmAI:
             revealable_info = []
             should_open_door = False
 
+        allowed_reveals = self._build_allowed_reveals(npc_data, revealable_info)
+        forbidden_reveals = self._build_forbidden_reveals(npc_data, allowed_reveals)
+        next_line_goal = self._build_next_line_goal(
+            known_fact_keys=known_fact_keys,
+            evidence_seen=evidence_seen,
+            promises=promises,
+            topics_discussed=topics_discussed,
+            allowed_reveals=allowed_reveals,
+            trust_level=trust_level,
+            medium_min=medium_min,
+            high_min=high_min,
+            emergency_threshold=emergency_threshold,
+            is_requesting_help=is_requesting_help,
+        )
+        dialogue_act = self._build_dialogue_act(
+            trust_level=trust_level,
+            medium_min=medium_min,
+            high_min=high_min,
+            emergency_threshold=emergency_threshold,
+            is_requesting_help=is_requesting_help,
+            allowed_reveals=allowed_reveals,
+            must_acknowledge=must_acknowledge,
+            known_fact_keys=known_fact_keys,
+        )
+
         guide = {
             "focus_npc": focused_npc,
             "attitude": attitude,
+            "dialogue_act": dialogue_act,
             "response_strategy": response_strategy,
-            "next_line_goal": "",
+            "next_line_goal": next_line_goal,
+            "voice_style": self._build_npc_voice_style(npc_data, trust_level, medium_min, high_min, is_cross_wall),
+            "must_acknowledge": must_acknowledge,
+            "allowed_reveals": allowed_reveals,
+            "forbidden_reveals": forbidden_reveals,
+            "knowledge_boundary": self._build_knowledge_boundary(npc_data, allowed_reveals, is_cross_wall),
             "revealable_info": revealable_info,
             "should_open_door": should_open_door,
         }
@@ -375,9 +436,16 @@ class RhythmAI:
         cf = normalized.get("continuity_flag")
         normalized["continuity_flag"] = str(cf).strip() if cf else None
 
+        npc_context = normalized.get("npc_context", {})
+        base_npc_guide = base_result.get("npc_action_guide", {})
+        normalized["npc_action_guide"] = self._sanitize_npc_action_guide(
+            normalized.get("npc_action_guide", {}),
+            npc_context,
+            base_npc_guide,
+        )
+
         npc_guide = normalized.get("npc_action_guide", {})
         focus_npc = npc_guide.get("focus_npc") if isinstance(npc_guide, dict) else None
-        npc_context = normalized.get("npc_context", {})
         if focus_npc and self._should_suppress_npc_dialogue(focus_npc, npc_context.get(focus_npc, {})):
             normalized["npc_action_guide"] = {}
 
@@ -416,12 +484,17 @@ class RhythmAI:
                 "Current threat entity context:",
                 json.dumps(threat_entity_context, ensure_ascii=False, indent=2),
             ])
-        butler_chase = location_context.get("butler_chase") if isinstance(location_context, dict) else None
-        if butler_chase:
+        threat_chase = (
+            location_context.get("threat_chase")
+            or location_context.get("butler_chase")
+            if isinstance(location_context, dict)
+            else None
+        )
+        if threat_chase:
             parts.extend([
                 "",
-                "Active butler chase context:",
-                json.dumps(butler_chase, ensure_ascii=False, indent=2),
+                "Active primary threat chase context:",
+                json.dumps(threat_chase, ensure_ascii=False, indent=2),
             ])
         adjacent_context = build_adjacent_locations_context(game_state, module_data, current_location)
         if adjacent_context:
@@ -571,3 +644,328 @@ class RhythmAI:
             else:
                 merged[key] = value
         return merged
+
+    def _normalize_player_fact_key(self, key: str) -> str:
+        normalized = str(key or "").strip().lower()
+        mapping = {
+            "name": "name",
+            "identity": "name",
+            "name_or_identity": "name",
+            "player_name": "name",
+            "who": "name",
+            "origin": "origin",
+            "origin_or_reason": "origin",
+            "reason": "origin",
+            "where_from": "origin",
+            "arrival_reason": "origin",
+            "goal": "goal",
+            "current_goal": "goal",
+            "purpose": "goal",
+            "plan": "goal",
+        }
+        return mapping.get(normalized, str(key or "").strip())
+
+    def _normalize_player_facts(self, player_facts: dict) -> dict:
+        if not isinstance(player_facts, dict):
+            return {}
+
+        normalized = {}
+        for raw_key, raw_value in player_facts.items():
+            key = self._normalize_player_fact_key(raw_key)
+            if not key:
+                continue
+            if isinstance(raw_value, dict):
+                value = dict(raw_value)
+            elif raw_value:
+                value = {"value": str(raw_value).strip()}
+            else:
+                continue
+            existing = normalized.get(key)
+            if not existing or str(value.get("value") or "").strip():
+                normalized[key] = value
+        return normalized
+
+    def _build_allowed_reveals(self, npc_data: dict, revealable_keys: list) -> list:
+        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
+        allowed = []
+        seen = set()
+        for key in revealable_keys or []:
+            if not isinstance(key, str) or key in seen or key not in key_info:
+                continue
+            text = str(key_info.get(key) or "").strip()
+            if not text:
+                continue
+            allowed.append({
+                "key": key,
+                "text": text,
+            })
+            seen.add(key)
+        return allowed
+
+    def _build_forbidden_reveals(self, npc_data: dict, allowed_reveals: list) -> list:
+        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
+        allowed_keys = {
+            str(item.get("key") or "").strip()
+            for item in allowed_reveals or []
+            if isinstance(item, dict)
+        }
+        return [
+            key
+            for key in key_info.keys()
+            if isinstance(key, str) and key and key not in allowed_keys
+        ]
+
+    def _build_acknowledgement_targets(self, player_input: str, threat_name: str = "") -> list:
+        text = str(player_input or "").strip()
+        lowered = text.lower()
+        lowered_threat_name = str(threat_name or "").strip().lower()
+        if not text:
+            return []
+
+        targets = []
+
+        if any(marker in text for marker in ["我是", "我叫", "叫我", "身份"]) or any(
+            marker in lowered for marker in ["i am", "i'm", "my name is"]
+        ):
+            targets.append("玩家主动说明了自己的身份或名字")
+        if any(marker in text for marker in ["怎么来", "来到这里", "为什么在", "醒来", "被困", "进来"]):
+            targets.append("玩家解释了自己为何会出现在这里")
+        if any(marker in text for marker in ["想", "要", "打算", "离开", "合作", "帮", "救"]):
+            targets.append("玩家说明了自己的目的或请求")
+        if any(marker in text for marker in ["别怕", "别担心", "我不会伤害你", "没事", "你还好吗", "我想帮你"]) or any(
+            marker in lowered for marker in ["trust me", "i can help", "are you okay"]
+        ):
+            targets.append("玩家表达了关心、安抚或善意")
+        threat_markers = ["它在", "门口", "客厅", "楼下", "看不见", "视线"]
+        if threat_name:
+            threat_markers.append(threat_name)
+        if any(marker in text for marker in threat_markers) or (lowered_threat_name and lowered_threat_name in lowered):
+            targets.append("玩家提到了主要威胁实体的位置、规律或威胁")
+        if any(marker in text for marker in ["给你看", "我找到", "房产广告", "笔记", "蓝图", "证据"]):
+            targets.append("玩家拿出了线索或证据")
+
+        return targets[:3]
+
+    def _build_next_line_goal(
+        self,
+        known_fact_keys: set,
+        evidence_seen: list,
+        promises: list,
+        topics_discussed: list,
+        allowed_reveals: list,
+        trust_level: float,
+        medium_min: float,
+        high_min: float,
+        emergency_threshold: float,
+        is_requesting_help: bool,
+    ) -> str:
+        has_evidence = bool(evidence_seen)
+        has_goal = "goal" in known_fact_keys
+
+        if trust_level < medium_min:
+            if "name" not in known_fact_keys:
+                return "确认玩家姓名"
+            if "origin" not in known_fact_keys:
+                return "确认玩家为何会出现在这里"
+            if is_requesting_help and trust_level < emergency_threshold:
+                return "要求玩家先证明自己值得信任"
+            if not has_goal:
+                return "确认玩家现在想做什么"
+            if not has_evidence:
+                return "确认玩家是否掌握任何能证明处境的线索"
+            return "继续观察玩家是否前后矛盾，同时保持距离"
+
+        if trust_level < high_min:
+            if allowed_reveals:
+                return "先提醒最关键的风险，再看玩家是否能保持冷静"
+            if is_requesting_help:
+                return "确认玩家提出的计划是否足够安全"
+            if not has_goal:
+                return "确认玩家接下来打算怎么行动"
+            if not topics_discussed:
+                return "让玩家把最重要的信息说清楚"
+            return "回应玩家刚才提供的信息，并自然推进对话"
+
+        if is_requesting_help and trust_level >= emergency_threshold:
+            return "敲定合作或分工计划"
+        if allowed_reveals:
+            return "在分享关键信息后，把对话推进到可执行计划"
+        if promises:
+            return "确认双方接下来如何配合"
+        return "把对话推进到合作行动"
+
+    def _build_dialogue_act(
+        self,
+        trust_level: float,
+        medium_min: float,
+        high_min: float,
+        emergency_threshold: float,
+        is_requesting_help: bool,
+        allowed_reveals: list,
+        must_acknowledge: list,
+        known_fact_keys: set,
+    ) -> str:
+        if is_requesting_help and trust_level < emergency_threshold:
+            return "refuse"
+        if is_requesting_help and trust_level >= emergency_threshold:
+            return "confirm_help" if trust_level < high_min else "propose_plan"
+        if allowed_reveals and trust_level >= high_min:
+            return "propose_plan" if any("计划" in item.get("key", "") or "引开" in item.get("key", "") for item in allowed_reveals) else "reveal"
+        if allowed_reveals and trust_level >= medium_min:
+            return "warn"
+        if must_acknowledge:
+            return "acknowledge"
+        if trust_level < medium_min:
+            return "probe"
+        if trust_level < high_min and "goal" not in known_fact_keys:
+            return "probe"
+        return "listen"
+
+    def _build_npc_voice_style(
+        self,
+        npc_data: dict,
+        trust_level: float,
+        medium_min: float,
+        high_min: float,
+        is_cross_wall: bool,
+    ) -> str:
+        if trust_level >= high_min:
+            base = "冷静直接，但明显放缓语气，开始表现合作意愿"
+        elif trust_level >= medium_min:
+            base = "理性直接，不再施压，给玩家说话空间"
+        else:
+            base = "短句、警惕、保持距离，不过度追问"
+
+        personality = str(npc_data.get("personality") or "").strip()
+        if personality:
+            base += f"；保留{self._trim_text(personality, 36)}的说话感觉"
+        if is_cross_wall:
+            base += "；隔墙说话，像从门后或墙后传来"
+        return base
+
+    def _build_knowledge_boundary(self, npc_data: dict, allowed_reveals: list, is_cross_wall: bool) -> str:
+        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
+        allowed_keys = [
+            str(item.get("key") or "").strip()
+            for item in allowed_reveals or []
+            if isinstance(item, dict) and str(item.get("key") or "").strip()
+        ]
+        hidden_keys = [key for key in key_info.keys() if key not in allowed_keys]
+
+        parts = ["只按该NPC已知观察、当前状态和运行时记忆回应"]
+        if is_cross_wall:
+            parts.append("默认按隔墙交流处理，不能像面对面那样描述动作或视线")
+        if allowed_keys:
+            parts.append(f"本轮只允许说出：{'、'.join(allowed_keys)}")
+        if hidden_keys:
+            parts.append(f"不得主动泄露：{'、'.join(hidden_keys)}")
+        parts.append("不得替玩家确认未验证事实，也不得编造模组外情报")
+        return "；".join(parts) + "。"
+
+    def _sanitize_npc_action_guide(self, npc_guide: dict, npc_context: dict, base_guide: dict) -> dict:
+        if not isinstance(base_guide, dict) or not base_guide.get("focus_npc"):
+            return {}
+        if not isinstance(npc_guide, dict):
+            npc_guide = {}
+
+        focus_npc = str(npc_guide.get("focus_npc") or base_guide.get("focus_npc") or "").strip()
+        if not focus_npc or focus_npc not in npc_context:
+            return dict(base_guide)
+
+        npc_data = npc_context.get(focus_npc, {})
+        key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
+        base_allowed = [
+            item for item in base_guide.get("allowed_reveals", [])
+            if isinstance(item, dict) and str(item.get("key") or "").strip() in key_info
+        ]
+        base_allowed_keys = {
+            str(item.get("key") or "").strip()
+            for item in base_allowed
+        }
+
+        sanitized_allowed = []
+        seen_allowed = set()
+        raw_allowed = npc_guide.get("allowed_reveals", [])
+        if isinstance(raw_allowed, list):
+            for item in raw_allowed:
+                if isinstance(item, dict):
+                    key = str(item.get("key") or "").strip()
+                    text = str(item.get("text") or "").strip()
+                elif isinstance(item, str):
+                    key = item.strip()
+                    text = ""
+                else:
+                    continue
+                if not key or key in seen_allowed or key not in base_allowed_keys or key not in key_info:
+                    continue
+                sanitized_allowed.append({
+                    "key": key,
+                    "text": text or str(key_info.get(key) or "").strip(),
+                })
+                seen_allowed.add(key)
+        if not sanitized_allowed:
+            sanitized_allowed = [dict(item) for item in base_allowed]
+
+        allowed_keys = {
+            str(item.get("key") or "").strip()
+            for item in sanitized_allowed
+            if isinstance(item, dict)
+        }
+
+        raw_forbidden = npc_guide.get("forbidden_reveals", [])
+        sanitized_forbidden = []
+        if isinstance(raw_forbidden, list):
+            for item in raw_forbidden:
+                key = str(item or "").strip()
+                if key and key in key_info and key not in allowed_keys and key not in sanitized_forbidden:
+                    sanitized_forbidden.append(key)
+        for key in key_info.keys():
+            if key not in allowed_keys and key not in sanitized_forbidden:
+                sanitized_forbidden.append(key)
+
+        sanitized = {
+            "focus_npc": focus_npc,
+            "attitude": str(npc_guide.get("attitude") or base_guide.get("attitude") or "").strip(),
+            "dialogue_act": str(npc_guide.get("dialogue_act") or base_guide.get("dialogue_act") or "").strip(),
+            "response_strategy": str(npc_guide.get("response_strategy") or base_guide.get("response_strategy") or "").strip(),
+            "next_line_goal": str(npc_guide.get("next_line_goal") or base_guide.get("next_line_goal") or "").strip(),
+            "voice_style": str(npc_guide.get("voice_style") or base_guide.get("voice_style") or "").strip(),
+            "must_acknowledge": self._sanitize_string_list(
+                npc_guide.get("must_acknowledge"),
+                fallback=base_guide.get("must_acknowledge", []),
+            ),
+            "allowed_reveals": sanitized_allowed,
+            "forbidden_reveals": sanitized_forbidden,
+            "knowledge_boundary": str(
+                npc_guide.get("knowledge_boundary") or base_guide.get("knowledge_boundary") or ""
+            ).strip(),
+            "revealable_info": [
+                str(item or "").strip()
+                for item in (npc_guide.get("revealable_info") if isinstance(npc_guide.get("revealable_info"), list) else base_guide.get("revealable_info", []))
+                if str(item or "").strip()
+            ],
+            "should_open_door": bool(npc_guide.get("should_open_door", base_guide.get("should_open_door", False))),
+        }
+
+        if bool(npc_guide.get("cross_wall") or base_guide.get("cross_wall")):
+            sanitized["cross_wall"] = True
+        if bool(npc_guide.get("cross_wall_heard_only") or base_guide.get("cross_wall_heard_only")):
+            sanitized["cross_wall_heard_only"] = True
+        return sanitized
+
+    def _sanitize_string_list(self, values, fallback=None, limit: int = 3) -> list:
+        source = values if isinstance(values, list) else fallback if isinstance(fallback, list) else []
+        result = []
+        for item in source:
+            text = str(item or "").strip()
+            if text and text not in result:
+                result.append(text)
+            if len(result) >= limit:
+                break
+        return result
+
+    def _trim_text(self, value: str, limit: int) -> str:
+        text = str(value or "").strip()
+        if len(text) <= limit:
+            return text
+        return text[: max(0, limit - 3)] + "..."

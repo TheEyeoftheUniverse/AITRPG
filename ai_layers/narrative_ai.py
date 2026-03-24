@@ -291,7 +291,11 @@ class NarrativeAI:
         raw_npc_action_guide = rhythm_result.get("npc_action_guide", {})
         dialogue_npcs, _, npc_action_guide = self._sanitize_npc_prompt_inputs(raw_npc_context, raw_npc_action_guide)
         threat_entities = list(location_context.get("present_threats", []) or [])
-        butler_chase = rhythm_result.get("butler_chase", {}) if isinstance(rhythm_result.get("butler_chase"), dict) else {}
+        butler_chase = {}
+        if isinstance(rhythm_result.get("threat_chase"), dict):
+            butler_chase = rhythm_result.get("threat_chase", {})
+        elif isinstance(rhythm_result.get("butler_chase"), dict):
+            butler_chase = rhythm_result.get("butler_chase", {})
         atmosphere_guide = rhythm_result.get("atmosphere_guide", {})
         feasible = rhythm_result.get("feasible", True)
         hint = rhythm_result.get("hint")
@@ -305,6 +309,7 @@ class NarrativeAI:
         compact_location = self._compact_location_context(location_context)
         compact_object = self._compact_object_context(object_context)
         compact_npc = self._compact_npc_context(dialogue_npcs, npc_action_guide)
+        npc_dialogue_contract = self._build_npc_dialogue_contract(dialogue_npcs, npc_action_guide)
         compact_threats = self._compact_threat_entity_context(threat_entity_context)
         compact_check = self._compact_check_result(rule_result)
         has_current_scene_npc = bool(compact_npc)
@@ -342,6 +347,7 @@ class NarrativeAI:
             f"- npc_context: {json.dumps(compact_npc, ensure_ascii=False) if compact_npc else 'none'}\n"
             f"- threat_entity_context: {json.dumps(compact_threats, ensure_ascii=False) if compact_threats else 'none'}\n"
             f"- npc_action_guide: {json.dumps(npc_action_guide, ensure_ascii=False) if npc_action_guide else 'none'}\n"
+            f"- npc_dialogue_contract: {json.dumps(npc_dialogue_contract, ensure_ascii=False) if npc_dialogue_contract else 'none'}\n"
             f"- dialogue_memory: {json.dumps(dialogue_memory, ensure_ascii=False)}\n"
             f"- atmosphere_guide: {json.dumps(atmosphere_guide, ensure_ascii=False)}"
         )
@@ -361,14 +367,15 @@ class NarrativeAI:
             compact_chase = {
                 "active": butler_chase.get("active"),
                 "status": butler_chase.get("status"),
-                "butler_location": butler_chase.get("butler_location"),
+                "entity_name": butler_chase.get("entity_name"),
+                "entity_location": butler_chase.get("entity_location") or butler_chase.get("butler_location"),
                 "player_location": butler_chase.get("player_location"),
                 "blocked_at": butler_chase.get("blocked_at"),
                 "last_target_location": butler_chase.get("last_target_location"),
                 "same_location_rounds": butler_chase.get("same_location_rounds"),
                 "player_relation": butler_chase.get("player_relation"),
             }
-            rhythm_block += f"\n- butler_chase: {json.dumps(compact_chase, ensure_ascii=False)}"
+            rhythm_block += f"\n- threat_chase: {json.dumps(compact_chase, ensure_ascii=False)}"
 
         if not feasible and hint:
             rhythm_block += f"\n- blocked_reason: {hint}"
@@ -394,9 +401,16 @@ class NarrativeAI:
             "- Respond to the player's current words, not only to the room description.\n"
             "- Treat the recent dialogue transcript as the authoritative short-term memory for what was just asked and answered.\n"
             "- Treat dialogue_memory as already established facts for this conversation unless the player explicitly changes their statement.\n"
+            "- When npc_dialogue_contract exists, it is the highest-priority authority for what the NPC knows, how the NPC speaks, and what the NPC may reveal this turn.\n"
+            "- Treat npc_action_guide and npc_dialogue_contract as stronger than recent_dialogue if they conflict on reveal limits or NPC intent.\n"
             "- If the player already answered a question in the recent dialogue transcript, continue from that answer instead of asking the exact same question again.\n"
             "- If the latest player_input is an answer to the NPC's previous question, acknowledge that answer and ask a different follow-up or provide a new reaction.\n"
             "- If npc_action_guide exists, use it to decide how the NPC replies this turn.\n"
+            "- Directly react to npc_dialogue_contract.dialogue_plan.must_acknowledge before changing topic.\n"
+            "- Shape the reply according to npc_dialogue_contract.dialogue_plan.dialogue_act.\n"
+            "- If npc_dialogue_contract.allowed_reveals is non-empty, only those approved texts may be stated directly as NPC knowledge this turn.\n"
+            "- Never reveal items listed in npc_dialogue_contract.forbidden_reveals, even if they appear elsewhere in npc_context.\n"
+            "- Do not invent new NPC secrets, plans, deductions, or certainty beyond npc_dialogue_contract.knowledge_boundary.\n"
             "- When the player is clearly talking to an NPC, move the dialogue forward instead of restating the same atmosphere.\n"
         )
         if rhythm_result.get("arrival_mode"):
@@ -421,22 +435,23 @@ class NarrativeAI:
             )
         if butler_chase.get("active") and butler_chase.get("status") != "blocked":
             relation = butler_chase.get("player_relation", "separate_rooms")
+            threat_label = str(butler_chase.get("entity_name") or "the primary threat entity").strip()
             prompt += (
-                "- BUTLER CHASE IS ACTIVE. The butler is pursuing the player. This turn MUST convey ongoing chase tension.\n"
+                f"- PRIMARY THREAT CHASE IS ACTIVE. {threat_label} is pursuing the player. This turn MUST convey ongoing chase tension.\n"
                 "- Do NOT write this as a calm room introduction. The threat has not ended.\n"
             )
             if relation == "same_room":
-                prompt += "- The butler is in the SAME ROOM. Write direct, immediate physical threat and pressure.\n"
+                prompt += "- The primary threat is in the SAME ROOM. Write direct, immediate physical threat and pressure.\n"
             elif relation == "separate_rooms":
                 prompt += (
-                    "- The butler is in a DIFFERENT ROOM but closing in. Write approaching footsteps, distant breathing, "
+                    "- The primary threat is in a DIFFERENT ROOM but closing in. Write approaching footsteps, distant breathing, "
                     "the sense of being hunted. The player just escaped but the pursuit continues.\n"
                 )
             elif relation == "blocked_outside_current_room":
-                prompt += "- The butler is BLOCKED outside the current room. Write door-pressure, waiting presence, muffled sounds.\n"
+                prompt += "- The primary threat is BLOCKED outside the current room. Write door-pressure, waiting presence, muffled sounds.\n"
         elif butler_chase.get("active") and butler_chase.get("status") == "blocked":
             prompt += (
-                "- The butler chase is active but the butler is currently blocked by a door.\n"
+                "- The primary threat chase is active but the threat is currently blocked by a door.\n"
                 "- Pure movement can use normal room descriptions, but the overall atmosphere should still feel uneasy.\n"
             )
         return prompt
@@ -456,6 +471,12 @@ class NarrativeAI:
         raw_npc_action_guide = rhythm_result.get("npc_action_guide", {})
         dialogue_npcs, _, npc_action_guide = self._sanitize_npc_prompt_inputs(raw_npc_context, raw_npc_action_guide)
         threat_entities = list((rhythm_result.get("location_context", {}) or {}).get("present_threats", []) or [])
+        npc_dialogue_contract = self._build_npc_dialogue_contract(dialogue_npcs, npc_action_guide)
+        butler_chase = {}
+        if isinstance(rhythm_result.get("threat_chase"), dict):
+            butler_chase = rhythm_result.get("threat_chase", {})
+        elif isinstance(rhythm_result.get("butler_chase"), dict):
+            butler_chase = rhythm_result.get("butler_chase", {})
         compact_payload = {
             "player_input": self._trim_text(player_input, 120),
             "action": normalized_action,
@@ -467,6 +488,7 @@ class NarrativeAI:
             "npc": self._compact_npc_context(dialogue_npcs, npc_action_guide),
             "threat_entity_context": self._compact_threat_entity_context(rhythm_result.get("threat_entity_context")),
             "npc_action_guide": npc_action_guide,
+            "npc_dialogue_contract": npc_dialogue_contract,
             "threat_entities": threat_entities,
             "recent_dialogue": self._build_recent_dialogue_messages(history),
             "dialogue_memory": self._build_dialogue_memory(
@@ -477,12 +499,12 @@ class NarrativeAI:
             "current_scene_has_npc": bool(dialogue_npcs),
             "arrival_mode": bool(rhythm_result.get("arrival_mode")),
         }
-        butler_chase = rhythm_result.get("butler_chase", {}) if isinstance(rhythm_result.get("butler_chase"), dict) else {}
         if butler_chase.get("active"):
-            compact_payload["butler_chase"] = {
+            compact_payload["threat_chase"] = {
                 "active": butler_chase.get("active"),
                 "status": butler_chase.get("status"),
-                "butler_location": butler_chase.get("butler_location"),
+                "entity_name": butler_chase.get("entity_name"),
+                "entity_location": butler_chase.get("entity_location") or butler_chase.get("butler_location"),
                 "player_location": butler_chase.get("player_location"),
                 "blocked_at": butler_chase.get("blocked_at"),
                 "player_relation": butler_chase.get("player_relation"),
@@ -503,7 +525,13 @@ class NarrativeAI:
             "Keep the response concise and directly answer the player's latest words.\n"
             "Treat recent_dialogue as the authoritative short-term memory.\n"
             "Treat dialogue_memory as already established facts.\n"
+            "When npc_dialogue_contract exists, it is the highest-priority authority for NPC intent, tone, and reveal limits.\n"
             "Do not ask the exact same question again if the player already answered it in recent_dialogue.\n"
+            "React to npc_dialogue_contract.dialogue_plan.must_acknowledge before changing topic.\n"
+            "Follow npc_dialogue_contract.dialogue_plan.dialogue_act.\n"
+            "If npc_dialogue_contract.allowed_reveals is non-empty, only those approved texts may be stated directly.\n"
+            "Never reveal npc_dialogue_contract.forbidden_reveals.\n"
+            "Do not invent NPC secrets or certainty beyond npc_dialogue_contract.knowledge_boundary.\n"
             "If creative_additions is present, naturally weave the non-null entries into the narrative.\n"
             "If continuity_flag is present, treat it as the canonical explanation for the improvised details.\n\n"
             f"{json.dumps(compact_payload, ensure_ascii=False, indent=2)}"
@@ -528,16 +556,17 @@ class NarrativeAI:
                 "The player moved into the room and did not say anything.\n"
                 "If something reacts, make it a reaction to presence or footsteps, not a reply to dialogue."
             )
-        if compact_payload.get("butler_chase", {}).get("active") and compact_payload.get("butler_chase", {}).get("status") != "blocked":
-            relation = compact_payload.get("butler_chase", {}).get("player_relation", "separate_rooms")
+        if compact_payload.get("threat_chase", {}).get("active") and compact_payload.get("threat_chase", {}).get("status") != "blocked":
+            relation = compact_payload.get("threat_chase", {}).get("player_relation", "separate_rooms")
+            threat_label = str(compact_payload.get("threat_chase", {}).get("entity_name") or "the primary threat entity").strip()
             prompt += (
-                "\n\nBUTLER CHASE IS ACTIVE. The butler is pursuing the player.\n"
+                f"\n\nPRIMARY THREAT CHASE IS ACTIVE. {threat_label} is pursuing the player.\n"
                 "This turn MUST convey ongoing chase tension. Do NOT write a calm room introduction.\n"
             )
             if relation == "same_room":
-                prompt += "The butler is in the SAME ROOM — write direct physical threat.\n"
+                prompt += "The primary threat is in the SAME ROOM — write direct physical threat.\n"
             elif relation == "separate_rooms":
-                prompt += "The butler is in a DIFFERENT ROOM but closing in — write approaching footsteps, distant breathing, the sense of being hunted.\n"
+                prompt += "The primary threat is in a DIFFERENT ROOM but closing in — write approaching footsteps, distant breathing, the sense of being hunted.\n"
         return prompt
 
     def _normalize_rhythm_result(self, rhythm_result: dict) -> dict:
@@ -749,7 +778,11 @@ class NarrativeAI:
             }
 
         # 追逐中的移动反馈（优先级最高）
-        butler_chase = rhythm_result.get("butler_chase", {}) if isinstance(rhythm_result.get("butler_chase"), dict) else {}
+        butler_chase = {}
+        if isinstance(rhythm_result.get("threat_chase"), dict):
+            butler_chase = rhythm_result.get("threat_chase", {})
+        elif isinstance(rhythm_result.get("butler_chase"), dict):
+            butler_chase = rhythm_result.get("butler_chase", {})
         if butler_chase.get("active") and butler_chase.get("status") != "blocked":
             return self._build_local_chase_fallback_narrative(butler_chase, location_context, normalized_action, rhythm_result)
 
@@ -835,7 +868,8 @@ class NarrativeAI:
     def _build_local_npc_reply(self, player_input: str, npc_guide: dict, npc_context: dict) -> dict:
         focus_npc = npc_guide.get("focus_npc") if isinstance(npc_guide, dict) else None
         npc_data = npc_context.get(focus_npc, {}) if focus_npc in npc_context else {}
-        npc_name = focus_npc or "门后的女人"
+        fallback_config = npc_data.get("narrative_fallback", {}) if isinstance(npc_data.get("narrative_fallback"), dict) else {}
+        npc_name = focus_npc or self._get_nested_config(fallback_config, ("anonymous_label",), "未知来客")
 
         if self._is_nonverbal_npc(npc_name, npc_data):
             return {
@@ -846,26 +880,48 @@ class NarrativeAI:
         # 隔墙首次喊话：听见但不回应
         if npc_guide.get("cross_wall_heard_only"):
             return {
-                "narrative": "你朝隔壁墙壁喊了一声。没有人回应——但隔壁似乎有一瞬间的安静，像是有什么动静停了下来。",
-                "summary": "向隔壁喊话，无人回应",
+                "narrative": self._get_npc_fallback_text(
+                    fallback_config,
+                    ("heard_only", "narrative"),
+                    "你朝隔壁墙壁喊了一声。没有人回应——但隔壁似乎有一瞬间的安静，像是有什么动静停了下来。",
+                    npc_name=npc_name,
+                ),
+                "summary": self._get_npc_fallback_text(
+                    fallback_config,
+                    ("heard_only", "summary"),
+                    "向隔壁喊话，无人回应",
+                    npc_name=npc_name,
+                ),
             }
 
         is_cross_wall = bool(npc_guide.get("cross_wall") or npc_data.get("cross_wall"))
         attitude = str(npc_guide.get("attitude") or npc_data.get("initial_attitude") or "警惕").strip()
+        dialogue_act = str(npc_guide.get("dialogue_act") or "").strip().lower()
         response_strategy = str(npc_guide.get("response_strategy") or "").strip()
+        voice_style = str(npc_guide.get("voice_style") or "").strip()
         next_line_goal = str(npc_guide.get("next_line_goal") or "").strip()
         should_open_door = bool(npc_guide.get("should_open_door"))
+        must_acknowledge = self._sanitize_string_list(npc_guide.get("must_acknowledge"), limit=3)
         revealable_info = npc_guide.get("revealable_info", [])
         revealable_info = revealable_info if isinstance(revealable_info, list) else []
         key_info = npc_data.get("key_info", {}) if isinstance(npc_data.get("key_info"), dict) else {}
         runtime_state = npc_data.get("runtime_state", {}) if isinstance(runtime_state := npc_data.get("runtime_state"), dict) else {}
         npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
         conversation_flags = npc_memory.get("conversation_flags", {}) if isinstance(npc_memory.get("conversation_flags"), dict) else {}
-        player_facts = npc_memory.get("player_facts", {}) if isinstance(npc_memory.get("player_facts"), dict) else {}
+        player_facts = self._normalize_player_facts(npc_memory.get("player_facts", {}))
         evidence_seen = npc_memory.get("evidence_seen", []) if isinstance(npc_memory.get("evidence_seen"), list) else []
         promises = npc_memory.get("promises", []) if isinstance(npc_memory.get("promises"), list) else []
         topics_discussed = npc_memory.get("topics_discussed", []) if isinstance(npc_memory.get("topics_discussed"), list) else []
         trust_level = float(runtime_state.get("trust_level", 0.0) or 0.0)
+        allowed_reveals = self._sanitize_allowed_reveals(npc_guide.get("allowed_reveals"), limit=2)
+        if not allowed_reveals:
+            allowed_reveals = [
+                {"key": key, "text": self._trim_text(str(key_info.get(key) or ""), 140)}
+                for key in revealable_info
+                if key in key_info and str(key_info.get(key) or "").strip()
+            ][:2]
+        primary_reveal = allowed_reveals[0] if allowed_reveals else {}
+        primary_reveal_text = str(primary_reveal.get("text") or "").strip()
         has_prior_conversation = bool(
             player_facts
             or evidence_seen
@@ -887,81 +943,307 @@ class NarrativeAI:
 
         # === preface（开场描写）===
         if is_cross_wall:
-            preface = "隔壁安静了片刻。"
+            preface = self._get_npc_fallback_text(
+                fallback_config,
+                ("preface", "cross_wall"),
+                "隔壁安静了片刻。",
+                npc_name=npc_name,
+            )
         elif trust_level >= high_min:
-            preface = "门后很快传来回应。"
+            preface = self._get_npc_fallback_text(
+                fallback_config,
+                ("preface", "high_trust"),
+                "门后很快传来回应。",
+                npc_name=npc_name,
+            )
         elif has_prior_conversation:
-            preface = "门后沉默了一瞬。"
+            preface = self._get_npc_fallback_text(
+                fallback_config,
+                ("preface", "prior_conversation"),
+                "门后沉默了一瞬。",
+                npc_name=npc_name,
+            )
         else:
-            preface = "门后安静了一瞬，像是在判断你这句话值不值得相信。"
+            preface = self._get_npc_fallback_text(
+                fallback_config,
+                ("preface", "default"),
+                "门后安静了一瞬，像是在判断你这句话值不值得相信。",
+                npc_name=npc_name,
+            )
 
         # === door_line（物理状态描写）===
         if is_cross_wall:
-            door_line = "声音从墙壁另一侧传来，闷沉而真实。"
+            door_line = self._get_npc_fallback_text(
+                fallback_config,
+                ("door_line", "cross_wall"),
+                "声音从墙壁另一侧传来，闷沉而真实。",
+                npc_name=npc_name,
+            )
         elif should_open_door:
-            door_line = "随后门锁轻轻一响，门却只松开了一道极窄的缝。"
+            door_line = self._get_npc_fallback_text(
+                fallback_config,
+                ("door_line", "opening"),
+                "随后门锁轻轻一响，门却只松开了一道极窄的缝。",
+                npc_name=npc_name,
+            )
         else:
-            door_line = "门没有开，只是那道贴在门后的呼吸声变得更清晰了一些。"
+            door_line = self._get_npc_fallback_text(
+                fallback_config,
+                ("door_line", "closed"),
+                "门没有开，只是那道贴在门后的呼吸声变得更清晰了一些。",
+                npc_name=npc_name,
+            )
 
-        # === spoken_line（NPC台词）—— 按信任阶段分别生成 ===
-        info_key = next((item for item in revealable_info if item in key_info), None) if revealable_info else None
-
-        if trust_level >= high_min:
-            # 高信任：明显转暖、合作
-            if info_key:
-                clue_text = self._trim_text(str(key_info.get(info_key) or ""), 80)
-                spoken_line = f"\u201c我知道一些事。{clue_text}\u201d"
-            elif "cooperation" in next_line_goal.lower() or "合作" in next_line_goal:
-                spoken_line = "\u201c好，我们来想想怎么办。\u201d"
+        # === spoken_line（NPC台词）—— 优先遵循 RhythmAI 的对话合同 ===
+        if dialogue_act == "refuse":
+            spoken_line = self._get_npc_fallback_text(
+                fallback_config,
+                ("spoken_lines", "refuse"),
+                "“还不够。先让我相信你说的都是真的。”",
+                npc_name=npc_name,
+            )
+        elif dialogue_act == "confirm_help":
+            if primary_reveal_text:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "confirm_help_with_reveal"),
+                    "“如果你说的都是真的，{reveal_text}”",
+                    npc_name=npc_name,
+                    reveal_text=primary_reveal_text,
+                )
             else:
-                spoken_line = "\u201c我听你的，接下来怎么做？\u201d"
-        elif trust_level >= medium_min:
-            # 中信任：谨慎但愿意听
-            if info_key:
-                clue_text = self._trim_text(str(key_info.get(info_key) or ""), 80)
-                spoken_line = f"\u201c听好，{clue_text}\u201d"
-            elif not already_knows_name and "name" in next_line_goal.lower():
-                spoken_line = "\u201c你叫什么？\u201d"
-            elif not has_prior_conversation:
-                spoken_line = "\u201c你是谁？\u201d"
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "confirm_help_default"),
+                    "“如果情况真像你说的那样，我可以帮你一次。但只有这一次。”",
+                    npc_name=npc_name,
+                )
+        elif dialogue_act == "propose_plan":
+            if primary_reveal_text:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "propose_plan_with_reveal"),
+                    "“听好，{reveal_text}”",
+                    npc_name=npc_name,
+                    reveal_text=primary_reveal_text,
+                )
             else:
-                spoken_line = "\u201c我听到了。继续说。\u201d"
-        else:
-            # 低信任：警惕、克制、短句
-            if not already_knows_name and ("name" in next_line_goal.lower() or not has_prior_conversation):
-                spoken_line = "\u201c名字。\u201d"
-            elif not already_knows_origin and ("origin" in next_line_goal.lower() or "got here" in next_line_goal.lower()):
-                spoken_line = "\u201c你怎么到这儿来的？\u201d"
-            elif not already_has_evidence and ("evidence" in next_line_goal.lower() or "proof" in next_line_goal.lower()):
-                spoken_line = "\u201c光靠嘴说不够。有证据吗？\u201d"
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "propose_plan_default"),
+                    "“好。别浪费时间，我们先把做法定下来。”",
+                    npc_name=npc_name,
+                )
+        elif dialogue_act in {"reveal", "warn"}:
+            if primary_reveal_text:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "warn_with_reveal"),
+                    "“听好，{reveal_text}”",
+                    npc_name=npc_name,
+                    reveal_text=primary_reveal_text,
+                )
+            elif trust_level >= medium_min:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "warn_default_medium"),
+                    "“先别乱动。最重要的是别做错第一步。”",
+                    npc_name=npc_name,
+                )
+            else:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "warn_default_low"),
+                    "“别急着动。先弄清楚状况。”",
+                    npc_name=npc_name,
+                )
+        elif dialogue_act == "acknowledge":
+            if primary_reveal_text:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "acknowledge_with_reveal"),
+                    "“我听到了。{reveal_text}”",
+                    npc_name=npc_name,
+                    reveal_text=primary_reveal_text,
+                )
+            elif has_prior_conversation or must_acknowledge:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "acknowledge_default"),
+                    "“我听到了。继续说。”",
+                    npc_name=npc_name,
+                )
+            else:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "acknowledge_fresh"),
+                    "“我在听。”",
+                    npc_name=npc_name,
+                )
+        elif dialogue_act == "listen":
+            if trust_level >= high_min:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "listen_high"),
+                    "“我在听，你接着说。”",
+                    npc_name=npc_name,
+                )
+            elif trust_level >= medium_min:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "listen_medium"),
+                    "“我听到了。继续。”",
+                    npc_name=npc_name,
+                )
             elif has_prior_conversation:
-                spoken_line = "\u201c……继续。\u201d"
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "listen_low_continue"),
+                    "“……继续。”",
+                    npc_name=npc_name,
+                )
             else:
-                spoken_line = "\u201c谁？\u201d"
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "listen_fresh"),
+                    "“谁？”",
+                    npc_name=npc_name,
+                )
+        else:
+            if not already_knows_name and ("name" in next_line_goal.lower() or not has_prior_conversation):
+                if trust_level < medium_min:
+                    spoken_line = self._get_npc_fallback_text(
+                        fallback_config,
+                        ("spoken_lines", "ask_name_low"),
+                        "“名字。”",
+                        npc_name=npc_name,
+                    )
+                else:
+                    spoken_line = self._get_npc_fallback_text(
+                        fallback_config,
+                        ("spoken_lines", "ask_name_medium"),
+                        "“你叫什么？”",
+                        npc_name=npc_name,
+                    )
+            elif not already_knows_origin and ("origin" in next_line_goal.lower() or "got here" in next_line_goal.lower()):
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "ask_origin"),
+                    "“你怎么到这儿来的？”",
+                    npc_name=npc_name,
+                )
+            elif not already_has_evidence and ("evidence" in next_line_goal.lower() or "proof" in next_line_goal.lower()):
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "ask_evidence"),
+                    "“光靠嘴说不够。有证据吗？”",
+                    npc_name=npc_name,
+                )
+            elif primary_reveal_text:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "direct_reveal"),
+                    "“{reveal_text}”",
+                    npc_name=npc_name,
+                    reveal_text=primary_reveal_text,
+                )
+            elif trust_level >= medium_min:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "continue_medium"),
+                    "“我听到了。继续说。”",
+                    npc_name=npc_name,
+                )
+            elif has_prior_conversation:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "continue_low"),
+                    "“……继续。”",
+                    npc_name=npc_name,
+                )
+            else:
+                spoken_line = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("spoken_lines", "ask_who_default"),
+                    "“谁？”",
+                    npc_name=npc_name,
+                )
 
         # === tone（语气描写）===
         tone = ""
-        trimmed_strategy = self._trim_text(self._strip_trailing_punctuation(response_strategy), 24)
+        trimmed_strategy = self._trim_text(self._strip_trailing_punctuation(voice_style or response_strategy), 24)
         if trust_level >= high_min:
-            if response_strategy:
-                tone = f"{npc_name}的语气比以往缓和了许多，带着{trimmed_strategy}。"
+            if voice_style or response_strategy:
+                tone = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("tone", "high_with_style"),
+                    "{npc_name}的语气比以往缓和了许多，带着{style}。",
+                    npc_name=npc_name,
+                    attitude=attitude,
+                    style=trimmed_strategy,
+                )
             else:
-                tone = f"{npc_name}的语气比以往缓和了许多。"
+                tone = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("tone", "high_default"),
+                    "{npc_name}的语气比以往缓和了许多。",
+                    npc_name=npc_name,
+                    attitude=attitude,
+                )
         elif trust_level >= medium_min and has_prior_conversation:
-            if response_strategy:
-                tone = f"{npc_name}的语气依旧直接，但少了之前的防备，{trimmed_strategy}。"
+            if voice_style or response_strategy:
+                tone = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("tone", "medium_with_style"),
+                    "{npc_name}的语气依旧直接，但少了之前的防备，带着{style}。",
+                    npc_name=npc_name,
+                    attitude=attitude,
+                    style=trimmed_strategy,
+                )
             else:
-                tone = f"{npc_name}的语气依旧直接，但少了之前的防备。"
-        elif response_strategy:
+                tone = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("tone", "medium_default"),
+                    "{npc_name}的语气依旧直接，但少了之前的防备。",
+                    npc_name=npc_name,
+                    attitude=attitude,
+                )
+        elif voice_style or response_strategy:
             if has_prior_conversation:
-                tone = f"{npc_name}的语气依旧{attitude}，带着{trimmed_strategy}。"
+                tone = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("tone", "guarded_with_style_prior"),
+                    "{npc_name}的语气依旧{attitude}，带着{style}。",
+                    npc_name=npc_name,
+                    attitude=attitude,
+                    style=trimmed_strategy,
+                )
             else:
-                tone = f"{npc_name}的语气{attitude}，带着{trimmed_strategy}。"
+                tone = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("tone", "guarded_with_style_fresh"),
+                    "{npc_name}的语气{attitude}，带着{style}。",
+                    npc_name=npc_name,
+                    attitude=attitude,
+                    style=trimmed_strategy,
+                )
         elif attitude:
             if has_prior_conversation:
-                tone = f"{npc_name}的语气依旧{attitude}。"
+                tone = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("tone", "guarded_default_prior"),
+                    "{npc_name}的语气依旧{attitude}。",
+                    npc_name=npc_name,
+                    attitude=attitude,
+                )
             else:
-                tone = f"{npc_name}的语气{attitude}。"
+                tone = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("tone", "guarded_default_fresh"),
+                    "{npc_name}的语气{attitude}。",
+                    npc_name=npc_name,
+                    attitude=attitude,
+                )
 
         narrative_parts = [preface]
         if tone:
@@ -1069,30 +1351,68 @@ class NarrativeAI:
         normalized_action: dict,
         rhythm_result: dict,
     ) -> dict:
-        """追逐态下的本地 fallback 叙述。管家 active 且非 blocked 时使用。"""
+        """追逐态下的本地 fallback 叙述。主要追逐威胁 active 且非 blocked 时使用。"""
         location_name = location_context.get("name") or "当前地点"
         relation = butler_chase.get("player_relation", "separate_rooms")
         is_arrival = self._is_arrival_mode(normalized_action, rhythm_result)
+        fallback_config = (
+            butler_chase.get("narrative_fallback", {})
+            if isinstance(butler_chase.get("narrative_fallback"), dict)
+            else {}
+        )
+        entity_name = str(butler_chase.get("entity_name") or "某个威胁实体").strip()
 
         if relation == "same_room":
             if is_arrival:
-                narrative = f"你踏入{location_name}——那道笔直的人影已经在这里了。它没有任何多余的动作，只是缓缓转向你，距离近得令人窒息。"
-            else:
-                narrative = "那道人影就在几步之外，压迫感无处可躲。你能感到它的注视像针一样扎在皮肤上。"
-        elif relation == "blocked_outside_current_room":
-            if is_arrival:
-                narrative = f"你来到{location_name}。门外传来沉重的呼吸声，像是什么东西正贴在门板另一侧等待。"
-            else:
-                narrative = "门外的存在感没有消退。偶尔传来一声低沉的摩擦，像指甲划过木头的声音。"
-        else:
-            # separate_rooms — 最常见的追逐中移动场景
-            if is_arrival:
-                narrative = (
-                    f"你匆忙来到{location_name}，身后的脚步声还没有停下。"
-                    "走廊深处传来沉重而均匀的脚步——它还在追。你没有多少时间。"
+                narrative = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("same_room_arrival",),
+                    "你踏入{location_name}——那道笔直的人影已经在这里了。它没有任何多余的动作，只是缓缓转向你，距离近得令人窒息。",
+                    location_name=location_name,
+                    entity_name=entity_name,
                 )
             else:
-                narrative = "远处的脚步声在回响。它没有加速，也没有放慢，只是持续、稳定地逼近。你需要尽快行动。"
+                narrative = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("same_room_pressure",),
+                    "那道人影就在几步之外，压迫感无处可躲。你能感到它的注视像针一样扎在皮肤上。",
+                    location_name=location_name,
+                    entity_name=entity_name,
+                )
+        elif relation == "blocked_outside_current_room":
+            if is_arrival:
+                narrative = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("blocked_arrival",),
+                    "你来到{location_name}。门外传来沉重的呼吸声，像是什么东西正贴在门板另一侧等待。",
+                    location_name=location_name,
+                    entity_name=entity_name,
+                )
+            else:
+                narrative = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("blocked_pressure",),
+                    "门外的存在感没有消退。偶尔传来一声低沉的摩擦，像指甲划过木头的声音。",
+                    location_name=location_name,
+                    entity_name=entity_name,
+                )
+        else:
+            if is_arrival:
+                narrative = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("separate_arrival",),
+                    "你匆忙来到{location_name}，身后的脚步声还没有停下。走廊深处传来沉重而均匀的脚步——它还在追。你没有多少时间。",
+                    location_name=location_name,
+                    entity_name=entity_name,
+                )
+            else:
+                narrative = self._get_npc_fallback_text(
+                    fallback_config,
+                    ("separate_pressure",),
+                    "远处的脚步声在回响。它没有加速，也没有放慢，只是持续、稳定地逼近。你需要尽快行动。",
+                    location_name=location_name,
+                    entity_name=entity_name,
+                )
 
         return {
             "narrative": narrative,
@@ -1109,10 +1429,20 @@ class NarrativeAI:
         threat_name = next(iter(threat_entity_context))
         threat_data = threat_entity_context.get(threat_name, {})
         action_verb = str((normalized_action or {}).get("verb") or "").lower()
+        fallback_config = (
+            threat_data.get("narrative_fallback", {})
+            if isinstance(threat_data.get("narrative_fallback"), dict)
+            else {}
+        )
 
         if action_verb == "talk":
             return {
-                "narrative": f"你对{threat_name}开口，但它没有任何语言上的回应。那道近似人形的存在只是维持着原本的姿态，把沉默本身压得更沉。",
+                "narrative": self._get_npc_fallback_text(
+                    fallback_config,
+                    ("talk_response",),
+                    "你对{entity_name}开口，但它没有任何语言上的回应。那道近似人形的存在只是维持着原本的姿态，把沉默本身压得更沉。",
+                    entity_name=threat_name,
+                ),
                 "summary": self._build_default_summary(player_input),
             }
 
@@ -1125,7 +1455,12 @@ class NarrativeAI:
             or ""
         ).strip()
         if not focus_text:
-            focus_text = f"{threat_name}依旧沉默地停在那里，没有给出任何像是交流的反应。"
+            focus_text = self._get_npc_fallback_text(
+                fallback_config,
+                ("silent_presence",),
+                "{entity_name}依旧沉默地停在那里，没有给出任何像是交流的反应。",
+                entity_name=threat_name,
+            )
         return {
             "narrative": focus_text,
             "summary": self._build_default_summary(player_input),
@@ -1184,6 +1519,47 @@ class NarrativeAI:
                 "memory": self._compact_npc_memory(npc_memory),
             }
         return compact
+
+    def _build_npc_dialogue_contract(self, npc_context: dict, npc_action_guide: dict) -> dict:
+        if not isinstance(npc_context, dict) or not isinstance(npc_action_guide, dict):
+            return {}
+
+        focus_npc = str(npc_action_guide.get("focus_npc") or "").strip()
+        if not focus_npc or focus_npc not in npc_context:
+            return {}
+
+        npc_data = npc_context.get(focus_npc, {})
+        runtime_state = npc_data.get("runtime_state", {}) if isinstance(npc_data.get("runtime_state"), dict) else {}
+        npc_memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
+
+        return {
+            "focus_npc": focus_npc,
+            "persona": {
+                "appearance": self._trim_text(npc_data.get("appearance", ""), 80),
+                "personality": self._trim_text(npc_data.get("personality", ""), 90),
+                "background_summary": self._trim_text(npc_data.get("background", ""), 140),
+                "current_state": self._trim_text(npc_data.get("current_state", ""), 100),
+                "speaking_style": self._trim_text(npc_action_guide.get("voice_style", ""), 100),
+            },
+            "relationship": {
+                "attitude": npc_action_guide.get("attitude") or runtime_state.get("attitude"),
+                "trust_level": runtime_state.get("trust_level"),
+                "companion_state": runtime_state.get("companion_state"),
+                "cross_wall": bool(npc_action_guide.get("cross_wall") or npc_data.get("cross_wall")),
+                "cross_wall_heard_only": bool(npc_action_guide.get("cross_wall_heard_only")),
+            },
+            "memory": self._compact_npc_memory(npc_memory),
+            "dialogue_plan": {
+                "dialogue_act": str(npc_action_guide.get("dialogue_act") or "").strip(),
+                "response_strategy": self._trim_text(npc_action_guide.get("response_strategy", ""), 120),
+                "next_line_goal": self._trim_text(npc_action_guide.get("next_line_goal", ""), 80),
+                "must_acknowledge": self._sanitize_string_list(npc_action_guide.get("must_acknowledge"), limit=3),
+                "should_open_door": bool(npc_action_guide.get("should_open_door")),
+            },
+            "allowed_reveals": self._sanitize_allowed_reveals(npc_action_guide.get("allowed_reveals"), limit=3),
+            "forbidden_reveals": self._sanitize_string_list(npc_action_guide.get("forbidden_reveals"), limit=6),
+            "knowledge_boundary": self._trim_text(npc_action_guide.get("knowledge_boundary", ""), 180),
+        }
 
     def _compact_threat_entity_context(self, threat_entity_context: dict) -> dict:
         if not isinstance(threat_entity_context, dict) or not threat_entity_context:
@@ -1252,7 +1628,7 @@ class NarrativeAI:
         if not isinstance(npc_memory, dict):
             return {}
 
-        player_facts = npc_memory.get("player_facts", {}) if isinstance(npc_memory.get("player_facts"), dict) else {}
+        player_facts = self._normalize_player_facts(npc_memory.get("player_facts", {}))
         compact_facts = {}
         for key, value in player_facts.items():
             if not isinstance(value, dict):
@@ -1263,15 +1639,138 @@ class NarrativeAI:
 
         conversation_flags = npc_memory.get("conversation_flags", {}) if isinstance(npc_memory.get("conversation_flags"), dict) else {}
         pending_questions = npc_memory.get("pending_questions", []) if isinstance(npc_memory.get("pending_questions"), list) else []
+        answered_questions = npc_memory.get("answered_questions", []) if isinstance(npc_memory.get("answered_questions"), list) else []
         topics_discussed = npc_memory.get("topics_discussed", []) if isinstance(npc_memory.get("topics_discussed"), list) else []
+        evidence_seen = self._compact_memory_items(npc_memory.get("evidence_seen"), item_key="key", limit=2)
+        promises = self._compact_memory_items(npc_memory.get("promises"), item_key="content", limit=2)
+        last_impression = npc_memory.get("last_impression", {}) if isinstance(npc_memory.get("last_impression"), dict) else {}
 
         compact = {
             "player_facts": compact_facts,
             "conversation_flags": conversation_flags,
             "pending_questions": pending_questions[:3],
+            "answered_questions": answered_questions[:3],
             "topics_discussed": topics_discussed[:5],
+            "evidence_seen": evidence_seen,
+            "promises": promises,
+            "last_impression": {
+                key: self._trim_text(value, 60)
+                for key, value in last_impression.items()
+                if value
+            },
         }
         return {key: value for key, value in compact.items() if value}
+
+    def _normalize_player_fact_key(self, key: str) -> str:
+        normalized = str(key or "").strip().lower()
+        mapping = {
+            "name": "name",
+            "identity": "name",
+            "name_or_identity": "name",
+            "player_name": "name",
+            "who": "name",
+            "origin": "origin",
+            "origin_or_reason": "origin",
+            "reason": "origin",
+            "where_from": "origin",
+            "arrival_reason": "origin",
+            "goal": "goal",
+            "current_goal": "goal",
+            "purpose": "goal",
+            "plan": "goal",
+        }
+        return mapping.get(normalized, str(key or "").strip())
+
+    def _normalize_player_facts(self, player_facts: dict) -> dict:
+        if not isinstance(player_facts, dict):
+            return {}
+
+        normalized = {}
+        for raw_key, raw_value in player_facts.items():
+            key = self._normalize_player_fact_key(raw_key)
+            if not key:
+                continue
+            if isinstance(raw_value, dict):
+                value = dict(raw_value)
+            elif raw_value:
+                value = {"value": str(raw_value).strip()}
+            else:
+                continue
+            existing = normalized.get(key)
+            if not existing or str(value.get("value") or "").strip():
+                normalized[key] = value
+        return normalized
+
+    def _compact_memory_items(self, items, item_key: str, limit: int) -> list:
+        if not isinstance(items, list):
+            return []
+        compact = []
+        for item in items:
+            text = ""
+            if isinstance(item, dict):
+                text = str(item.get(item_key) or "").strip()
+            elif item:
+                text = str(item).strip()
+            if text and text not in compact:
+                compact.append(self._trim_text(text, 80))
+            if len(compact) >= limit:
+                break
+        return compact
+
+    def _sanitize_allowed_reveals(self, items, limit: int = 3) -> list:
+        if not isinstance(items, list):
+            return []
+
+        sanitized = []
+        seen = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("key") or "").strip()
+            text = str(item.get("text") or "").strip()
+            marker = (key, text)
+            if not key or not text or marker in seen:
+                continue
+            sanitized.append({
+                "key": key,
+                "text": self._trim_text(text, 140),
+            })
+            seen.add(marker)
+            if len(sanitized) >= limit:
+                break
+        return sanitized
+
+    def _sanitize_string_list(self, values, limit: int) -> list:
+        if not isinstance(values, list):
+            return []
+        result = []
+        for item in values:
+            text = str(item or "").strip()
+            if text and text not in result:
+                result.append(self._trim_text(text, 80))
+            if len(result) >= limit:
+                break
+        return result
+
+    def _get_nested_config(self, data: dict, path: tuple, default=""):
+        current = data if isinstance(data, dict) else {}
+        for key in path:
+            if not isinstance(current, dict):
+                return default
+            current = current.get(key)
+        if current is None or current == "":
+            return default
+        return current
+
+    def _render_template(self, template: str, **kwargs) -> str:
+        rendered = str(template or "")
+        for key, value in kwargs.items():
+            rendered = rendered.replace("{" + key + "}", str(value or ""))
+        return rendered
+
+    def _get_npc_fallback_text(self, fallback_config: dict, path: tuple, default: str, **kwargs) -> str:
+        template = self._get_nested_config(fallback_config, path, default)
+        return self._render_template(template, **kwargs).strip()
 
     def _compact_check_result(self, rule_result: dict) -> dict:
         rule_result = rule_result if isinstance(rule_result, dict) else {}

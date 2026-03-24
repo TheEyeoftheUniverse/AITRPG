@@ -678,7 +678,13 @@ class AITRPGPlugin(Star):
                 # 更新游戏状态
                 self.session_manager.update_state(session_id, rhythm_result)
                 state = self.session_manager.get_session(session_id)
-                self._refresh_rhythm_runtime_context(session_id, rhythm_result, module_data)
+                self._refresh_rhythm_runtime_context(
+                    session_id,
+                    rhythm_result,
+                    module_data,
+                    player_input=player_input,
+                    rule_plan=rule_plan,
+                )
 
                 # === 检查结局条件 ===
                 # 检查SAN<=0
@@ -721,7 +727,7 @@ class AITRPGPlugin(Star):
                         message="结局触发",
                     )
 
-                # 检查管家凝视等其他game_over（兼容旧逻辑）
+                # 检查主要追逐威胁凝视等其他 game_over（兼容旧逻辑）
                 if self.session_manager.is_ending_triggered(session_id):
                     state = self.session_manager.get_session(session_id)
                     flags = state.get("world_state", {}).get("flags", {})
@@ -1635,14 +1641,35 @@ class AITRPGPlugin(Star):
 
         return "\n".join(lines)
 
-    def _refresh_rhythm_runtime_context(self, session_id: str, rhythm_result: dict, module_data: dict):
+    def _refresh_rhythm_runtime_context(
+        self,
+        session_id: str,
+        rhythm_result: dict,
+        module_data: dict,
+        player_input: str = "",
+        rule_plan: dict | None = None,
+    ):
         state = self.session_manager.get_session(session_id) or {}
         if not isinstance(rhythm_result, dict):
             return state
         rhythm_result["location_context"] = self.session_manager.get_location_context(session_id)
         rhythm_result["threat_entity_context"] = self.rhythm_ai._build_scene_threat_entity_context(state, module_data)
-        rhythm_result["npc_context"] = self.rhythm_ai._build_scene_npc_context(state, module_data)
-        rhythm_result["butler_chase"] = self.session_manager.get_butler_chase_context(session_id)
+        npc_context = self.rhythm_ai._build_scene_npc_context(state, module_data)
+        rhythm_result["npc_context"] = npc_context
+        updated_base_guide = self.rhythm_ai._build_npc_action_guide(
+            player_input,
+            rule_plan if isinstance(rule_plan, dict) else {},
+            npc_context,
+            state,
+        )
+        rhythm_result["npc_action_guide"] = self.rhythm_ai._sanitize_npc_action_guide(
+            rhythm_result.get("npc_action_guide", {}),
+            npc_context,
+            updated_base_guide,
+        )
+        threat_chase = self.session_manager.get_butler_chase_context(session_id)
+        rhythm_result["threat_chase"] = threat_chase
+        rhythm_result["butler_chase"] = threat_chase
         return state
 
     async def terminate(self):

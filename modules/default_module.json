@@ -20,6 +20,27 @@
     "first_living_room_entry_blocked": "你刚想踏进客厅。\n\n客厅内不远处，一道人形的背部在你脚掌落地的瞬间，发生了极其轻微的位移——<glitch>脊椎中段的某个位置，像被折断的竹节那样，朝一个不该存在的方向弯折了一寸。</glitch>\n\n它没有动。不，它动了。但那个动作不属于任何一种你认知中的“转身”或“侧耳”，如果一个人的身体要做出那样的形态，他的肋骨应该已经刺穿了皮肤——\n\n你下意识地、猛地收回了脚，退出了客厅。<inject-input>快逃快逃快逃快逃快逃快逃快逃快逃快逃快逃快逃</inject-input>",
     "first_outside_entry_blocked": "你刚想推开厨房的后门，门外那片灰蒙蒙的平原便先一步压进了你的视野。外面没有道路或参照物，看不到任何尽头。<echo-text>该离开这个鬼地方了！你终于找到出口了！你迫不及待地踏出去！|你忽然一愣，直觉告诉你，从这里逃走绝不是正确的选择。你猛地停在门边，没有真正踏出去。</echo-text>"
   },
+  "mechanics": {
+    "primary_pursuer": {
+      "entity_name": "管家",
+      "warning_location": "living_room",
+      "messages": {
+        "not_pursuing": "{entity_name}当前没有在追逐你",
+        "door_blocked_success": "你及时关上了门，暂时把{entity_name}拦在了外面。",
+        "movement_restricted": "{entity_name}已被激活。现在你只能逐格移动到相邻场景。",
+        "dodge_fail": "你试图从{entity_name}身边脱身，却被那具不自然的人形慢慢逼住。下一瞬，它强迫你迎上了那道目光。",
+        "guarded_object_blocked": "{object_name}还在{entity_name}的看守范围内，你现在无法靠近"
+      },
+      "narrative_fallback": {
+        "same_room_arrival": "你踏入{location_name}——那道笔直的人影已经在这里了。它没有任何多余的动作，只是缓缓转向你，距离近得令人窒息。",
+        "same_room_pressure": "那道人影就在几步之外，压迫感无处可躲。你能感到它的注视像针一样扎在皮肤上。",
+        "blocked_arrival": "你来到{location_name}。门外传来沉重的呼吸声，像是什么东西正贴在门板另一侧等待。",
+        "blocked_pressure": "门外的存在感没有消退。偶尔传来一声低沉的摩擦，像指甲划过木头的声音。",
+        "separate_arrival": "你匆忙来到{location_name}，身后的脚步声还没有停下。走廊深处传来沉重而均匀的脚步——它还在追。你没有多少时间。",
+        "separate_pressure": "远处的脚步声在回响。它没有加速，也没有放慢，只是持续、稳定地逼近。你需要尽快行动。"
+      }
+    }
+  },
   "locations": {
     "master_bedroom": {
       "name": "主卧",
@@ -238,7 +259,7 @@
       "sancheck": "1/1",
       "success_result": "管家曾经凝视着的1950年代的旋转拨号电话，就算拨号也只有让人窒息的等待接听音。玩家会因意识到自己真的被困在这里了，被断绝了跟外界的联系而心惊。",
       "can_take": false,
-      "requires_butler_gone": true,
+      "requires_primary_pursuer_gone": true,
       "atmosphere": 0.55
     },
     "改造蓝图": {
@@ -249,7 +270,7 @@
       "success_result": "地下室的改造蓝图，画着前住户在原有的仓库地下室中增建的密室，入口是一扇暗门。蓝图上标注了暗门的位置：地下室西侧墙壁，按下第三块砖即可打开。",
       "can_take": true,
       "used_for": "找到仪式现场",
-      "requires_butler_gone": true,
+      "requires_primary_pursuer_gone": true,
       "atmosphere": 0.5
     },
     "刀具": {
@@ -371,6 +392,59 @@
         "cooperation": "冷静果断的行动模式。会主动提出由自己来引开管家。说话简洁有力，偶有轻描淡写的狠话掩盖恐惧。",
         "emergency_help": "在信任尚未完全建立、但已确认管家位置不在次卧门前时，愿意冒险执行一次短暂的协助动作。语气紧张但果断，强调\"只有这一次\"和\"你最好说的都是真的\"。"
       },
+      "narrative_fallback": {
+        "anonymous_label": "未知来客",
+        "heard_only": {
+          "narrative": "你朝隔壁墙壁喊了一声。没有人回应——但隔壁似乎有一瞬间的安静，像是有什么动静停了下来。",
+          "summary": "向隔壁喊话，无人回应"
+        },
+        "preface": {
+          "cross_wall": "隔壁安静了片刻。",
+          "high_trust": "门后很快传来回应。",
+          "prior_conversation": "门后沉默了一瞬。",
+          "default": "门后安静了一瞬，像是在判断你这句话值不值得相信。"
+        },
+        "door_line": {
+          "cross_wall": "声音从墙壁另一侧传来，闷沉而真实。",
+          "opening": "随后门锁轻轻一响，门却只松开了一道极窄的缝。",
+          "closed": "门没有开，只是那道贴在门后的呼吸声变得更清晰了一些。"
+        },
+        "spoken_lines": {
+          "refuse": "“还不够。先让我相信你说的都是真的。”",
+          "confirm_help_with_reveal": "“如果你说的都是真的，{reveal_text}”",
+          "confirm_help_default": "“如果情况真像你说的那样，我可以帮你一次。但只有这一次。”",
+          "propose_plan_with_reveal": "“听好，{reveal_text}”",
+          "propose_plan_default": "“好。别浪费时间，我们先把做法定下来。”",
+          "warn_with_reveal": "“听好，{reveal_text}”",
+          "warn_default_medium": "“先别乱动。最重要的是别做错第一步。”",
+          "warn_default_low": "“别急着动。先弄清楚状况。”",
+          "acknowledge_with_reveal": "“我听到了。{reveal_text}”",
+          "acknowledge_default": "“我听到了。继续说。”",
+          "acknowledge_fresh": "“我在听。”",
+          "listen_high": "“我在听，你接着说。”",
+          "listen_medium": "“我听到了。继续。”",
+          "listen_low_continue": "“……继续。”",
+          "listen_fresh": "“谁？”",
+          "ask_name_low": "“名字。”",
+          "ask_name_medium": "“你叫什么？”",
+          "ask_origin": "“你怎么到这儿来的？”",
+          "ask_evidence": "“光靠嘴说不够。有证据吗？”",
+          "direct_reveal": "“{reveal_text}”",
+          "continue_medium": "“我听到了。继续说。”",
+          "continue_low": "“……继续。”",
+          "ask_who_default": "“谁？”"
+        },
+        "tone": {
+          "high_with_style": "{npc_name}的语气比以往缓和了许多，带着{style}。",
+          "high_default": "{npc_name}的语气比以往缓和了许多。",
+          "medium_with_style": "{npc_name}的语气依旧直接，但少了之前的防备，带着{style}。",
+          "medium_default": "{npc_name}的语气依旧直接，但少了之前的防备。",
+          "guarded_with_style_prior": "{npc_name}的语气依旧{attitude}，带着{style}。",
+          "guarded_with_style_fresh": "{npc_name}的语气{attitude}，带着{style}。",
+          "guarded_default_prior": "{npc_name}的语气依旧{attitude}。",
+          "guarded_default_fresh": "{npc_name}的语气{attitude}。"
+        }
+      },
       "key_info": {
         "管家规律": "它只有视觉，听不到声音。不要进入它的视野，绝对不能跟它对视，我见过一个人被管家看了一眼，除了惨叫以外就没剩下别的……关门可以暂时挡住它，它不会主动开门的。但它会在门外等很久，你无法判断它会什么时候离开……绝对，绝对，绝对不能随便开门。",
         "提出由自己（玩家）来引开管家": "由玩家吸引管家注意力的话，将管家暂时吸引在主卧门口的话，她可以完美地在房子里完成所有线索调查并最终来解救玩家，跟玩家分享正确离开的线索。"
@@ -425,9 +499,11 @@
     "管家": {
       "name": "管家",
       "location": "living_room",
+      "is_primary_pursuer": true,
       "initial_attitude": "中立",
       "can_escape_together": false,
       "is_hostile": true,
+      "is_threat_entity": true,
       "appearance": "人形存在，穿着一套老式执事服，剪裁考究但属于某个不确定的年代。它有呼吸——你能看到它的背部随着呼吸轻微起伏，这让它看起来像是活着的。",
       "appearance_warning": "【绝对禁止描写管家的脸部或正面】玩家永远只能看管家的背影或侧影或头部以下的位置。与管家对视意味着即时疯狂结局，因此其脸部在整个游戏中必须保持未知。",
       "nature": "神话生物目光的具现化。它不是真正的存在，而是某个超越理解的存在投射在这个空间里的注视，被中间带具现化成人形。它没有恶意，只是本能地凝视空间内的活物。",
@@ -439,6 +515,10 @@
       },
       "gaze_consequence": "与管家对视会导致疯狂结局。玩家看到了不该被人类所见的东西。",
       "distraction_method": "管家不会说话，因此无法交流，对触碰也没有任何反应，但玩家不可能存在足以放倒它的力量。但当有其他活物进入视野时，管家立刻会转向新目标。可以利用此特性与NPC合作，让管家离开凝视的物品，或让管家离开卧室门前。",
+      "narrative_fallback": {
+        "talk_response": "你对{entity_name}开口，但它没有任何语言上的回应。那道近似人形的存在只是维持着原本的姿态，把沉默本身压得更沉。",
+        "silent_presence": "{entity_name}依旧沉默地停在那里，没有给出任何像是交流的反应。"
+      },
       "atmosphere": 0.9
     }
   },

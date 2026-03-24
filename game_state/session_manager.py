@@ -4,10 +4,16 @@ import copy
 import random
 from collections import deque
 from typing import Dict, Any, List, Set
-from .location_context import build_runtime_location_context, get_module_all_entities, get_module_npcs
+from .location_context import (
+    build_runtime_location_context,
+    get_module_all_entities,
+    get_module_npcs,
+    get_primary_pursuer_name,
+    get_primary_pursuer_settings,
+)
 
 
-BUTLER_NPC_NAME = "管家"
+PRIMARY_PURSUER_ROLE = "primary_pursuer"
 LIVING_ROOM_FIRST_ENTRY_WARNING_MESSAGE = (
     "你刚想踏进客厅深处，那道背对入口的人形便极轻地调整了站姿，像是已经把你的存在纳入了视野。"
     "直觉告诉你，现在贸然进去只会立刻引来它的注意。你暂时退了回来，也许该先想办法把它引开。"
@@ -177,6 +183,7 @@ class SessionManager:
         """根据模组NPC定义生成初始世界状态"""
         npc_states = {}
         module_npcs = get_module_npcs(module_data)
+        primary_pursuer_name = self._get_primary_pursuer_name(module_data)
         for npc_name, npc_data in get_module_all_entities(module_data).items():
             npc_states[npc_name] = {
                 "attitude": npc_data.get("initial_attitude", "中立"),
@@ -185,7 +192,7 @@ class SessionManager:
             }
             if npc_data.get("location"):
                 npc_states[npc_name]["location"] = npc_data["location"]
-            if npc_name == BUTLER_NPC_NAME:
+            if primary_pursuer_name and npc_name == primary_pursuer_name:
                 npc_states[npc_name]["chase_state"] = self._build_default_butler_chase_state()
             # 非威胁NPC初始化同伴状态
             if npc_name in module_npcs:
@@ -216,6 +223,46 @@ class SessionManager:
             "last_target_location": None,
             "same_location_rounds": 0,
         }
+
+    def _get_primary_pursuer_name(self, module_data: Dict[str, Any]) -> str:
+        return get_primary_pursuer_name(module_data)
+
+    def _get_primary_pursuer_name_from_state(self, state: Dict[str, Any]) -> str:
+        module_data = (state or {}).get("module_data", {}) if isinstance(state, dict) else {}
+        return self._get_primary_pursuer_name(module_data)
+
+    def _get_primary_pursuer_settings(self, module_data: Dict[str, Any]) -> Dict[str, Any]:
+        return get_primary_pursuer_settings(module_data)
+
+    def _render_text_template(self, template: str, **kwargs) -> str:
+        rendered = str(template or "")
+        for key, value in kwargs.items():
+            rendered = rendered.replace("{" + key + "}", str(value or ""))
+        return rendered
+
+    def _get_primary_pursuer_message_from_state(
+        self,
+        state: Dict[str, Any],
+        key: str,
+        default: str,
+        **kwargs,
+    ) -> str:
+        module_data = (state or {}).get("module_data", {}) if isinstance(state, dict) else {}
+        settings = self._get_primary_pursuer_settings(module_data)
+        messages = settings.get("messages", {}) if isinstance(settings.get("messages"), dict) else {}
+        template = str(messages.get(key) or "").strip() or default
+        entity_name = self._get_primary_pursuer_name(module_data)
+        return self._render_text_template(template, entity_name=entity_name, **kwargs).strip()
+
+    def _get_primary_pursuer_warning_location(self, module_data: Dict[str, Any]) -> str:
+        settings = self._get_primary_pursuer_settings(module_data)
+        configured = str(settings.get("warning_location") or "").strip()
+        if configured:
+            return configured
+        pursuer_name = self._get_primary_pursuer_name(module_data)
+        all_entities = get_module_all_entities(module_data)
+        pursuer_data = all_entities.get(pursuer_name, {}) if pursuer_name else {}
+        return str(pursuer_data.get("location") or "").strip()
 
     def _build_default_influence_dimensions(self) -> Dict[str, Any]:
         return {
@@ -249,6 +296,7 @@ class SessionManager:
         npc_states = world_state.setdefault("npcs", {})
         module_npcs_map = get_module_all_entities(module_data) if isinstance(module_data, dict) else {}
         friendly_npcs = set(get_module_npcs(module_data).keys()) if isinstance(module_data, dict) else set()
+        primary_pursuer_name = self._get_primary_pursuer_name(module_data)
 
         for npc_name, npc_data in module_npcs_map.items():
             runtime_state = npc_states.setdefault(npc_name, {})
@@ -262,7 +310,7 @@ class SessionManager:
                 runtime_state.setdefault("location", npc_data.get("location"))
             if npc_name in friendly_npcs:
                 runtime_state.setdefault("companion_state", "inactive")
-            if npc_name == BUTLER_NPC_NAME:
+            if primary_pursuer_name and npc_name == primary_pursuer_name:
                 chase_state = runtime_state.setdefault("chase_state", {})
                 if not isinstance(chase_state, dict):
                     chase_state = {}
@@ -293,7 +341,10 @@ class SessionManager:
     def _get_butler_runtime_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
         self._ensure_runtime_defaults(state)
         npc_states = state.setdefault("world_state", {}).setdefault("npcs", {})
-        return npc_states.setdefault(BUTLER_NPC_NAME, {})
+        pursuer_name = self._get_primary_pursuer_name_from_state(state)
+        if not pursuer_name:
+            return {}
+        return npc_states.setdefault(pursuer_name, {})
 
     def _get_module_special_message(self, session_id: str, key: str, default: str = "") -> str:
         module_data = self.get_module_data(session_id)
@@ -341,6 +392,9 @@ class SessionManager:
         if not isinstance(state, dict):
             return {}
 
+        module_data = (state or {}).get("module_data", {}) if isinstance(state, dict) else {}
+        pursuer_settings = self._get_primary_pursuer_settings(module_data)
+        pursuer_name = self._get_primary_pursuer_name(module_data)
         butler_state = self._get_butler_runtime_state(state)
         chase_state = butler_state.get("chase_state", {})
         if not isinstance(chase_state, dict):
@@ -364,12 +418,19 @@ class SessionManager:
             "active": bool(chase_state.get("active")),
             "status": str(chase_state.get("status") or "idle"),
             "target": target,
+            "entity_name": pursuer_name or None,
             "butler_location": butler_location or None,
+            "entity_location": butler_location or None,
             "player_location": current_location or None,
             "blocked_at": blocked_at or None,
             "last_target_location": chase_state.get("last_target_location"),
             "same_location_rounds": int(chase_state.get("same_location_rounds", 0) or 0),
             "player_relation": relation,
+            "narrative_fallback": (
+                pursuer_settings.get("narrative_fallback", {})
+                if isinstance(pursuer_settings.get("narrative_fallback"), dict)
+                else {}
+            ),
         }
 
     def is_player_with_active_butler(self, session_id: str) -> bool:
@@ -384,7 +445,8 @@ class SessionManager:
             return False
         if target_key != self.get_butler_location(session_id):
             return False
-        return target_key == "living_room"
+        warning_location = self._get_primary_pursuer_warning_location(self.get_module_data(session_id))
+        return bool(target_key) and target_key == warning_location
 
     # ── 同伴状态管理 ──
 
@@ -443,7 +505,7 @@ class SessionManager:
         return companions
 
     def execute_bait_action(self, session_id: str, bait_entity: str, target_room: str = None) -> Dict[str, Any]:
-        """执行诱饵行动：将管家引到有门房间，然后关门阻隔。"""
+        """执行诱饵行动：将主要追逐威胁引到有门房间，然后关门阻隔。"""
         state = self.sessions.get(session_id)
         if not state:
             return {"success": False, "message": "会话不存在"}
@@ -466,7 +528,7 @@ class SessionManager:
         if not room_data.get("has_door"):
             return {"success": False, "message": "这个房间没有门可以关"}
 
-        # 管家追踪目标切换到诱饵
+        # 主要追逐威胁的目标切换到诱饵
         butler_state = self._get_butler_runtime_state(state)
         chase_state = butler_state.get("chase_state", {})
         chase_state["target"] = bait_entity
@@ -480,7 +542,14 @@ class SessionManager:
         if not state:
             return {"success": False, "message": "会话不存在"}
         if not self.is_butler_active(session_id):
-            return {"success": False, "message": "管家当前没有在追逐你"}
+            return {
+                "success": False,
+                "message": self._get_primary_pursuer_message_from_state(
+                    state,
+                    "not_pursuing",
+                    "{entity_name}当前没有在追逐你",
+                ),
+            }
 
         module_data = self.get_module_data(session_id)
         current_location = state.get("current_location")
@@ -503,11 +572,15 @@ class SessionManager:
         return {
             "success": True,
             "blocked_at": current_location,
-            "message": "你及时关上了门，暂时把管家拦在了外面。",
+            "message": self._get_primary_pursuer_message_from_state(
+                state,
+                "door_blocked_success",
+                "你及时关上了门，暂时把{entity_name}拦在了外面。",
+            ),
         }
 
     def unblock_butler(self, session_id: str, new_target: str = "player"):
-        """当新活物进入管家视野时，解除管家的blocked状态。"""
+        """当新活物进入主要追逐威胁视野时，解除其 blocked 状态。"""
         state = self.sessions.get(session_id)
         if not state:
             return
@@ -557,7 +630,8 @@ class SessionManager:
         state = self.sessions.get(session_id)
         if not state or self.is_butler_active(session_id):
             return False
-        if target_key != "living_room" or target_key != self.get_butler_location(session_id):
+        warning_location = self._get_primary_pursuer_warning_location(self.get_module_data(session_id))
+        if target_key != warning_location or target_key != self.get_butler_location(session_id):
             return False
         return not self.has_butler_living_room_warning(session_id)
 
@@ -567,7 +641,8 @@ class SessionManager:
             return False
         if not self.has_butler_living_room_warning(session_id):
             return False
-        return bool(target_key) and target_key == self.get_butler_location(session_id) == "living_room"
+        warning_location = self._get_primary_pursuer_warning_location(self.get_module_data(session_id))
+        return bool(target_key) and target_key == self.get_butler_location(session_id) == warning_location
 
     def has_outside_lost_warning(self, session_id: str) -> bool:
         state = self.sessions.get(session_id)
@@ -641,6 +716,9 @@ class SessionManager:
         if not state or self.is_butler_active(session_id):
             return {}
 
+        pursuer_name = self._get_primary_pursuer_name_from_state(state)
+        if not pursuer_name:
+            return {}
         butler_location = self.get_butler_location(session_id)
         current_location = state.get("current_location")
         return {
@@ -649,7 +727,7 @@ class SessionManager:
                 "butler_activation_reason": reason,
             },
             "npc_updates": {
-                BUTLER_NPC_NAME: {
+                pursuer_name: {
                     "location": butler_location or current_location,
                     "chase_state": {
                         "active": True,
@@ -941,7 +1019,7 @@ class SessionManager:
             chase_state["last_target_location"] = None
             return {}
 
-        # 管家被门阻隔时不移动
+        # 主要追逐威胁被门阻隔时不移动
         if chase_state.get("status") == "blocked":
             return {}
 
@@ -969,11 +1047,11 @@ class SessionManager:
         destination = chase_state.get("last_target_location") or target_location
         previous_butler_location = butler_state.get("location")
 
-        # 检查目标是否在有门房间内 - 管家被门阻隔
+        # 检查目标是否在有门房间内 - 主要追逐威胁被门阻隔
         module_data = state.get("module_data", {})
         dest_location_data = module_data.get("locations", {}).get(destination, {})
         if dest_location_data.get("has_door") and destination != previous_butler_location:
-            # 目标进入了有门的房间，管家被阻隔在门外
+            # 目标进入了有门的房间，主要追逐威胁被阻隔在门外
             chase_state["status"] = "blocked"
             chase_state["blocked_at"] = destination
             chase_state["last_target_location"] = target_location
@@ -983,9 +1061,12 @@ class SessionManager:
         chase_state["last_target_location"] = target_location
 
         if destination and destination != previous_butler_location:
+            pursuer_name = self._get_primary_pursuer_name_from_state(state)
+            if not pursuer_name:
+                return {}
             return {
                 "npc_locations": {
-                    BUTLER_NPC_NAME: destination
+                    pursuer_name: destination
                 }
             }
         return {}
@@ -1464,7 +1545,14 @@ class SessionManager:
         available_moves = self._get_available_moves(session_id)
         if target_key not in available_moves:
             if self.is_butler_active(session_id) and target_key not in adjacent_moves:
-                return {"success": False, "message": "管家已被激活。现在你只能逐格移动到相邻场景。"}
+                return {
+                    "success": False,
+                    "message": self._get_primary_pursuer_message_from_state(
+                        state,
+                        "movement_restricted",
+                        "{entity_name}已被激活。现在你只能逐格移动到相邻场景。",
+                    ),
+                }
             return {"success": False, "message": "目标位置不可达（路径被锁定）"}
 
         if self.should_warn_on_living_room_entry(session_id, target_key):
@@ -1503,7 +1591,11 @@ class SessionManager:
                     return {
                         "success": False,
                         "caught": True,
-                        "message": "你试图从管家身边脱身，却被那具不自然的人形慢慢逼住。下一瞬，它强迫你迎上了那道目光。",
+                        "message": self._get_primary_pursuer_message_from_state(
+                            state,
+                            "dodge_fail",
+                            "你试图从{entity_name}身边脱身，却被那具不自然的人形慢慢逼住。下一瞬，它强迫你迎上了那道目光。",
+                        ),
                         "check_result": dodge_result,
                     }
                 movement_note = "你在那具迟缓却精准的人形逼近前猛地侧身，从它的封锁里惊险脱出。"

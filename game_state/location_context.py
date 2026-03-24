@@ -2,17 +2,43 @@ import copy
 from typing import Any, Dict, List
 
 
-THREAT_ENTITY_NAMES = {"管家"}
-
-
 def is_threat_entity(npc_name: str, npc_data: dict = None) -> bool:
-    if npc_name in THREAT_ENTITY_NAMES:
-        return True
     npc_data = npc_data if isinstance(npc_data, dict) else {}
     return bool(
         npc_data.get("is_threat_entity")
         or npc_data.get("entity_type") == "threat_entity"
     )
+
+
+def get_primary_pursuer_settings(module_data: dict) -> Dict[str, Any]:
+    mechanics = (module_data or {}).get("mechanics", {})
+    if not isinstance(mechanics, dict):
+        return {}
+    primary_pursuer = mechanics.get("primary_pursuer", {})
+    return primary_pursuer if isinstance(primary_pursuer, dict) else {}
+
+
+def get_primary_pursuer_name(module_data: dict) -> str:
+    settings = get_primary_pursuer_settings(module_data)
+    configured = str(settings.get("entity_name") or settings.get("entity") or "").strip()
+    if configured:
+        return configured
+
+    explicit_threats = (module_data or {}).get("threat_entities", {})
+    if isinstance(explicit_threats, dict):
+        for entity_name, entity_data in explicit_threats.items():
+            if isinstance(entity_data, dict) and entity_data.get("is_primary_pursuer"):
+                return str(entity_name).strip()
+        if len(explicit_threats) == 1:
+            return str(next(iter(explicit_threats))).strip()
+
+    legacy_npcs = (module_data or {}).get("npcs", {})
+    if isinstance(legacy_npcs, dict):
+        for entity_name, entity_data in legacy_npcs.items():
+            if isinstance(entity_data, dict) and entity_data.get("is_primary_pursuer"):
+                return str(entity_name).strip()
+
+    return ""
 
 
 def _normalize_entity_record(entity_name: str, entity_data: dict, is_threat: bool = False) -> dict:
@@ -35,10 +61,11 @@ def get_module_npcs(module_data: dict) -> Dict[str, Dict[str, Any]]:
     if not isinstance(npcs, dict):
         return {}
 
+    primary_pursuer_name = get_primary_pursuer_name(module_data)
     normalized_npcs = {}
     for npc_name, npc_data in npcs.items():
         normalized = _normalize_entity_record(npc_name, npc_data)
-        if not normalized or is_threat_entity(npc_name, normalized):
+        if not normalized or is_threat_entity(npc_name, normalized) or (primary_pursuer_name and npc_name == primary_pursuer_name):
             continue
         normalized_npcs[npc_name] = normalized
     return normalized_npcs
@@ -46,12 +73,16 @@ def get_module_npcs(module_data: dict) -> Dict[str, Dict[str, Any]]:
 
 def get_module_threat_entities(module_data: dict) -> Dict[str, Dict[str, Any]]:
     threat_entities = {}
+    primary_pursuer_name = get_primary_pursuer_name(module_data)
 
     legacy_npcs = (module_data or {}).get("npcs", {})
     if isinstance(legacy_npcs, dict):
         for entity_name, entity_data in legacy_npcs.items():
             normalized = _normalize_entity_record(entity_name, entity_data)
-            if normalized and is_threat_entity(entity_name, normalized):
+            if normalized and (
+                is_threat_entity(entity_name, normalized)
+                or (primary_pursuer_name and entity_name == primary_pursuer_name)
+            ):
                 threat_entities[entity_name] = normalized
 
     explicit_threats = (module_data or {}).get("threat_entities", {})
@@ -154,29 +185,33 @@ def build_runtime_location_context(
     location_context["threat_present"] = bool(present_threats)
     location_context["entity_present"] = bool(present_npcs or present_threats)
     location_context["threat_entities"] = list(present_threats)
-    butler_state = ((game_state or {}).get("world_state", {}).get("npcs", {}) or {}).get("管家", {})
-    chase_state = (butler_state or {}).get("chase_state", {})
+    primary_pursuer_name = get_primary_pursuer_name(module_data)
+    pursuer_state = ((game_state or {}).get("world_state", {}).get("npcs", {}) or {}).get(primary_pursuer_name, {})
+    chase_state = (pursuer_state or {}).get("chase_state", {})
     if isinstance(chase_state, dict) and chase_state.get("active"):
         current_loc = current_location
-        butler_location = str((butler_state or {}).get("location") or "").strip()
+        pursuer_location = str((pursuer_state or {}).get("location") or "").strip()
         blocked_at = str(chase_state.get("blocked_at") or "").strip()
         relation = "unknown"
-        if butler_location and current_loc:
-            if butler_location == current_loc:
+        if pursuer_location and current_loc:
+            if pursuer_location == current_loc:
                 relation = "same_room"
             elif blocked_at and blocked_at == current_loc:
                 relation = "blocked_outside_current_room"
             else:
                 relation = "separate_rooms"
-        location_context["butler_chase"] = {
+        chase_context = {
             "active": True,
             "status": str(chase_state.get("status") or "idle"),
             "target": chase_state.get("target"),
-            "butler_location": butler_location or None,
+            "entity_name": primary_pursuer_name or None,
+            "entity_location": pursuer_location or None,
             "player_location": current_loc,
             "blocked_at": blocked_at or None,
             "player_relation": relation,
         }
+        location_context["threat_chase"] = chase_context
+        location_context["butler_chase"] = chase_context
 
     return location_context
 

@@ -6,6 +6,8 @@ from ..game_state.location_context import (
     get_cross_wall_npcs,
     get_module_npcs,
     get_module_threat_entities,
+    get_primary_pursuer_name,
+    get_primary_pursuer_settings,
     is_threat_entity,
 )
 from .usage_metrics import extract_usage_metrics
@@ -300,8 +302,9 @@ class RuleAI:
         if isinstance(npc_updates, dict) and npc_updates:
             pure_npc = {}
             threat_updates = {}
+            threat_names = set(get_module_threat_entities((game_state or {}).get("module_data", {})).keys())
             for name, upd in npc_updates.items():
-                if is_threat_entity(name, upd if isinstance(upd, dict) else None):
+                if name in threat_names or is_threat_entity(name, upd if isinstance(upd, dict) else None):
                     threat_updates[name] = upd
                 else:
                     pure_npc[name] = upd
@@ -320,13 +323,15 @@ class RuleAI:
             and current_location
             and bool(location_data.get("has_door"))
         ):
-            butler_state = ((game_state or {}).get("world_state", {}).get("npcs", {}) or {}).get("管家", {})
-            chase_state = (butler_state or {}).get("chase_state", {})
-            if isinstance(chase_state, dict) and chase_state.get("active"):
+            module_data = (game_state or {}).get("module_data", {}) if isinstance(game_state, dict) else {}
+            pursuer_name = get_primary_pursuer_name(module_data)
+            pursuer_state = ((game_state or {}).get("world_state", {}).get("npcs", {}) or {}).get(pursuer_name, {}) if pursuer_name else {}
+            chase_state = (pursuer_state or {}).get("chase_state", {})
+            if pursuer_name and isinstance(chase_state, dict) and chase_state.get("active"):
                 changes["threat_entity_updates"] = self._merge_nested_dict(
                     changes.get("threat_entity_updates", {}),
                     {
-                        "管家": {
+                        pursuer_name: {
                             "chase_state": {
                                 "active": True,
                                 "status": "blocked",
@@ -368,7 +373,12 @@ class RuleAI:
         prompt = prompt.replace("{inventory}", json.dumps(inventory, ensure_ascii=False))
         prompt = prompt.replace("{clues_found}", json.dumps(clues_found, ensure_ascii=False))
         prompt = prompt.replace("{reachable_locations}", json.dumps(reachable, ensure_ascii=False))
-        butler_chase = location_context.get("butler_chase") if isinstance(location_context, dict) else None
+        threat_chase = (
+            location_context.get("threat_chase")
+            or location_context.get("butler_chase")
+            if isinstance(location_context, dict)
+            else None
+        )
         prompt += (
             "\n\n# 当前场景威胁实体字段\n"
             f"{json.dumps(scene_threat_entities, ensure_ascii=False, indent=2)}\n\n"
@@ -379,10 +389,10 @@ class RuleAI:
             "- 输出JSON时，请在顶层加入 threat_entity_context 字段。\n"
         )
         prompt += (
-            "\n# 当前管家追逐状态补充\n"
-            f"{json.dumps(butler_chase or {}, ensure_ascii=False, indent=2)}\n"
-            "- 如果 butler_chase.active 为 true，说明玩家处于持续追逐压力中。即使管家不在当前房间，也要据此理解玩家的逃跑、关门、拖延和阻拦意图。\n"
-            "- 如果当前场景 has_door=true，且玩家表达关门、顶门、抵门、堵门或反锁的意思，在追逐中优先理解为试图把管家阻隔在门外。\n"
+            "\n# 当前主要威胁追逐状态补充\n"
+            f"{json.dumps(threat_chase or {}, ensure_ascii=False, indent=2)}\n"
+            "- 如果 threat_chase.active 为 true，说明玩家处于持续追逐压力中。即使主要威胁实体不在当前房间，也要据此理解玩家的逃跑、关门、拖延和阻拦意图。\n"
+            "- 如果当前场景 has_door=true，且玩家表达关门、顶门、抵门、堵门或反锁的意思，在追逐中优先理解为试图把主要威胁实体阻隔在门外。\n"
         )
         if self.is_dialogue_input(player_input):
             prompt += (
@@ -699,11 +709,22 @@ class RuleAI:
 
         object_location = str(object_context.get("location") or "").strip()
         object_name = str(object_context.get("name") or "目标物品").strip()
+        module_data = (game_state or {}).get("module_data", {}) if isinstance(game_state, dict) else {}
+        pursuer_name = get_primary_pursuer_name(module_data)
+        pursuer_settings = get_primary_pursuer_settings(module_data)
+        pursuer_messages = pursuer_settings.get("messages", {}) if isinstance(pursuer_settings.get("messages"), dict) else {}
 
-        if object_context.get("requires_butler_gone"):
-            butler_location = self._get_npc_location("管家", game_state)
-            if object_location and butler_location == object_location:
-                return f"{object_name}还在管家的看守范围内，你现在无法靠近"
+        if object_context.get("requires_primary_pursuer_gone") or object_context.get("requires_butler_gone"):
+            pursuer_location = self._get_npc_location(pursuer_name, game_state) if pursuer_name else ""
+            if object_location and pursuer_location == object_location:
+                template = str(pursuer_messages.get("guarded_object_blocked") or "").strip()
+                if not template:
+                    template = "{object_name}还在{entity_name}的看守范围内，你现在无法靠近"
+                return (
+                    template
+                    .replace("{object_name}", object_name)
+                    .replace("{entity_name}", pursuer_name or "主要威胁实体")
+                )
 
         requires_npc_absent = self._ensure_list(object_context.get("requires_npc_absent"))
         for npc_name in requires_npc_absent:
@@ -914,8 +935,10 @@ class RuleAI:
             feasibility["reason"] = feasibility.get("reason") or "这里没有门可以关上"
             return
 
-        butler_state = ((game_state or {}).get("world_state", {}).get("npcs", {}) or {}).get("管家", {})
-        chase_state = (butler_state or {}).get("chase_state", {})
+        module_data = (game_state or {}).get("module_data", {}) if isinstance(game_state, dict) else {}
+        pursuer_name = get_primary_pursuer_name(module_data)
+        pursuer_state = ((game_state or {}).get("world_state", {}).get("npcs", {}) or {}).get(pursuer_name, {}) if pursuer_name else {}
+        chase_state = (pursuer_state or {}).get("chase_state", {})
         if isinstance(chase_state, dict) and chase_state.get("active"):
             feasibility["ok"] = True
             feasibility["reason"] = None
