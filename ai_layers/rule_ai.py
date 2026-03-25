@@ -3,6 +3,7 @@ from astrbot.api.star import Context
 from ..game_state.location_context import (
     build_adjacent_locations_context,
     build_runtime_location_context,
+    has_cross_wall_contact_history,
     get_entity_first_appearance,
     get_entity_profile_text,
     get_entity_trust_threshold,
@@ -12,6 +13,7 @@ from ..game_state.location_context import (
     get_primary_pursuer_name,
     get_primary_pursuer_settings,
     is_threat_entity,
+    should_enable_cross_wall_npc_context,
 )
 from .usage_metrics import extract_usage_metrics
 
@@ -360,7 +362,7 @@ class RuleAI:
         current_location = game_state.get("current_location", "master_bedroom")
         location_context = build_runtime_location_context(game_state, module_data, current_location)
         scene_objects = self._get_scene_objects(game_state, module_data)
-        scene_npcs = self._get_scene_npcs(game_state, module_data)
+        scene_npcs = self._get_scene_npcs(game_state, module_data, player_input=player_input)
         scene_threat_entities = self._get_scene_threat_entities(game_state, module_data)
         prompt_scene_npcs = self._compact_npc_context_for_prompt(scene_npcs)
         prompt_threat_entities = self._compact_threat_context_for_prompt(scene_threat_entities)
@@ -393,6 +395,8 @@ class RuleAI:
             "- threat entity 不是 NPC。它不能说话，不能被当作普通对话对象。\n"
             "- normalized_action.target_kind 可使用 threat_entity。\n"
             "- 输出JSON时，请在顶层加入 threat_entity_context 字段。\n"
+            "- 只有当前场景NPC字段里明确出现的隔墙NPC，才代表本轮允许发生隔墙交流。\n"
+            "- 如果当前场景NPC字段里没有隔墙NPC，不要擅自推断相邻房间NPC的动静、回应或沉默。\n"
         )
         prompt += (
             "\n# 当前主要威胁追逐状态补充\n"
@@ -436,7 +440,7 @@ class RuleAI:
         current_location = game_state.get("current_location", "master_bedroom")
         location_context = build_runtime_location_context(game_state, module_data, current_location)
         scene_objects = self._get_scene_objects(game_state, module_data)
-        scene_npcs = self._get_scene_npcs(game_state, module_data)
+        scene_npcs = self._get_scene_npcs(game_state, module_data, player_input=player_input)
         scene_threat_entities = self._get_scene_threat_entities(game_state, module_data)
         all_objects = module_data.get("objects", {})
 
@@ -601,7 +605,7 @@ class RuleAI:
         current_location = game_state.get("current_location", "master_bedroom")
         location_context = build_runtime_location_context(game_state, module_data, current_location)
         scene_objects = self._get_scene_objects(game_state, module_data)
-        scene_npcs = self._get_scene_npcs(game_state, module_data)
+        scene_npcs = self._get_scene_npcs(game_state, module_data, player_input=player_input)
         scene_threat_entities = self._get_scene_threat_entities(game_state, module_data)
         all_objects = module_data.get("objects", {})
 
@@ -917,9 +921,10 @@ class RuleAI:
                 scene_objects[object_name] = object_data
         return scene_objects
 
-    def _get_scene_npcs(self, game_state: dict, module_data: dict) -> Dict[str, Dict[str, Any]]:
+    def _get_scene_npcs(self, game_state: dict, module_data: dict, player_input: str = "") -> Dict[str, Dict[str, Any]]:
         current_location = game_state.get("current_location", "master_bedroom")
         npc_states = game_state.get("world_state", {}).get("npcs", {})
+        is_dialogue_turn = self.is_dialogue_input(player_input)
         scene_npcs = {}
         for npc_name, npc_data in get_module_npcs(module_data).items():
             runtime_state = npc_states.get(npc_name, {})
@@ -978,9 +983,19 @@ class RuleAI:
                 "companion_state": runtime_state.get("companion_state", runtime_state.get("companion_mode", "wait")),
                 "companion_task": runtime_state.get("companion_task", {}),
             }
+            if not should_enable_cross_wall_npc_context(
+                player_input=player_input,
+                npc_name=npc_name,
+                cross_info=cross_info,
+                is_dialogue_turn=is_dialogue_turn,
+                has_prior_contact=has_cross_wall_contact_history(merged_npc["runtime_state"]),
+            ):
+                continue
             merged_npc["cross_wall"] = True
             merged_npc["cross_wall_type"] = cross_info.get("wall_type", "voice_only")
             merged_npc["cross_wall_from_room"] = cross_info.get("from_room", "")
+            merged_npc["cross_wall_from_room_display_name"] = cross_info.get("from_room_display_name", "")
+            merged_npc["interaction_mode"] = "cross_wall_voice_only"
             scene_npcs[npc_name] = merged_npc
 
         return scene_npcs
@@ -1031,6 +1046,8 @@ class RuleAI:
                 "enabled_systems": list(npc_data.get("enabled_systems", []) or []),
                 "cross_wall": bool(npc_data.get("cross_wall")),
                 "cross_wall_from_room": npc_data.get("cross_wall_from_room", ""),
+                "cross_wall_from_room_display_name": npc_data.get("cross_wall_from_room_display_name", ""),
+                "interaction_mode": npc_data.get("interaction_mode"),
                 "appearance": self._trim_text(get_entity_profile_text(npc_data, "appearance"), 80),
                 "current_state": self._trim_text(get_entity_profile_text(npc_data, "current_state"), 120),
                 "first_appearance": self._trim_text(get_entity_first_appearance(npc_data), 100),

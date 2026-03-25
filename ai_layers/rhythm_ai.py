@@ -11,10 +11,12 @@ from ..game_state.location_context import (
     get_entity_trust_map,
     get_entity_trust_threshold,
     get_cross_wall_npcs,
+    has_cross_wall_contact_history,
     get_module_npcs,
     get_module_threat_entities,
     get_primary_pursuer_name,
     is_threat_entity,
+    should_enable_cross_wall_npc_context,
 )
 from .usage_metrics import extract_usage_metrics
 
@@ -147,7 +149,7 @@ class RhythmAI:
         clues_found = game_state.get("world_state", {}).get("clues_found", [])
         stages = module_data.get("module_info", {}).get("stages", "")
         history_summaries = self._build_history_summaries(game_state)
-        scene_context = self._build_scene_context(game_state, module_data, rule_plan)
+        scene_context = self._build_scene_context(game_state, module_data, rule_plan, player_input=player_input)
 
         prompt = prompt_template.replace("{current_location}", current_location)
         prompt = prompt.replace("{round_count}", str(round_count))
@@ -232,6 +234,8 @@ class RhythmAI:
             "- 重复追问已回答信息是BUG。NPC应根据记忆推进对话，而非循环问同样的问题。\n"
             "- NPC对话节奏原则：NPC不是审讯者。当玩家展示善意（分享信息、表达关心、提供帮助）时，NPC应该给予正向反馈（感谢、放松语气、分享一点自己的信息），而不是立刻抛出下一个质疑。next_line_goal应该是自然的对话推进，不是连续追问清单。\n"
             "- 信任是双向的：玩家愿意主动分享、倾听、关心NPC时，NPC也应该逐步敞开，而不是始终保持审视姿态。\n"
+            "- 只有当 npc_context 明确包含 interaction_mode=cross_wall_voice_only 的对象时，才允许发生隔墙交流。\n"
+            "- 如果 npc_context 中没有隔墙NPC，不要主动提及隔壁房间NPC的动静、沉默、回应或状态。\n"
         )
         input_classification = (rule_plan or {}).get("input_classification", "action")
         if input_classification == "dialogue":
@@ -304,6 +308,7 @@ class RhythmAI:
         evidence_seen = npc_memory.get("evidence_seen", []) if isinstance(npc_memory.get("evidence_seen"), list) else []
         promises = npc_memory.get("promises", []) if isinstance(npc_memory.get("promises"), list) else []
         topics_discussed = npc_memory.get("topics_discussed", []) if isinstance(npc_memory.get("topics_discussed"), list) else []
+        overheard_remote_dialogue = npc_memory.get("overheard_remote_dialogue", []) if isinstance(npc_memory.get("overheard_remote_dialogue"), list) else []
         known_fact_keys = set(normalized_player_facts.keys())
         revealed_info_keys = self._normalize_revealed_info_keys(npc_memory.get("revealed_info", []))
 
@@ -316,6 +321,7 @@ class RhythmAI:
                 normalized_player_facts
                 or topics_discussed
                 or evidence_seen
+                or overheard_remote_dialogue
                 or trust_level > 0
                 or npc_from_room in visited
             )
@@ -529,10 +535,10 @@ class RhythmAI:
 
         return normalized
 
-    def _build_scene_context(self, game_state: dict, module_data: dict, rule_plan: dict) -> str:
+    def _build_scene_context(self, game_state: dict, module_data: dict, rule_plan: dict, player_input: str = "") -> str:
         current_location = game_state.get("current_location", "master_bedroom")
         location_context = build_runtime_location_context(game_state, module_data, current_location)
-        npc_context = self._build_scene_npc_context(game_state, module_data)
+        npc_context = self._build_scene_npc_context(game_state, module_data, player_input=player_input, rule_plan=rule_plan)
         threat_entity_context = self._build_scene_threat_entity_context(game_state, module_data)
         atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
         object_context = (rule_plan or {}).get("object_context")
@@ -597,9 +603,12 @@ class RhythmAI:
             ])
         return "\n".join(parts)
 
-    def _build_scene_npc_context(self, game_state: dict, module_data: dict) -> dict:
+    def _build_scene_npc_context(self, game_state: dict, module_data: dict, player_input: str = "", rule_plan: dict = None) -> dict:
         current_location = game_state.get("current_location", "master_bedroom")
         npc_states = game_state.get("world_state", {}).get("npcs", {})
+        normalized_action = (rule_plan or {}).get("normalized_action", {}) if isinstance(rule_plan, dict) else {}
+        input_classification = str((rule_plan or {}).get("input_classification") or "").strip().lower()
+        is_dialogue_turn = input_classification == "dialogue" or str(normalized_action.get("verb") or "").strip().lower() == "talk"
         scene_npcs = {}
 
         for npc_name, npc_data in get_module_npcs(module_data).items():
@@ -663,9 +672,18 @@ class RhythmAI:
                 "companion_state": runtime_state.get("companion_state", runtime_state.get("companion_mode", "wait")),
                 "companion_task": runtime_state.get("companion_task", {}),
             }
+            if not should_enable_cross_wall_npc_context(
+                player_input=player_input,
+                npc_name=npc_name,
+                cross_info=cross_info,
+                is_dialogue_turn=is_dialogue_turn,
+                has_prior_contact=has_cross_wall_contact_history(merged_npc["runtime_state"]),
+            ):
+                continue
             merged_npc["cross_wall"] = True
             merged_npc["cross_wall_type"] = cross_info.get("wall_type", "voice_only")
             merged_npc["cross_wall_from_room"] = cross_info.get("from_room", "")
+            merged_npc["cross_wall_from_room_display_name"] = cross_info.get("from_room_display_name", "")
             merged_npc["interaction_mode"] = "cross_wall_voice_only"
             trust_map = get_entity_trust_map(npc_data)
             if isinstance(trust_map, dict) and trust_map:
@@ -719,7 +737,7 @@ class RhythmAI:
         location_context = build_runtime_location_context(game_state, module_data, current_location)
         atmosphere_guide = module_data.get("module_info", {}).get("atmosphere_guide", {})
         feasibility = (rule_plan or {}).get("feasibility", {})
-        npc_context = self._build_scene_npc_context(game_state, module_data)
+        npc_context = self._build_scene_npc_context(game_state, module_data, player_input=player_input, rule_plan=rule_plan)
         threat_entity_context = self._build_scene_threat_entity_context(game_state, module_data)
         npc_action_guide = self._build_npc_action_guide(player_input, rule_plan, npc_context, game_state)
         follow_arrival_reaction_context = (

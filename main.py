@@ -1,7 +1,11 @@
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
-from .game_state.location_context import get_entity_trust_map
+from .game_state.location_context import (
+    extract_quoted_dialogue_segments,
+    get_cross_wall_npcs,
+    get_entity_trust_map,
+)
 from .game_state.session_manager import SessionManager
 from .ai_layers.rule_ai import RuleAI
 from .ai_layers.rhythm_ai import RhythmAI
@@ -681,6 +685,10 @@ class AITRPGPlugin(Star):
 
                 # 将RhythmAI的npc_memory_updates合并到world_changes中
                 self._apply_memory_updates(rhythm_result, merged_changes)
+                merged_changes = self._merge_world_changes(
+                    merged_changes,
+                    self._derive_cross_wall_overhear_changes(player_input, rule_plan, state, module_data),
+                )
                 # 根据trust_change_reasons查模组trust_map，计算信任增量（支持多reason叠加+一次性去重）
                 self._apply_trust_changes(rhythm_result, module_data, merged_changes, state)
                 self._apply_soft_state_updates(rhythm_result, merged_changes, state)
@@ -1445,6 +1453,65 @@ class AITRPGPlugin(Star):
 
         return {}
 
+    def _derive_cross_wall_overhear_changes(
+        self,
+        player_input: str,
+        rule_plan: dict,
+        game_state: dict,
+        module_data: dict,
+    ) -> dict:
+        if not isinstance(rule_plan, dict) or not isinstance(game_state, dict):
+            return {}
+        if str(rule_plan.get("input_classification") or "").strip().lower() != "dialogue":
+            return {}
+
+        current_location = str(game_state.get("current_location") or "").strip()
+        if not current_location:
+            return {}
+
+        cross_wall_targets = get_cross_wall_npcs(game_state, module_data, current_location)
+        if not cross_wall_targets:
+            return {}
+
+        quoted_segments = extract_quoted_dialogue_segments(player_input)
+        if not quoted_segments:
+            return {}
+
+        round_count = int(game_state.get("round_count", 0) or 0)
+        npc_updates = {}
+        for npc_name, cross_info in cross_wall_targets.items():
+            if not isinstance(cross_info, dict) or not cross_info.get("passive_overhear", True):
+                continue
+
+            overheard_entries = [
+                {
+                    "text": str(segment).strip(),
+                    "source_round": round_count,
+                    "source_location": current_location,
+                }
+                for segment in quoted_segments
+                if str(segment).strip()
+            ]
+            if not overheard_entries:
+                continue
+
+            npc_updates[npc_name] = {
+                "memory": {
+                    "overheard_remote_dialogue": overheard_entries,
+                    "interaction_history": [
+                        {
+                            "type": "cross_wall_overhear",
+                            "source_round": round_count,
+                            "source_location": current_location,
+                        }
+                    ],
+                }
+            }
+
+        if not npc_updates:
+            return {}
+        return {"npc_updates": npc_updates}
+
     def _advance_passive_move_round(self, session_id: str, module_data: dict, rhythm_result: dict | None = None) -> dict:
         rhythm_result = dict(rhythm_result or {})
         rhythm_result.setdefault("feasible", True)
@@ -1843,7 +1910,12 @@ class AITRPGPlugin(Star):
             return state
         rhythm_result["location_context"] = self.session_manager.get_location_context(session_id)
         rhythm_result["threat_entity_context"] = self.rhythm_ai._build_scene_threat_entity_context(state, module_data)
-        npc_context = self.rhythm_ai._build_scene_npc_context(state, module_data)
+        npc_context = self.rhythm_ai._build_scene_npc_context(
+            state,
+            module_data,
+            player_input=player_input,
+            rule_plan=rule_plan if isinstance(rule_plan, dict) else {},
+        )
         rhythm_result["npc_context"] = npc_context
         updated_base_guide = self.rhythm_ai._build_npc_action_guide(
             player_input,

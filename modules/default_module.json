@@ -843,6 +843,17 @@
                                                "guest_bedroom"
                                            ],
                                  "type":  "voice_only",
+                                 "quoted_dialogue_only":  true,
+                                 "passive_overhear":  true,
+                                 "expose_npc_context_only_on_trigger":  true,
+                                 "trigger_keywords":  [
+                                                          "艾米莉",
+                                                          "次卧",
+                                                          "隔壁",
+                                                          "门后",
+                                                          "敲门",
+                                                          "敲墙"
+                                                      ],
                                  "description":  "主卧与次卧共用一面墙，声音可穿透"
                              }
                          ]

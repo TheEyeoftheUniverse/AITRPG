@@ -1,4 +1,5 @@
 import copy
+import re
 from typing import Any, Dict, List
 
 
@@ -18,6 +19,17 @@ DEFAULT_RUNTIME_MEMORY_TEMPLATE: Dict[str, Any] = {
     "revealed_info": [],
     "triggered_events": [],
 }
+
+DEFAULT_CROSS_WALL_TRIGGER_KEYWORDS = (
+    "隔壁",
+    "门后",
+    "墙那边",
+    "敲门",
+    "敲墙",
+    "贴门",
+    "朝门后",
+    "对门后",
+)
 
 
 def is_threat_entity(npc_name: str, npc_data: dict = None) -> bool:
@@ -634,6 +646,7 @@ def get_cross_wall_npcs(
     if not isinstance(cross_wall_pairs, list):
         return {}
     npc_states = (game_state or {}).get("world_state", {}).get("npcs", {})
+    locations = (module_data or {}).get("locations", {})
     result: Dict[str, Dict[str, Any]] = {}
 
     for pair in cross_wall_pairs:
@@ -644,6 +657,12 @@ def get_cross_wall_npcs(
             continue
         other_rooms = [r for r in rooms if r != current_location]
         for other_room in other_rooms:
+            other_room_data = locations.get(other_room, {}) if isinstance(locations.get(other_room), dict) else {}
+            trigger_keywords = [
+                str(keyword or "").strip()
+                for keyword in pair.get("trigger_keywords", [])
+                if str(keyword or "").strip()
+            ] if isinstance(pair.get("trigger_keywords"), list) else []
             for npc_name, npc_data in get_module_npcs(module_data).items():
                 runtime = npc_states.get(npc_name, {}) if isinstance(npc_states, dict) else {}
                 npc_loc = runtime.get("location", npc_data.get("location"))
@@ -652,8 +671,79 @@ def get_cross_wall_npcs(
                         "cross_wall": True,
                         "wall_type": pair.get("type", "voice_only"),
                         "from_room": other_room,
+                        "from_room_display_name": str(other_room_data.get("name") or other_room).strip(),
+                        "quoted_dialogue_only": bool(pair.get("quoted_dialogue_only", True)),
+                        "passive_overhear": bool(pair.get("passive_overhear", pair.get("type", "voice_only") == "voice_only")),
+                        "expose_npc_context_only_on_trigger": bool(pair.get("expose_npc_context_only_on_trigger", True)),
+                        "trigger_keywords": trigger_keywords,
                     }
     return result
+
+
+def extract_quoted_dialogue_segments(text: str) -> List[str]:
+    source = str(text or "").strip()
+    if not source:
+        return []
+
+    patterns = (
+        r"“([^”]+)”",
+        r'"([^"\r\n]+)"',
+        r"「([^」]+)」",
+        r"『([^』]+)』",
+    )
+    segments: List[str] = []
+    for pattern in patterns:
+        for match in re.findall(pattern, source):
+            content = str(match or "").strip()
+            if content and content not in segments:
+                segments.append(content)
+    return segments
+
+
+def has_cross_wall_contact_history(runtime_state: dict = None) -> bool:
+    runtime_state = runtime_state if isinstance(runtime_state, dict) else {}
+    memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
+    return bool(
+        runtime_state.get("trust_level")
+        or memory.get("player_facts")
+        or memory.get("topics_discussed")
+        or memory.get("answered_questions")
+        or memory.get("promises")
+        or memory.get("evidence_seen")
+        or memory.get("overheard_remote_dialogue")
+        or memory.get("interaction_history")
+    )
+
+
+def should_enable_cross_wall_npc_context(
+    player_input: str,
+    npc_name: str,
+    cross_info: dict = None,
+    is_dialogue_turn: bool = False,
+    has_prior_contact: bool = False,
+) -> bool:
+    cross_info = cross_info if isinstance(cross_info, dict) else {}
+    if not is_dialogue_turn:
+        return False
+    if not cross_info.get("expose_npc_context_only_on_trigger", True):
+        return True
+    if has_prior_contact:
+        return True
+
+    text = str(player_input or "").strip()
+    lowered = text.lower()
+    room_name = str(cross_info.get("from_room_display_name") or "").strip()
+    trigger_keywords = [
+        str(keyword or "").strip()
+        for keyword in cross_info.get("trigger_keywords", [])
+        if str(keyword or "").strip()
+    ] or list(DEFAULT_CROSS_WALL_TRIGGER_KEYWORDS)
+
+    if npc_name and str(npc_name).lower() in lowered:
+        return True
+    if room_name and room_name in text:
+        return True
+    return any(keyword in text for keyword in trigger_keywords)
 
 
 def build_adjacent_locations_context(

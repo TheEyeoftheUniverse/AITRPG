@@ -345,6 +345,8 @@ class NarrativeAI:
             "- Never reveal items listed in npc_dialogue_contract.forbidden_reveals, even if they appear elsewhere in npc_context.\n"
             "- Do not invent new NPC secrets, plans, deductions, or certainty beyond npc_dialogue_contract.knowledge_boundary.\n"
             "- When the player is clearly talking to an NPC, move the dialogue forward instead of restating the same atmosphere.\n"
+            "- Only mention a cross-wall NPC when npc_context explicitly contains that NPC for this turn.\n"
+            "- If npc_context does not explicitly contain a cross-wall NPC, do not mention adjacent-room NPC silence, movement, breathing, or reactions.\n"
         )
         if rhythm_result.get("arrival_mode"):
             prompt += (
