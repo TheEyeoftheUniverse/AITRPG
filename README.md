@@ -36,9 +36,9 @@ astrbot init
 
 在AstrBot的WebUI中配置LLM提供商，然后在AITRPG插件配置页面设置：
 
-- **rule_ai_provider**: 规则AI使用的LLM提供商（默认：gpt）
-- **rhythm_ai_provider**: 节奏AI使用的LLM提供商（默认：deepseek）
-- **narrative_ai_provider**: 文案AI使用的LLM提供商（默认：claude）
+- **rule_ai_provider**: 规则AI使用的LLM提供商 ID（必填，需与 AstrBot 中的 provider ID 完全一致）
+- **rhythm_ai_provider**: 节奏AI使用的LLM提供商 ID（必填，需与 AstrBot 中的 provider ID 完全一致）
+- **narrative_ai_provider**: 文案AI使用的LLM提供商 ID（必填，需与 AstrBot 中的 provider ID 完全一致）
 - **webui_port**: Web游戏界面端口（默认：9999）
 
 ### 4. 访问Web界面

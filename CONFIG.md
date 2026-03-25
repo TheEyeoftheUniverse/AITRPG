@@ -1,79 +1,76 @@
 # AITRPG 配置说明
 
-## 插件配置项
+## 重要结论
 
-在AstrBot的WebUI中，可以为AITRPG插件配置以下选项：
+AITRPG 不再内置任何默认模型配置。
 
-### 1. AI模型配置
+以下三项都需要你在 AstrBot 插件配置里显式填写，而且值必须是 AstrBot 里真实存在的 provider ID：
 
-#### rule_ai_provider
-- **说明**: 规则AI使用的LLM提供商
-- **用途**: 负责解析玩家意图和执行规则判定
-- **默认值**: `gpt`
-- **推荐模型**: GPT-5（需要精确的意图理解和规则执行）
+- `rule_ai_provider`
+- `rhythm_ai_provider`
+- `narrative_ai_provider`
 
-#### rhythm_ai_provider
-- **说明**: 节奏AI使用的LLM提供商
-- **用途**: 负责对比模组内容和控制剧情节奏
-- **默认值**: `deepseek`
-- **推荐模型**: DeepSeek v3（需要长上下文和剧情理解）
+如果任意一项为空，或填写的 provider ID 在当前环境里不存在，插件会直接报错，不会再自动切到当前会话模型，也不会偷偷换模型。
 
-#### narrative_ai_provider
-- **说明**: 文案AI使用的LLM提供商
-- **用途**: 负责生成沉浸式的叙述文本
-- **默认值**: `claude`
-- **推荐模型**: Claude 4.6 Sonnet（擅长创意写作和氛围营造）
+## 配置项
 
-### 2. 模组配置
+### `rule_ai_provider`
 
-#### module_name
-- **说明**: 使用的模组名称
-- **默认值**: `default_module`
-- **格式**: 不含.json后缀的文件名
-- **示例**: 如果你的模组文件是 `my_adventure.json`，则填写 `my_adventure`
+- 用途：规则AI，负责意图解析、动作裁定、规则判定
+- 要求：必填
+- 填写内容：AstrBot 中聊天模型 provider 的精确 ID
 
-## 配置步骤
+### `rhythm_ai_provider`
 
-1. 打开AstrBot的WebUI（通常是 http://localhost:6185）
-2. 进入"插件管理"页面
-3. 找到"AI驱动TRPG跑团系统"插件
-4. 点击"配置"按钮
-5. 修改配置项
-6. 保存并重启AstrBot
+- 用途：节奏AI，负责节奏评估、软引导、软变化补充
+- 要求：必填
+- 填写内容：AstrBot 中聊天模型 provider 的精确 ID
 
-## LLM提供商配置
+### `narrative_ai_provider`
 
-在使用插件之前，需要先在AstrBot中配置LLM提供商：
+- 用途：文案AI，负责生成玩家可见叙述文本
+- 要求：必填
+- 填写内容：AstrBot 中聊天模型 provider 的精确 ID
 
-1. 进入AstrBot的"LLM配置"页面
-2. 添加你需要的提供商（如GPT、DeepSeek、Claude）
-3. 填写API密钥和其他必要信息
-4. 测试连接是否正常
-5. 在插件配置中引用这些提供商的名称
+### `module_name`
 
-## 提供商名称对应关系
+- 用途：默认模组名
+- 默认值：`default_module`
+- 填写内容：`modules/` 目录里的 JSON 文件名，不含 `.json`
 
-AstrBot中配置的提供商名称需要与插件配置中的名称对应：
+### `webui_port`
 
-- 如果你在AstrBot中配置的GPT提供商名称是"gpt"，则 `rule_ai_provider` 填写 "gpt"
-- 如果你在AstrBot中配置的DeepSeek提供商名称是"deepseek"，则 `rhythm_ai_provider` 填写 "deepseek"
-- 如果你在AstrBot中配置的Claude提供商名称是"claude"，则 `narrative_ai_provider` 填写 "claude"
+- 用途：WebUI 端口
+- 默认值：`9999`
 
-## 注意事项
+## 如何填写 provider ID
 
-1. 提供商名称必须与AstrBot中配置的名称完全一致（区分大小写）
-2. 如果找不到指定的提供商，插件会尝试使用默认提供商
-3. 修改配置后需要重启AstrBot才能生效
-4. 确保所有配置的提供商都已正确配置API密钥
-5. 不同的模型会影响游戏体验，建议使用推荐的模型组合
+不要填写“模型名猜测值”，要填写 AstrBot 里 provider 的真实 ID。
 
-## 成本估算
+例如，如果 AstrBot 里真实存在的 provider ID 是：
 
-使用推荐的模型组合（GPT-5 + DeepSeek v3 + Claude 4.6），一局完整游戏（30轮）的成本约为：
+- `openai/gpt-5.2`
+- `openai/gpt-5`
+- `myproxy/deepseek-v3`
 
-- 规则AI（GPT-5）: ~$0.02
-- 节奏AI（DeepSeek v3）: ~$0.01
-- 文案AI（Claude 4.6）: ~$0.03
-- **总计**: ~$0.06
+那插件配置里就必须逐项填写这些完整 ID 之一，而不是只写：
 
-如果使用低成本渠道，成本可能更低。
+- `gpt`
+- `deepseek`
+- `claude`
+
+## 生效方式
+
+修改插件配置后，需要让 AstrBot 重新加载插件或重启服务，新的 provider 配置才会进入插件实例。
+
+## 故障排查
+
+如果你怀疑配置没生效，先看后端日志里的初始化行。修复后，插件会打印一条类似：
+
+```text
+[AITRPG] Effective plugin config: module=default_module, rule_ai=openai/gpt-5.2, rhythm_ai=openai/gpt-5, narrative_ai=myproxy/deepseek-v3
+```
+
+如果这里还是 `<unset>`，说明插件实例没有拿到插件配置，或配置项为空。
+
+如果这里有值，但随后报 `Provider ... not found`，说明你填写的 provider ID 和 AstrBot 当前实际存在的 provider ID 不一致。

@@ -32,8 +32,9 @@ class AITRPGPlugin(Star):
         ("narrative", "文案AI · 生成叙述", True),
     ]
 
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config=None):
         super().__init__(context)
+        self.plugin_config = config or {}
         self.session_manager = None
         self.rule_ai = None
         self.rhythm_ai = None
@@ -48,13 +49,22 @@ class AITRPGPlugin(Star):
         logger.info("[AITRPG] 正在初始化插件...")
 
         # 读取配置
-        config = self.context.get_config()
+        config = self.plugin_config or {}
         module_name = config.get("module_name", "default_module") or "default_module"
         rule_ai_provider = config.get("rule_ai_provider", "") or None
         rhythm_ai_provider = config.get("rhythm_ai_provider", "") or None
         narrative_ai_provider = config.get("narrative_ai_provider", "") or None
+        logger.info(
+            "[AITRPG] Effective plugin config: module=%s, rule_ai=%s, rhythm_ai=%s, narrative_ai=%s",
+            module_name,
+            rule_ai_provider or "<unset>",
+            rhythm_ai_provider or "<unset>",
+            narrative_ai_provider or "<unset>",
+        )
 
-        logger.info(f"[AITRPG] 配置: 模组={module_name}, 规则AI={rule_ai_provider or '默认'}, 节奏AI={rhythm_ai_provider or '默认'}, 文案AI={narrative_ai_provider or '默认'}")
+        logger.info(
+            f"[AITRPG] 配置: 模组={module_name}, 规则AI={rule_ai_provider or '未配置'}, 节奏AI={rhythm_ai_provider or '未配置'}, 文案AI={narrative_ai_provider or '未配置'}"
+        )
 
         # 初始化会话管理器（传入模组名称）
         self.session_manager = SessionManager(module_name)

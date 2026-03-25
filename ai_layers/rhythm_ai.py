@@ -55,14 +55,16 @@ class RhythmAI:
             return {}
 
     def _get_provider(self):
-        if self.provider_name:
-            provider = self.context.get_provider(self.provider_name)
-            if not provider:
-                logger.error(
-                    f"[RhythmAI] Provider {self.provider_name} not found; strict provider mode disables fallback"
-                )
-            return provider
-        return self.context.get_using_provider()
+        if not self.provider_name:
+            logger.error("[RhythmAI] rhythm_ai_provider is not configured")
+            return None
+
+        provider = self.context.get_provider(self.provider_name)
+        if not provider:
+            logger.error(
+                f"[RhythmAI] Provider {self.provider_name} not found; strict provider mode disables fallback"
+            )
+        return provider
 
     def _strip_json_fence(self, text: str) -> str:
         text = (text or "").strip()

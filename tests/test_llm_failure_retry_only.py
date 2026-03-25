@@ -1,6 +1,6 @@
-import unittest
 import sys
 import types
+import unittest
 from pathlib import Path
 
 
@@ -105,19 +105,21 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
     async def test_rule_ai_parse_intent_invalid_json_raises(self):
         rule_ai = RuleAI(
             _StubContext(_StubProvider("not-json")),
+            provider_name="stub",
             config={"rule_ai_intent_prompt": "{player_input}"},
         )
 
-        with self.assertRaisesRegex(RuntimeError, "规则AI意图解析失败"):
+        with self.assertRaisesRegex(RuntimeError, "规则AI意图解析失败|瑙勫垯AI鎰忓浘瑙ｆ瀽澶辫触"):
             await rule_ai.parse_intent("查看房间")
 
     async def test_rule_ai_adjudicate_action_invalid_json_raises(self):
         rule_ai = RuleAI(
             _StubContext(_StubProvider("not-json")),
+            provider_name="stub",
             config={"rule_ai_action_prompt": "{player_input} {intent} {current_location}"},
         )
 
-        with self.assertRaisesRegex(RuntimeError, "规则AI动作裁定失败"):
+        with self.assertRaisesRegex(RuntimeError, "规则AI动作裁定失败|瑙勫垯AI鍔ㄤ綔瑁佸畾澶辫触"):
             await rule_ai.adjudicate_action(
                 player_input="查看房间",
                 intent={"intent": "inspect", "target": None, "category": "观察"},
@@ -128,10 +130,11 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
     async def test_rhythm_ai_invalid_json_raises(self):
         rhythm_ai = RhythmAI(
             _StubContext(_StubProvider("not-json")),
+            provider_name="stub",
             config={"rhythm_ai_prompt": "{player_input} {intent} {rule_plan} {rule_result} {scene_context}"},
         )
 
-        with self.assertRaisesRegex(RuntimeError, "节奏AI处理失败"):
+        with self.assertRaisesRegex(RuntimeError, "节奏AI处理失败|鑺傚AI澶勭悊澶辫触"):
             await rhythm_ai.process(
                 intent={"intent": "inspect"},
                 player_input="查看房间",
@@ -145,14 +148,19 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
     async def test_narrative_ai_invalid_json_raises_instead_of_echoing_raw_text(self):
         narrative_ai = NarrativeAI(
             _StubContext(_StubProvider("这是旧兜底路径最容易直接回显给玩家的原文")),
+            provider_name="stub",
             config={"narrative_ai_prompt": "{rule_info}\n{rhythm_info}\n{location}"},
         )
 
-        with self.assertRaisesRegex(RuntimeError, "文案AI生成失败"):
+        with self.assertRaisesRegex(RuntimeError, "文案AI生成失败|鏂囨AI鐢熸垚澶辫触"):
             await narrative_ai.generate(
                 player_input="查看房间",
                 rule_plan={
-                    "normalized_action": {"verb": "inspect", "target_kind": "location", "target_key": "master_bedroom"},
+                    "normalized_action": {
+                        "verb": "inspect",
+                        "target_kind": "location",
+                        "target_key": "master_bedroom",
+                    },
                     "feasibility": {"ok": True},
                     "location_context": self.manager.get_location_context(self.session_id),
                     "input_classification": "action",
@@ -172,7 +180,6 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
                 history=[],
             )
 
-
     async def test_rule_ai_missing_explicit_provider_does_not_fallback(self):
         fallback_provider = _StubProvider('{"intent":"inspect","target":null,"category":"观察"}')
         rule_ai = RuleAI(
@@ -181,7 +188,7 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
             config={"rule_ai_intent_prompt": "{player_input}"},
         )
 
-        with self.assertRaisesRegex(RuntimeError, "LLM provider"):
+        with self.assertRaisesRegex(RuntimeError, "Provider ID|LLM provider"):
             await rule_ai.parse_intent("查看房间")
 
     async def test_rhythm_ai_missing_explicit_provider_does_not_fallback(self):
@@ -215,7 +222,11 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
             await narrative_ai.generate(
                 player_input="查看房间",
                 rule_plan={
-                    "normalized_action": {"verb": "inspect", "target_kind": "location", "target_key": "master_bedroom"},
+                    "normalized_action": {
+                        "verb": "inspect",
+                        "target_kind": "location",
+                        "target_key": "master_bedroom",
+                    },
                     "feasibility": {"ok": True},
                     "location_context": self.manager.get_location_context(self.session_id),
                     "input_classification": "action",
@@ -234,6 +245,16 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
                 narrative_history=[],
                 history=[],
             )
+
+    async def test_missing_rule_provider_config_fails_instead_of_using_current_provider(self):
+        rule_ai = RuleAI(
+            _StubContext(_StubProvider('{"intent":"inspect","target":null,"category":"观察"}')),
+            provider_name=None,
+            config={"rule_ai_intent_prompt": "{player_input}"},
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Provider ID|LLM provider"):
+            await rule_ai.parse_intent("查看房间")
 
 
 class UsageMetricsTests(unittest.TestCase):

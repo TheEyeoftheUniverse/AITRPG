@@ -1,23 +1,23 @@
 {
   "rule_ai_provider": {
-    "description": "规则AI使用的LLM提供商",
+    "description": "规则AI使用的 LLM 提供商 ID",
     "type": "string",
     "default": "",
-    "hint": "用于动作意图解析、动作裁定和规则判定。留空则使用当前会话模型。",
+    "hint": "必填。填写 AstrBot 中真实存在的 provider ID，用于意图解析、动作裁定和规则判定。",
     "_special": "select_provider"
   },
   "rhythm_ai_provider": {
-    "description": "节奏AI使用的LLM提供商",
+    "description": "节奏AI使用的 LLM 提供商 ID",
     "type": "string",
     "default": "",
-    "hint": "用于剧情节奏评估、软引导和少量软变化补充。留空则使用当前会话模型。",
+    "hint": "必填。填写 AstrBot 中真实存在的 provider ID，用于节奏评估、软引导和软变化补充。",
     "_special": "select_provider"
   },
   "narrative_ai_provider": {
-    "description": "文案AI使用的LLM提供商",
+    "description": "文案AI使用的 LLM 提供商 ID",
     "type": "string",
     "default": "",
-    "hint": "用于生成沉浸式叙述文本。留空则使用当前会话模型。",
+    "hint": "必填。填写 AstrBot 中真实存在的 provider ID，用于生成玩家可见叙述文本。",
     "_special": "select_provider"
   },
   "module_name": {
@@ -30,25 +30,25 @@
     "description": "规则AI意图解析提示词模板",
     "type": "text",
     "default": "",
-    "hint": "留空使用默认模板。支持占位符：{player_input}"
+    "hint": "留空则使用默认模板。支持占位符：{player_input}"
   },
   "rule_ai_action_prompt": {
     "description": "规则AI动作裁定提示词模板",
     "type": "text",
     "default": "",
-    "hint": "留空使用默认模板。支持占位符：{player_input}, {intent}, {current_location}, {location_context}, {scene_objects}, {scene_npcs}, {inventory}, {clues_found}, {reachable_locations}"
+    "hint": "留空则使用默认模板。支持占位符：{player_input}, {intent}, {current_location}, {location_context}, {scene_objects}, {scene_npcs}, {inventory}, {clues_found}, {reachable_locations}"
   },
   "rhythm_ai_prompt": {
     "description": "节奏AI提示词模板",
     "type": "text",
     "default": "",
-    "hint": "留空使用默认模板。支持占位符：{current_location}, {round_count}, {clues_found}, {stages}, {history_summaries}, {player_input}, {intent}, {rule_plan}, {rule_result}, {scene_context}"
+    "hint": "留空则使用默认模板。支持占位符：{current_location}, {round_count}, {clues_found}, {stages}, {history_summaries}, {player_input}, {intent}, {rule_plan}, {rule_result}, {scene_context}"
   },
   "narrative_ai_prompt": {
     "description": "文案AI提示词模板",
     "type": "text",
     "default": "",
-    "hint": "留空使用默认模板。支持占位符：{rule_info}, {rhythm_info}, {location}"
+    "hint": "留空则使用默认模板。支持占位符：{rule_info}, {rhythm_info}, {location}"
   },
   "webui_port": {
     "description": "WebUI 端口",

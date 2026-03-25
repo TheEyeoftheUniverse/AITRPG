@@ -43,14 +43,16 @@ class NarrativeAI:
             return {}
 
     def _get_provider(self):
-        if self.provider_name:
-            provider = self.context.get_provider(self.provider_name)
-            if not provider:
-                logger.error(
-                    f"[NarrativeAI] Provider {self.provider_name} not found; strict provider mode disables fallback"
-                )
-            return provider
-        return self.context.get_using_provider()
+        if not self.provider_name:
+            logger.error("[NarrativeAI] narrative_ai_provider is not configured")
+            return None
+
+        provider = self.context.get_provider(self.provider_name)
+        if not provider:
+            logger.error(
+                f"[NarrativeAI] Provider {self.provider_name} not found; strict provider mode disables fallback"
+            )
+        return provider
 
     def _get_provider_meta(self, provider) -> dict:
         provider_meta = extract_provider_meta(provider)
