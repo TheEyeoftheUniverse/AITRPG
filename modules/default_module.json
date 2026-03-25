@@ -47,8 +47,7 @@
                                                              "破碎的镜子"
                                                          ],
                                              "exits":  [
-                                                          "二楼走廊",
-                                                          "艾米莉标出的出口"
+                                                          "二楼走廊"
                                                       ],
                                              "floor":  2,
                                              "npc_reactions":  {
@@ -786,6 +785,48 @@
                                                                 }
                                                 }
                      },
+    "micro_scenes":  {
+                         "master_bedroom_peek":  {
+                                                     "parent_location":  "master_bedroom",
+                                                     "display_name":  "门缝",
+                                                     "visible_when":  {
+                                                                          "guard_room_is_parent":  true
+                                                                      },
+                                                     "first_enter_warning_flag":  "master_bedroom_peek_warned",
+                                                     "first_enter_text":  "你刚想试着贴近门缝，以窥视那道身影是否还在门外，就感觉后颈一阵发冷。",
+                                                     "ending_on_reenter":  "door_peek_gaze"
+                                                 },
+                         "guest_bedroom_peek":  {
+                                                    "parent_location":  "guest_bedroom",
+                                                    "display_name":  "门缝",
+                                                    "visible_when":  {
+                                                                         "guard_room_is_parent":  true
+                                                                     },
+                                                    "first_enter_warning_flag":  "guest_bedroom_peek_warned",
+                                                    "first_enter_text":  "你靠近门缝的瞬间，门外那种不属于活人的静默几乎沿着门板渗了进来，你感觉后背一阵阴冷。",
+                                                    "ending_on_reenter":  "door_peek_gaze"
+                                                },
+                         "study_peek":  {
+                                            "parent_location":  "study",
+                                            "display_name":  "门缝",
+                                            "visible_when":  {
+                                                                 "guard_room_is_parent":  true
+                                                             },
+                                            "first_enter_warning_flag":  "study_peek_warned",
+                                            "first_enter_text":  "你贴近书房门缝时，门外没有脚步，也没有呼吸声，安静得让你毛骨悚然。",
+                                            "ending_on_reenter":  "door_peek_gaze"
+                                        },
+                         "kitchen_suicide":  {
+                                                 "parent_location":  "kitchen",
+                                                 "display_name":  "以刀自尽",
+                                                 "visible_when":  {
+                                                                      "requires_inventory":  [
+                                                                                                 "刀具"
+                                                                                             ]
+                                                                  },
+                                                 "ending_on_enter":  "amnesia"
+                                             }
+                     },
     "threat_entities":  {
                             "管家":  {
                                        "name":  "管家",
@@ -875,6 +916,12 @@
                                                               "priority":  2,
                                                               "description":  "失忆结局：使用刀具自我了结时，会活着从现实的主卧床上醒来，但失去一切记忆。"
                                                           },
+                                              "door_peek_gaze":  {
+                                                                      "trigger":  "",
+                                                                      "priority":  2,
+                                                                      "description":  "窥视门缝结局：在管家守门时执意透过门缝窥视，最终与那道不该被看见的视线相撞。",
+                                                                      "hardcoded_text":  "你还是把眼睛贴上了那道狭窄的门缝。起初，门外什么都没有，只有一片静得过分的昏暗。<paragraph=1800ms>然后，一种完全不属于人类骨骼的扭动声，几乎贴着门板响了起来。</paragraph><paragraph=1800ms><glitch>门外那道高大的人形没有转身，没有迈步，却像把整条脊柱一节一节拧断那样，将本该在更高处的头颅硬生生扭到你面前——</glitch></paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>……</paragraph>"
+                                                                  },
                                               "escaped":  {
                                                               "trigger":  "escape_success===true AND amnesia===false",
                                                               "priority":  3,

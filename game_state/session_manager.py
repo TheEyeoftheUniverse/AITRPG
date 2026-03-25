@@ -319,6 +319,12 @@ class SessionManager:
         preset_tasks = module_data.get("preset_tasks", {})
         return preset_tasks if isinstance(preset_tasks, dict) else {}
 
+    def _get_module_micro_scenes(self, module_data: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(module_data, dict):
+            return {}
+        micro_scenes = module_data.get("micro_scenes", {})
+        return micro_scenes if isinstance(micro_scenes, dict) else {}
+
     def _append_preset_task_history(self, npc_state: Dict[str, Any], entry: Dict[str, Any]):
         if not isinstance(npc_state, dict) or not isinstance(entry, dict):
             return
@@ -343,6 +349,229 @@ class SessionManager:
             and str(chase_state.get("status") or "").strip() != "blocked"
             and str(chase_state.get("target") or "player").strip() == "player"
         )
+
+    def _is_micro_scene_visible(self, state: Dict[str, Any], micro_scene_cfg: Dict[str, Any]) -> bool:
+        if not isinstance(state, dict) or not isinstance(micro_scene_cfg, dict):
+            return False
+        parent_location = str(micro_scene_cfg.get("parent_location") or "").strip()
+        current_location = str(state.get("current_location") or "").strip()
+        if not parent_location or current_location != parent_location:
+            return False
+
+        visible_when = micro_scene_cfg.get("visible_when", {}) if isinstance(micro_scene_cfg.get("visible_when"), dict) else {}
+        if visible_when.get("guard_room_is_parent") and self._get_butler_guard_room_from_state(state) != parent_location:
+            return False
+
+        inventory = state.get("player", {}).get("inventory", []) if isinstance(state.get("player", {}).get("inventory"), list) else []
+        required_inventory = [
+            str(item or "").strip()
+            for item in visible_when.get("requires_inventory", [])
+            if str(item or "").strip()
+        ]
+        if required_inventory and any(item not in inventory for item in required_inventory):
+            return False
+
+        flags = state.get("world_state", {}).get("flags", {}) if isinstance(state.get("world_state", {}).get("flags"), dict) else {}
+        required_flags = [
+            str(item or "").strip()
+            for item in visible_when.get("requires_flags", [])
+            if str(item or "").strip()
+        ]
+        if required_flags and any(not flags.get(flag) for flag in required_flags):
+            return False
+
+        return True
+
+    def _build_first_entry_block_config(
+        self,
+        entry_cfg: Dict[str, Any],
+        *,
+        fallback_flag: str = "",
+        fallback_text: str = "",
+        fallback_reason_flag: str = "",
+        fallback_reason: str = "",
+    ) -> Dict[str, Any]:
+        entry_cfg = entry_cfg if isinstance(entry_cfg, dict) else {}
+        first_entry = entry_cfg.get("first_entry_blocked", {})
+        if not isinstance(first_entry, dict):
+            first_entry = {}
+
+        legacy_flag = str(entry_cfg.get("first_enter_warning_flag") or "").strip()
+        legacy_text = str(entry_cfg.get("first_enter_text") or "").strip()
+        flag = str(first_entry.get("flag") or legacy_flag or fallback_flag or "").strip()
+        text = str(first_entry.get("text") or legacy_text or fallback_text or "").strip()
+        if not flag or not text:
+            return {}
+
+        reason_flag = str(first_entry.get("reason_flag") or fallback_reason_flag or "").strip()
+        reason_value = str(first_entry.get("reason_value") or fallback_reason or "").strip()
+
+        requires_current_location = first_entry.get("requires_current_location", [])
+        if isinstance(requires_current_location, str):
+            requires_current_location = [requires_current_location]
+        elif not isinstance(requires_current_location, list):
+            requires_current_location = []
+
+        visited_locations_on_block = first_entry.get("visited_locations_on_block", [])
+        if isinstance(visited_locations_on_block, str):
+            visited_locations_on_block = [visited_locations_on_block]
+        elif not isinstance(visited_locations_on_block, list):
+            visited_locations_on_block = []
+
+        set_flags = first_entry.get("set_flags", {})
+        return {
+            "flag": flag,
+            "text": text,
+            "reason_flag": reason_flag,
+            "reason_value": reason_value,
+            "requires_current_location": [
+                str(value or "").strip()
+                for value in requires_current_location
+                if str(value or "").strip()
+            ],
+            "visited_locations_on_block": [
+                str(value or "").strip()
+                for value in visited_locations_on_block
+                if str(value or "").strip()
+            ],
+            "set_flags": copy.deepcopy(set_flags) if isinstance(set_flags, dict) else {},
+        }
+
+    def _consume_first_entry_block(self, state: Dict[str, Any], block_cfg: Dict[str, Any]) -> str:
+        if not isinstance(state, dict) or not isinstance(block_cfg, dict) or not block_cfg.get("flag"):
+            return ""
+
+        current_location = str(state.get("current_location") or "").strip()
+        required_locations = block_cfg.get("requires_current_location", [])
+        if isinstance(required_locations, list) and required_locations and current_location not in required_locations:
+            return ""
+
+        world_state = state.setdefault("world_state", {})
+        flags = world_state.setdefault("flags", {})
+        flag = str(block_cfg.get("flag") or "").strip()
+        if flags.get(flag):
+            return ""
+
+        flags[flag] = True
+        reason_flag = str(block_cfg.get("reason_flag") or "").strip()
+        reason_value = str(block_cfg.get("reason_value") or "").strip()
+        if reason_flag and reason_value:
+            flags[reason_flag] = reason_value
+
+        set_flags = block_cfg.get("set_flags", {})
+        if isinstance(set_flags, dict) and set_flags:
+            flags.update(copy.deepcopy(set_flags))
+
+        visited = state.setdefault("visited_locations", [])
+        for location_key in block_cfg.get("visited_locations_on_block", []):
+            if location_key not in visited:
+                visited.append(location_key)
+
+        return str(block_cfg.get("text") or "").strip()
+
+    def _consume_location_first_entry_block(self, state: Dict[str, Any], current_key: str, target_key: str) -> str:
+        if not isinstance(state, dict):
+            return ""
+        module_data = state.get("module_data", {}) if isinstance(state.get("module_data"), dict) else {}
+        locations = module_data.get("locations", {}) if isinstance(module_data.get("locations"), dict) else {}
+        location_cfg = locations.get(target_key, {}) if isinstance(locations.get(target_key), dict) else {}
+        block_cfg = self._build_first_entry_block_config(location_cfg)
+        if not block_cfg:
+            warning_location = self._get_primary_pursuer_warning_location(module_data)
+            if (
+                target_key == warning_location
+                and not bool(self._get_butler_runtime_state(state).get("chase_state", {}).get("active"))
+                and target_key == self.get_butler_location(state.get("session_id", ""))
+            ):
+                block_cfg = self._build_first_entry_block_config(
+                    {},
+                    fallback_flag="butler_living_room_warning_shown",
+                    fallback_text=self._get_module_special_message(
+                        state.get("session_id", ""),
+                        "first_living_room_entry_blocked",
+                        LIVING_ROOM_FIRST_ENTRY_WARNING_MESSAGE,
+                    ),
+                    fallback_reason_flag="butler_living_room_warning_reason",
+                    fallback_reason="player_attempted_first_entry_to_living_room",
+                )
+            elif target_key == "outside" and not self.get_ending_phase(state.get("session_id", "")):
+                block_cfg = self._build_first_entry_block_config(
+                    {
+                        "first_entry_blocked": {
+                            "flag": "outside_lost_warning_shown",
+                            "text": self._get_module_special_message(
+                                state.get("session_id", ""),
+                                "first_outside_entry_blocked",
+                                OUTSIDE_LOST_WARNING_MESSAGE,
+                            ),
+                            "reason_flag": "outside_lost_warning_reason",
+                            "reason_value": "player_attempted_first_exit_through_kitchen_backdoor",
+                            "visited_locations_on_block": ["outside"],
+                        }
+                    }
+                )
+        return self._consume_first_entry_block(state, block_cfg)
+
+    def get_available_micro_scenes(self, session_id: str) -> Dict[str, Dict[str, Any]]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+        self._ensure_runtime_defaults(state)
+        module_data = self.get_module_data(session_id)
+        available = {}
+        for micro_scene_id, cfg in self._get_module_micro_scenes(module_data).items():
+            if not isinstance(cfg, dict):
+                continue
+            if self._is_micro_scene_visible(state, cfg):
+                available[micro_scene_id] = copy.deepcopy(cfg)
+        return available
+
+    def enter_micro_scene(self, session_id: str, micro_scene_id: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {"success": False, "message": "会话不存在"}
+
+        self._ensure_runtime_defaults(state)
+        module_data = self.get_module_data(session_id)
+        micro_scenes = self._get_module_micro_scenes(module_data)
+        micro_scene = micro_scenes.get(micro_scene_id, {}) if isinstance(micro_scenes.get(micro_scene_id), dict) else {}
+        if not micro_scene:
+            return {"success": False, "message": "微场景不存在"}
+        if not self._is_micro_scene_visible(state, micro_scene):
+            return {"success": False, "message": "当前无法进入该微场景"}
+
+        warning_text = self._consume_first_entry_block(
+            state,
+            self._build_first_entry_block_config(micro_scene),
+        )
+        if warning_text:
+            return {
+                "success": True,
+                "warning_only": True,
+                "micro_scene_id": micro_scene_id,
+                "message": warning_text or "你本能地停下了。再继续下去，只会触发更糟的后果。",
+            }
+
+        ending_id = str(
+            micro_scene.get("ending_on_reenter")
+            or micro_scene.get("ending_on_enter")
+            or ""
+        ).strip()
+        if ending_id:
+            self.trigger_ending(session_id, ending_id)
+            return {
+                "success": True,
+                "ending_triggered": True,
+                "micro_scene_id": micro_scene_id,
+                "ending_id": ending_id,
+                "message": str(state.get("world_state", {}).get("flags", {}).get("ending_hardcoded_text") or "").strip(),
+            }
+
+        return {
+            "success": True,
+            "micro_scene_id": micro_scene_id,
+            "message": str(micro_scene.get("first_enter_text") or micro_scene.get("description") or "").strip(),
+        }
 
     def _find_awaiting_cooperative_handoff(self, state: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
         if not isinstance(state, dict):
@@ -2884,28 +3113,12 @@ class SessionManager:
                 }
             return {"success": False, "message": "目标位置不可达（路径被锁定）"}
 
-        if self.should_warn_on_living_room_entry(session_id, target_key):
-            self.trigger_butler_living_room_warning(session_id, "player_attempted_first_entry_to_living_room")
+        first_entry_block_text = self._consume_location_first_entry_block(state, current, target_key)
+        if first_entry_block_text:
             return {
                 "success": False,
                 "warning_blocked": True,
-                "message": self._get_module_special_message(
-                    session_id,
-                    "first_living_room_entry_blocked",
-                    LIVING_ROOM_FIRST_ENTRY_WARNING_MESSAGE,
-                ),
-            }
-
-        if self.should_warn_on_outside_entry(session_id, current, target_key):
-            self.trigger_outside_lost_warning(session_id, "player_attempted_first_exit_through_kitchen_backdoor")
-            return {
-                "success": False,
-                "warning_blocked": True,
-                "message": self._get_module_special_message(
-                    session_id,
-                    "first_outside_entry_blocked",
-                    OUTSIDE_LOST_WARNING_MESSAGE,
-                ),
+                "message": first_entry_block_text,
             }
 
         dodge_result = None

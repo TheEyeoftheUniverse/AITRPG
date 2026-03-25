@@ -313,6 +313,7 @@ class AITRPGPlugin(Star):
         """
         move_check_result = None
         move_movement_note = None
+        micro_scene_id = self._match_micro_scene_request(session_id, player_input)
 
         # === 结局已完全结束 ===
         if self.session_manager.is_game_over(session_id):
@@ -343,6 +344,41 @@ class AITRPGPlugin(Star):
         if self.session_manager.is_ending_triggered(session_id):
             result = await self._process_ending_narrative(session_id, player_input, history)
             return result, None
+
+        if micro_scene_id:
+            micro_result = self.session_manager.enter_micro_scene(session_id, micro_scene_id)
+            state = self.session_manager.get_session(session_id)
+            for step_key, _, _ in self.PROGRESS_STEPS:
+                self._skip_progress_step(session_id, step_key, "微场景硬规则处理")
+            narrative = micro_result.get("message") or "你停下了动作。"
+            summary = "微场景触发"
+            if micro_result.get("ending_triggered"):
+                summary = "结局触发"
+            return self._finalize_action_result(
+                session_id,
+                {
+                    "rule_plan": {
+                        "normalized_action": {
+                            "verb": "enter_micro_scene",
+                            "target_kind": "micro_scene",
+                            "target_key": micro_scene_id,
+                            "raw_target_text": micro_scene_id,
+                        }
+                    },
+                    "rule_result": {"check_type": None, "success": True},
+                    "hard_changes": {},
+                    "rhythm_result": {
+                        "feasible": True,
+                        "hint": None,
+                        "stage_assessment": "微场景硬规则处理",
+                        "world_changes": {},
+                        "soft_world_changes": {},
+                    },
+                    "narrative_result": {"narrative": narrative, "summary": summary},
+                    "game_state": state,
+                },
+                message="微场景处理完成",
+            ), None
 
         # === 移动处理 ===
         move_result = None
@@ -494,6 +530,33 @@ class AITRPGPlugin(Star):
                         "selected_attempt_index": step.get("selected_attempt_index"),
                     }
                 }
+
+    def _match_micro_scene_request(self, session_id: str, player_input: str) -> str | None:
+        text = str(player_input or "").strip()
+        if not text:
+            return None
+
+        state = self.session_manager.get_session(session_id) or {}
+        current_location = str(state.get("current_location") or "").strip()
+        available = self.session_manager.get_available_micro_scenes(session_id)
+        if not isinstance(available, dict) or not available:
+            return None
+
+        if any(keyword in text for keyword in ["门缝", "偷看门外", "从门缝看", "看门缝", "贴近门缝", "窥视门外"]):
+            peek_map = {
+                "master_bedroom": "master_bedroom_peek",
+                "guest_bedroom": "guest_bedroom_peek",
+                "study": "study_peek",
+            }
+            target = peek_map.get(current_location)
+            if target and target in available:
+                return target
+
+        if any(keyword in text for keyword in ["自尽", "自杀", "用刀自杀", "用刀自尽", "拿刀割喉", "了结自己"]):
+            if "kitchen_suicide" in available:
+                return "kitchen_suicide"
+
+        return None
 
     def _replay_cached_steps(self, session_id: str, cache: dict, step_keys: list):
         """从缓存回放步骤进度（用于重试时显示已完成步骤）。"""
