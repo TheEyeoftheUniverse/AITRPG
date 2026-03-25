@@ -90,16 +90,16 @@ class RhythmAI:
         base_result = self._build_base_result(player_input, rule_plan, game_state, module_data)
 
         if not provider:
-            logger.warning("[RhythmAI] No provider available, using base result")
-            return base_result
+            logger.error("[RhythmAI] No provider available")
+            raise RuntimeError("节奏AI处理失败：未找到可用 LLM provider，请使用重试按钮。")
 
         prompt_template = self.config.get("rhythm_ai_prompt", "").strip()
         if not prompt_template:
             prompt_template = self.prompts.get("rhythm_ai_prompt", "")
 
         if not prompt_template:
-            logger.warning("[RhythmAI] rhythm_ai_prompt not found, using base result")
-            return base_result
+            logger.error("[RhythmAI] rhythm_ai_prompt not found")
+            raise RuntimeError("节奏AI处理失败：未找到可用提示词，请使用重试按钮。")
 
         prompt = self._build_prompt(
             prompt_template=prompt_template,
@@ -125,12 +125,12 @@ class RhythmAI:
             normalized = self._normalize_result(result, base_result)
             logger.info(f"[RhythmAI] process result: {normalized}")
             return normalized
-        except json.JSONDecodeError:
-            logger.warning("[RhythmAI] JSON decode failed, using base result")
-            return base_result
+        except json.JSONDecodeError as e:
+            logger.warning("[RhythmAI] JSON decode failed")
+            raise RuntimeError("节奏AI处理失败：返回结果不是合法 JSON，请使用重试按钮。") from e
         except Exception as e:
             logger.error(f"[RhythmAI] process error: {e}")
-            return base_result
+            raise RuntimeError("节奏AI处理失败，请使用重试按钮。") from e
 
     def _build_prompt(
         self,

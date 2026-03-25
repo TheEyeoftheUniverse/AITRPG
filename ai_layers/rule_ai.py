@@ -94,7 +94,7 @@ class RuleAI:
         provider = self._get_provider()
         if not provider:
             logger.error("[RuleAI] No provider available for parse_intent")
-            return {"intent": "unknown", "target": None, "category": "其他"}
+            raise RuntimeError("规则AI意图解析失败：未找到可用 LLM provider，请使用重试按钮。")
 
         prompt_template = self.config.get("rule_ai_intent_prompt", "").strip()
         if not prompt_template:
@@ -102,7 +102,7 @@ class RuleAI:
 
         if not prompt_template:
             logger.error("[RuleAI] rule_ai_intent_prompt not found")
-            return {"intent": "unknown", "target": None, "category": "其他"}
+            raise RuntimeError("规则AI意图解析失败：未找到可用提示词，请使用重试按钮。")
 
         prompt = prompt_template.replace("{player_input}", player_input)
 
@@ -112,12 +112,12 @@ class RuleAI:
             if trace_id:
                 self._call_metrics[trace_id] = extract_usage_metrics(llm_response, prompt, response_text)
             return json.loads(self._strip_json_fence(response_text))
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             logger.warning(f"[RuleAI] parse_intent JSON decode failed: {player_input}")
-            return {"intent": "unknown", "target": player_input, "category": "其他"}
+            raise RuntimeError("规则AI意图解析失败：返回结果不是合法 JSON，请使用重试按钮。") from e
         except Exception as e:
             logger.error(f"[RuleAI] parse_intent error: {e}")
-            return {"intent": "unknown", "target": player_input, "category": "其他"}
+            raise RuntimeError("规则AI意图解析失败，请使用重试按钮。") from e
 
     async def adjudicate_action(
         self,
@@ -127,20 +127,18 @@ class RuleAI:
         module_data: dict,
         trace_id: str = None,
     ) -> dict:
-        fallback = self._get_fallback_action_plan(player_input, intent, game_state, module_data)
-
         provider = self._get_provider()
         if not provider:
-            logger.warning("[RuleAI] No provider available for adjudicate_action, using fallback")
-            return fallback
+            logger.error("[RuleAI] No provider available for adjudicate_action")
+            raise RuntimeError("规则AI动作裁定失败：未找到可用 LLM provider，请使用重试按钮。")
 
         prompt_template = self.config.get("rule_ai_action_prompt", "").strip()
         if not prompt_template:
             prompt_template = self.prompts.get("rule_ai_action_prompt", "")
 
         if not prompt_template:
-            logger.warning("[RuleAI] rule_ai_action_prompt not found, using fallback")
-            return fallback
+            logger.error("[RuleAI] rule_ai_action_prompt not found")
+            raise RuntimeError("规则AI动作裁定失败：未找到可用提示词，请使用重试按钮。")
 
         prompt = self._build_action_prompt(prompt_template, player_input, intent, game_state, module_data)
 
@@ -153,12 +151,12 @@ class RuleAI:
             normalized = self._normalize_action_plan(result, player_input, intent, game_state, module_data)
             logger.info(f"[RuleAI] adjudicate_action result: {normalized}")
             return normalized
-        except json.JSONDecodeError:
-            logger.warning(f"[RuleAI] adjudicate_action JSON decode failed, using fallback. Input={player_input}")
-            return fallback
+        except json.JSONDecodeError as e:
+            logger.warning(f"[RuleAI] adjudicate_action JSON decode failed. Input={player_input}")
+            raise RuntimeError("规则AI动作裁定失败：返回结果不是合法 JSON，请使用重试按钮。") from e
         except Exception as e:
             logger.error(f"[RuleAI] adjudicate_action error: {e}")
-            return fallback
+            raise RuntimeError("规则AI动作裁定失败，请使用重试按钮。") from e
 
     async def resolve_check(self, adjudication_result: dict, player_state: dict) -> dict:
         feasibility = adjudication_result.get("feasibility", {}) if isinstance(adjudication_result, dict) else {}

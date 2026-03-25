@@ -513,7 +513,7 @@ def create_trpg_app(plugin):
                 telemetry = plugin.get_action_progress(session_id)
                 cache = plugin._last_action_cache.get(session_id, {})
                 return jsonify({
-                    "error": f"处理出错: {str(e)}",
+                    "error": str(e),
                     "telemetry": telemetry,
                     "partial_results": {
                         "rule_plan": cache.get("rule_plan"),
@@ -688,7 +688,7 @@ def create_trpg_app(plugin):
                 telemetry = plugin.get_action_progress(session_id)
                 retry_cache = plugin._last_action_cache.get(session_id, {})
                 return jsonify({
-                    "error": f"重试出错: {str(e)}",
+                    "error": str(e),
                     "telemetry": telemetry,
                     "partial_results": {
                         "rule_plan": retry_cache.get("rule_plan"),

@@ -83,16 +83,6 @@ def get_entity_first_appearance(entity_data: dict = None) -> str:
     return str(entity_data.get("first_appearance") or "").strip()
 
 
-def get_entity_narrative_fallback(entity_data: dict = None) -> Dict[str, Any]:
-    entity_data = entity_data if isinstance(entity_data, dict) else {}
-    dialogue = get_entity_dialogue_module(entity_data)
-    fallback = dialogue.get("narrative_fallback", {})
-    if isinstance(fallback, dict) and fallback:
-        return fallback
-    legacy = entity_data.get("narrative_fallback", {})
-    return legacy if isinstance(legacy, dict) else {}
-
-
 def get_entity_trust_map(entity_data: dict = None) -> Dict[str, Any]:
     entity_data = entity_data if isinstance(entity_data, dict) else {}
     trust = get_entity_trust_module(entity_data)
@@ -256,7 +246,6 @@ def _normalize_dialogue_module(entity_name: str, entity_data: dict, is_threat: b
             normalized = copy.deepcopy(explicit)
             normalized.setdefault("guide", copy.deepcopy(entity_data.get("dialogue_guide", {})))
             normalized.setdefault("first_appearance", entity_data.get("first_appearance", ""))
-            normalized.setdefault("narrative_fallback", copy.deepcopy(entity_data.get("narrative_fallback", {})))
             return normalized
         return None
 
@@ -266,7 +255,6 @@ def _normalize_dialogue_module(entity_name: str, entity_data: dict, is_threat: b
     return {
         "guide": copy.deepcopy(entity_data.get("dialogue_guide", {})),
         "first_appearance": entity_data.get("first_appearance", ""),
-        "narrative_fallback": copy.deepcopy(entity_data.get("narrative_fallback", {})),
     }
 
 

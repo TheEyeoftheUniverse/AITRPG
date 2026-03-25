@@ -591,11 +591,6 @@ class SessionManager:
             "last_target_location": chase_state.get("last_target_location"),
             "same_location_rounds": int(chase_state.get("same_location_rounds", 0) or 0),
             "player_relation": relation,
-            "narrative_fallback": (
-                pursuer_settings.get("narrative_fallback", {})
-                if isinstance(pursuer_settings.get("narrative_fallback"), dict)
-                else {}
-            ),
         }
 
     def is_player_with_active_butler(self, session_id: str) -> bool:

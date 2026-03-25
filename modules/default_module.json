@@ -30,15 +30,7 @@
                                                                "movement_restricted":  "{entity_name}已被激活。现在你只能逐格移动到相邻场景。",
                                                                "dodge_fail":  "你试图从{entity_name}身边脱身，却被那具不自然的人形慢慢逼住。下一瞬，它强迫你迎上了那道目光。",
                                                                "guarded_object_blocked":  "{object_name}还在{entity_name}的看守范围内，你现在无法靠近"
-                                                           },
-                                              "narrative_fallback":  {
-                                                                         "same_room_arrival":  "你踏入{location_name}——那道笔直的人影已经在这里了。它没有任何多余的动作，只是缓缓转向你，距离近得令人窒息。",
-                                                                         "same_room_pressure":  "那道人影就在几步之外，压迫感无处可躲。你能感到它的注视像针一样扎在皮肤上。",
-                                                                         "blocked_arrival":  "你来到{location_name}。门外传来沉重的呼吸声，像是什么东西正贴在门板另一侧等待。",
-                                                                         "blocked_pressure":  "门外的存在感没有消退。偶尔传来一声低沉的摩擦，像指甲划过木头的声音。",
-                                                                         "separate_arrival":  "你匆忙来到{location_name}，身后的脚步声还没有停下。走廊深处传来沉重而均匀的脚步——它还在追。你没有多少时间。",
-                                                                         "separate_pressure":  "远处的脚步声在回响。它没有加速，也没有放慢，只是持续、稳定地逼近。你需要尽快行动。"
-                                                                     }
+                                                           }
                                           }
                   },
     "locations":  {
@@ -579,60 +571,7 @@
                                                             "cooperation":  "冷静果断的行动模式。会主动提出由自己来引开管家。说话简洁有力，偶有轻描淡写的狠话掩盖恐惧。",
                                                             "emergency_help":  "在信任尚未完全建立、但已确认管家位置不在次卧门前时，愿意冒险执行一次短暂的协助动作。语气紧张但果断，强调\"只有这一次\"和\"你最好说的都是真的\"。"
                                                         },
-                                              "first_appearance":  "当玩家靠近次卧时，会听到冰冷的女声。她不会立刻开门，需要玩家通过对话建立信任。",
-                                              "narrative_fallback":  {
-                                                                         "anonymous_label":  "未知来客",
-                                                                         "heard_only":  {
-                                                                                            "narrative":  "你朝隔壁墙壁喊了一声。没有人回应——但隔壁似乎有一瞬间的安静，像是有什么动静停了下来。",
-                                                                                            "summary":  "向隔壁喊话，无人回应"
-                                                                                        },
-                                                                         "preface":  {
-                                                                                         "cross_wall":  "隔壁安静了片刻。",
-                                                                                         "high_trust":  "门后很快传来回应。",
-                                                                                         "prior_conversation":  "门后沉默了一瞬。",
-                                                                                         "default":  "门后安静了一瞬，像是在判断你这句话值不值得相信。"
-                                                                                     },
-                                                                         "door_line":  {
-                                                                                           "cross_wall":  "声音从墙壁另一侧传来，闷沉而真实。",
-                                                                                           "opening":  "随后门锁轻轻一响，门却只松开了一道极窄的缝。",
-                                                                                           "closed":  "门没有开，只是那道贴在门后的呼吸声变得更清晰了一些。"
-                                                                                       },
-                                                                         "spoken_lines":  {
-                                                                                              "refuse":  "“还不够。先让我相信你说的都是真的。”",
-                                                                                              "confirm_help_with_reveal":  "“如果你说的都是真的，{reveal_text}”",
-                                                                                              "confirm_help_default":  "“如果情况真像你说的那样，我可以帮你一次。但只有这一次。”",
-                                                                                              "propose_plan_with_reveal":  "“听好，{reveal_text}”",
-                                                                                              "propose_plan_default":  "“好。别浪费时间，我们先把做法定下来。”",
-                                                                                              "warn_with_reveal":  "“听好，{reveal_text}”",
-                                                                                              "warn_default_medium":  "“先别乱动。最重要的是别做错第一步。”",
-                                                                                              "warn_default_low":  "“别急着动。先弄清楚状况。”",
-                                                                                              "acknowledge_with_reveal":  "“我听到了。{reveal_text}”",
-                                                                                              "acknowledge_default":  "“我听到了。继续说。”",
-                                                                                              "acknowledge_fresh":  "“我在听。”",
-                                                                                              "listen_high":  "“我在听，你接着说。”",
-                                                                                              "listen_medium":  "“我听到了。继续。”",
-                                                                                              "listen_low_continue":  "“……继续。”",
-                                                                                              "listen_fresh":  "“谁？”",
-                                                                                              "ask_name_low":  "“名字。”",
-                                                                                              "ask_name_medium":  "“你叫什么？”",
-                                                                                              "ask_origin":  "“你怎么到这儿来的？”",
-                                                                                              "ask_evidence":  "“光靠嘴说不够。有证据吗？”",
-                                                                                              "direct_reveal":  "“{reveal_text}”",
-                                                                                              "continue_medium":  "“我听到了。继续说。”",
-                                                                                              "continue_low":  "“……继续。”",
-                                                                                              "ask_who_default":  "“谁？”"
-                                                                                          },
-                                                                         "tone":  {
-                                                                                      "high_with_style":  "{npc_name}的语气比以往缓和了许多，带着{style}。",
-                                                                                      "high_default":  "{npc_name}的语气比以往缓和了许多。",
-                                                                                      "medium_with_style":  "{npc_name}的语气依旧直接，但少了之前的防备，带着{style}。",
-                                                                                      "medium_default":  "{npc_name}的语气依旧直接，但少了之前的防备。",
-                                                                                      "guarded_with_style_prior":  "{npc_name}的语气依旧{attitude}，带着{style}。",
-                                                                                      "guarded_with_style_fresh":  "{npc_name}的语气{attitude}，带着{style}。",
-                                                                                      "guarded_default_prior":  "{npc_name}的语气依旧{attitude}。",
-                                                                                      "guarded_default_fresh":  "{npc_name}的语气{attitude}。"
-                                                                                  }
-                                                                     }
+                                              "first_appearance":  "当玩家靠近次卧时，会听到冰冷的女声。她不会立刻开门，需要玩家通过对话建立信任。"
                                           },
                              "trust":  {
                                            "initial":  0.0,
@@ -823,10 +762,6 @@
                                        "current_state":  "在客厅背对入口，凝视老式电话。若有活物进入视野，它会缓慢靠近并试图凝视对方；若被门阻挡视线，则会在门外静止等待。",
                                        "gaze_consequence":  "与管家对视会导致疯狂结局。玩家看到了不该被人类所见的东西。",
                                        "distraction_method":  "管家不会说话，因此无法交流，对触碰也没有任何反应，但玩家不可能存在足以放倒它的力量。但当有其他活物进入视野时，管家立刻会转向新目标。可以利用此特性与NPC合作，让管家离开凝视的物品，或让管家离开卧室门前。",
-                                       "narrative_fallback":  {
-                                                                  "talk_response":  "你对{entity_name}开口，但它没有任何语言上的回应。那道近似人形的存在只是维持着原本的姿态，把沉默本身压得更沉。",
-                                                                  "silent_presence":  "{entity_name}依旧沉默地停在那里，没有给出任何像是交流的反应。"
-                                                              },
                                        "atmosphere":  0.9
                                    }
                         },
