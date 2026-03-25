@@ -187,6 +187,11 @@ def extract_usage_metrics(
             actual_model,
             provider_meta.get("configured_model"),
         ),
+        "attempts": [],
+        "attempt_count": 0,
+        "candidate_count": 0,
+        "fallback_used": False,
+        "selected_attempt_index": None,
     })
     return metrics
 
@@ -212,6 +217,11 @@ def merge_usage_metrics(base: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[
             "actual_model": base.get("actual_model") or incoming.get("actual_model"),
             "model_source": base.get("model_source") or incoming.get("model_source"),
             "model_display": base.get("model_display") or incoming.get("model_display"),
+            "attempts": base.get("attempts") or incoming.get("attempts") or [],
+            "attempt_count": int(base.get("attempt_count", 0) or 0) or int(incoming.get("attempt_count", 0) or 0),
+            "candidate_count": int(base.get("candidate_count", 0) or 0) or int(incoming.get("candidate_count", 0) or 0),
+            "fallback_used": bool(base.get("fallback_used") or incoming.get("fallback_used")),
+            "selected_attempt_index": base.get("selected_attempt_index") or incoming.get("selected_attempt_index"),
         }
 
     merged["call_count"] = int(base.get("call_count", 0) or 0) + int(incoming.get("call_count", 1) or 1)

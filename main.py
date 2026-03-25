@@ -52,14 +52,20 @@ class AITRPGPlugin(Star):
         config = self.plugin_config or {}
         module_name = config.get("module_name", "default_module") or "default_module"
         rule_ai_provider = config.get("rule_ai_provider", "") or None
+        rule_ai_provider_fallbacks = list(config.get("rule_ai_provider_fallbacks") or [])
         rhythm_ai_provider = config.get("rhythm_ai_provider", "") or None
+        rhythm_ai_provider_fallbacks = list(config.get("rhythm_ai_provider_fallbacks") or [])
         narrative_ai_provider = config.get("narrative_ai_provider", "") or None
+        narrative_ai_provider_fallbacks = list(config.get("narrative_ai_provider_fallbacks") or [])
         logger.info(
-            "[AITRPG] Effective plugin config: module=%s, rule_ai=%s, rhythm_ai=%s, narrative_ai=%s",
+            "[AITRPG] Effective plugin config: module=%s, rule_ai=%s, rule_fallbacks=%s, rhythm_ai=%s, rhythm_fallbacks=%s, narrative_ai=%s, narrative_fallbacks=%s",
             module_name,
             rule_ai_provider or "<unset>",
+            rule_ai_provider_fallbacks,
             rhythm_ai_provider or "<unset>",
+            rhythm_ai_provider_fallbacks,
             narrative_ai_provider or "<unset>",
+            narrative_ai_provider_fallbacks,
         )
 
         logger.info(
@@ -70,9 +76,24 @@ class AITRPGPlugin(Star):
         self.session_manager = SessionManager(module_name)
 
         # 初始化三层AI（传入提供商名称和配置）
-        self.rule_ai = RuleAI(self.context, rule_ai_provider, config)
-        self.rhythm_ai = RhythmAI(self.context, rhythm_ai_provider, config)
-        self.narrative_ai = NarrativeAI(self.context, narrative_ai_provider, config)
+        self.rule_ai = RuleAI(
+            self.context,
+            rule_ai_provider,
+            config,
+            fallback_provider_names=rule_ai_provider_fallbacks,
+        )
+        self.rhythm_ai = RhythmAI(
+            self.context,
+            rhythm_ai_provider,
+            config,
+            fallback_provider_names=rhythm_ai_provider_fallbacks,
+        )
+        self.narrative_ai = NarrativeAI(
+            self.context,
+            narrative_ai_provider,
+            config,
+            fallback_provider_names=narrative_ai_provider_fallbacks,
+        )
 
         logger.info("[AITRPG] 插件初始化完成！")
 
@@ -466,6 +487,11 @@ class AITRPGPlugin(Star):
                         "actual_model": step.get("actual_model"),
                         "model_source": step.get("model_source"),
                         "model_display": step.get("model_display"),
+                        "attempts": step.get("attempts", []),
+                        "attempt_count": step.get("attempt_count", 0),
+                        "candidate_count": step.get("candidate_count", 0),
+                        "fallback_used": step.get("fallback_used", False),
+                        "selected_attempt_index": step.get("selected_attempt_index"),
                     }
                 }
 
@@ -870,7 +896,12 @@ class AITRPGPlugin(Star):
             if progress:
                 for step in progress.get("steps", []):
                     if step.get("status") == "running":
-                        self._fail_progress_step(session_id, step["key"], str(e))
+                        self._fail_progress_step(
+                            session_id,
+                            step["key"],
+                            str(e),
+                            self._pop_call_metric_for_step(session_id, step["key"]),
+                        )
                         break
                 if progress.get("status") != "error":
                     self._complete_action_progress(session_id, status="error", message=str(e))
@@ -1295,6 +1326,11 @@ class AITRPGPlugin(Star):
                     "actual_model": None,
                     "model_source": None,
                     "model_display": None,
+                    "attempts": [],
+                    "attempt_count": 0,
+                    "candidate_count": 0,
+                    "fallback_used": False,
+                    "selected_attempt_index": None,
                 }
                 for key, label, llm in self.PROGRESS_STEPS
             ],
@@ -1308,6 +1344,34 @@ class AITRPGPlugin(Star):
             if step.get("key") == step_key:
                 return step
         return None
+
+    def _apply_progress_metrics(self, step: dict, metrics: dict | None = None):
+        metrics = metrics if isinstance(metrics, dict) else {}
+        step["prompt_tokens"] = int(metrics.get("prompt_tokens", 0) or 0)
+        step["completion_tokens"] = int(metrics.get("completion_tokens", 0) or 0)
+        step["total_tokens"] = int(metrics.get("total_tokens", 0) or 0)
+        step["token_source"] = metrics.get("token_source")
+        step["call_count"] = int(metrics.get("call_count", 0) or 0)
+        step["provider_id"] = metrics.get("provider_id")
+        step["configured_model"] = metrics.get("configured_model")
+        step["actual_model"] = metrics.get("actual_model")
+        step["model_source"] = metrics.get("model_source")
+        step["model_display"] = metrics.get("model_display")
+        step["attempts"] = list(metrics.get("attempts") or [])
+        step["attempt_count"] = int(metrics.get("attempt_count", 0) or 0)
+        step["candidate_count"] = int(metrics.get("candidate_count", 0) or 0)
+        step["fallback_used"] = bool(metrics.get("fallback_used"))
+        step["selected_attempt_index"] = metrics.get("selected_attempt_index")
+
+    def _pop_call_metric_for_step(self, session_id: str, step_key: str) -> dict:
+        trace_id = f"{session_id}:{step_key}"
+        if step_key in ("rule_intent", "rule_adjudication"):
+            return self.rule_ai.pop_call_metric(trace_id) if self.rule_ai else {}
+        if step_key == "rhythm":
+            return self.rhythm_ai.pop_call_metric(trace_id) if self.rhythm_ai else {}
+        if step_key == "narrative":
+            return self.narrative_ai.pop_call_metric(trace_id) if self.narrative_ai else {}
+        return {}
 
     def _start_progress_step(self, session_id: str, step_key: str, message: str = ""):
         progress = self._action_progress.get(session_id)
@@ -1326,6 +1390,11 @@ class AITRPGPlugin(Star):
         step["actual_model"] = None
         step["model_source"] = None
         step["model_display"] = None
+        step["attempts"] = []
+        step["attempt_count"] = 0
+        step["candidate_count"] = 0
+        step["fallback_used"] = False
+        step["selected_attempt_index"] = None
 
         progress["current_step_key"] = step_key
         progress["current_step_label"] = step.get("label")
@@ -1347,17 +1416,7 @@ class AITRPGPlugin(Star):
         if message:
             step["message"] = message
 
-        metrics = metrics if isinstance(metrics, dict) else {}
-        step["prompt_tokens"] = int(metrics.get("prompt_tokens", 0) or 0)
-        step["completion_tokens"] = int(metrics.get("completion_tokens", 0) or 0)
-        step["total_tokens"] = int(metrics.get("total_tokens", 0) or 0)
-        step["token_source"] = metrics.get("token_source")
-        step["call_count"] = int(metrics.get("call_count", 0) or 0)
-        step["provider_id"] = metrics.get("provider_id")
-        step["configured_model"] = metrics.get("configured_model")
-        step["actual_model"] = metrics.get("actual_model")
-        step["model_source"] = metrics.get("model_source")
-        step["model_display"] = metrics.get("model_display")
+        self._apply_progress_metrics(step, metrics)
 
         progress["updated_at"] = now
 
@@ -1377,9 +1436,14 @@ class AITRPGPlugin(Star):
         step["actual_model"] = None
         step["model_source"] = None
         step["model_display"] = None
+        step["attempts"] = []
+        step["attempt_count"] = 0
+        step["candidate_count"] = 0
+        step["fallback_used"] = False
+        step["selected_attempt_index"] = None
         progress["updated_at"] = time.perf_counter()
 
-    def _fail_progress_step(self, session_id: str, step_key: str, message: str = ""):
+    def _fail_progress_step(self, session_id: str, step_key: str, message: str = "", metrics: dict = None):
         """Mark a specific progress step as error."""
         step = self._get_progress_step(session_id, step_key)
         if not step:
@@ -1390,6 +1454,7 @@ class AITRPGPlugin(Star):
         if step.get("started_at") is not None:
             step["finished_at"] = now
             step["duration_ms"] = int((now - step["started_at"]) * 1000)
+        self._apply_progress_metrics(step, metrics)
         progress = self._action_progress.get(session_id)
         if progress:
             progress["updated_at"] = now

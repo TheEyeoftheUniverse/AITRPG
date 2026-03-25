@@ -18,7 +18,11 @@ from ..game_state.location_context import (
     is_threat_entity,
     should_enable_cross_wall_npc_context,
 )
-from .usage_metrics import extract_usage_metrics
+from .provider_failover import (
+    ProviderFailoverError,
+    normalize_provider_candidates,
+    text_chat_with_fallback,
+)
 
 import json
 import os
@@ -30,9 +34,16 @@ from typing import Any
 class RhythmAI:
     """Pacing layer: stage judgment, soft guidance, and NPC response direction."""
 
-    def __init__(self, context: Context, provider_name: str = None, config: dict = None):
+    def __init__(
+        self,
+        context: Context,
+        provider_name: str = None,
+        config: dict = None,
+        fallback_provider_names: list[str] | None = None,
+    ):
         self.context = context
         self.provider_name = provider_name
+        self.fallback_provider_names = list(fallback_provider_names or [])
         self.config = config or {}
         self.prompts = self._load_prompts()
         self._call_metrics = {}
@@ -54,17 +65,14 @@ class RhythmAI:
             logger.error(f"[RhythmAI] Prompt config JSON error: {e}")
             return {}
 
-    def _get_provider(self):
-        if not self.provider_name:
+    def _get_provider_candidates(self) -> list[str]:
+        candidates = normalize_provider_candidates(
+            self.provider_name,
+            self.fallback_provider_names,
+        )
+        if not candidates:
             logger.error("[RhythmAI] rhythm_ai_provider is not configured")
-            return None
-
-        provider = self.context.get_provider(self.provider_name)
-        if not provider:
-            logger.error(
-                f"[RhythmAI] Provider {self.provider_name} not found; strict provider mode disables fallback"
-            )
-        return provider
+        return candidates
 
     def _strip_json_fence(self, text: str) -> str:
         text = (text or "").strip()
@@ -90,10 +98,10 @@ class RhythmAI:
         if history is None:
             history = []
 
-        provider = self._get_provider()
+        provider_candidates = self._get_provider_candidates()
         base_result = self._build_base_result(player_input, rule_plan, game_state, module_data)
 
-        if not provider:
+        if not provider_candidates:
             logger.error("[RhythmAI] No provider available")
             raise RuntimeError("节奏AI处理失败：未找到可用 LLM provider，请使用重试按钮。")
 
@@ -117,23 +125,31 @@ class RhythmAI:
 
         try:
             # RhythmAI should rely on summarized history in the prompt, not on raw chat history.
-            llm_response = await provider.text_chat(prompt=prompt, contexts=[])
+            outcome = await text_chat_with_fallback(
+                context=self.context,
+                primary_provider_id=self.provider_name,
+                fallback_provider_ids=self.fallback_provider_names,
+                prompt=prompt,
+                contexts=[],
+                trace_label="RhythmAI.process",
+            )
+            llm_response = outcome.response
             response_text = (
                 llm_response.completion_text
                 if hasattr(llm_response, "completion_text")
                 else str(llm_response)
             )
             if trace_id:
-                self._call_metrics[trace_id] = extract_usage_metrics(
-                    llm_response,
-                    prompt,
-                    response_text,
-                    provider=provider,
-                )
+                self._call_metrics[trace_id] = outcome.metrics
             result = json.loads(self._strip_json_fence(response_text))
             normalized = self._normalize_result(result, base_result)
             logger.info(f"[RhythmAI] process result: {normalized}")
             return normalized
+        except ProviderFailoverError as e:
+            if trace_id:
+                self._call_metrics[trace_id] = e.metrics
+            logger.error("[RhythmAI] provider chain failed: %s", e)
+            raise RuntimeError("节奏AI处理失败：所有候选模型都不可用，请检查主模型与备用模型配置。") from e
         except json.JSONDecodeError as e:
             logger.warning("[RhythmAI] JSON decode failed")
             raise RuntimeError("节奏AI处理失败：返回结果不是合法 JSON，请使用重试按钮。") from e

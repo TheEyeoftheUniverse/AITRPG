@@ -94,6 +94,22 @@ class _ExplicitMissingProviderContext:
         return self.current_provider
 
 
+class _ContextWithProviderByIdOnly:
+    def __init__(self, provider):
+        self.provider = provider
+
+    def get_provider_by_id(self, provider_id: str):
+        return self.provider if provider_id == self.provider.provider_config.get("id") else None
+
+
+class _ContextWithAllProvidersOnly:
+    def __init__(self, providers):
+        self.providers = providers
+
+    def get_all_providers(self):
+        return list(self.providers)
+
+
 class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.manager = SessionManager("default_module")
@@ -188,7 +204,7 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
             config={"rule_ai_intent_prompt": "{player_input}"},
         )
 
-        with self.assertRaisesRegex(RuntimeError, "Provider ID|LLM provider"):
+        with self.assertRaisesRegex(RuntimeError, "Provider ID|LLM provider|候选模型"):
             await rule_ai.parse_intent("查看房间")
 
     async def test_rhythm_ai_missing_explicit_provider_does_not_fallback(self):
@@ -199,7 +215,7 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
             config={"rhythm_ai_prompt": "{player_input} {intent} {rule_plan} {rule_result} {scene_context}"},
         )
 
-        with self.assertRaisesRegex(RuntimeError, "LLM provider"):
+        with self.assertRaisesRegex(RuntimeError, "LLM provider|候选模型"):
             await rhythm_ai.process(
                 intent={"intent": "inspect"},
                 player_input="查看房间",
@@ -218,7 +234,7 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
             config={"narrative_ai_prompt": "{rule_info}\n{rhythm_info}\n{location}"},
         )
 
-        with self.assertRaisesRegex(RuntimeError, "LLM provider"):
+        with self.assertRaisesRegex(RuntimeError, "LLM provider|候选模型"):
             await narrative_ai.generate(
                 player_input="查看房间",
                 rule_plan={
@@ -255,6 +271,90 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(RuntimeError, "Provider ID|LLM provider"):
             await rule_ai.parse_intent("查看房间")
+
+
+    async def test_rhythm_ai_supports_context_get_provider_by_id(self):
+        rhythm_ai = RhythmAI(
+            _ContextWithProviderByIdOnly(
+                _StubProvider(
+                    '{"feasible":true,"stage_assessment":"ok","npc_action_guide":{},"atmosphere_guide":{}}',
+                    provider_id="stub",
+                )
+            ),
+            provider_name="stub",
+            config={"rhythm_ai_prompt": "{player_input} {intent} {rule_plan} {rule_result} {scene_context}"},
+        )
+
+        result = await rhythm_ai.process(
+            intent={"intent": "inspect"},
+            player_input="inspect room",
+            rule_plan={"feasibility": {"ok": True}},
+            rule_result={"success": True},
+            game_state=self.state,
+            module_data=self.module_data,
+            history=[],
+        )
+
+        self.assertEqual(result["stage_assessment"], "ok")
+
+    async def test_rule_ai_parse_intent_supports_context_get_provider_by_id(self):
+        rule_ai = RuleAI(
+            _ContextWithProviderByIdOnly(
+                _StubProvider(
+                    '{"intent":"inspect","target":null,"category":"observe"}',
+                    provider_id="stub",
+                )
+            ),
+            provider_name="stub",
+            config={"rule_ai_intent_prompt": "{player_input}"},
+        )
+
+        result = await rule_ai.parse_intent("inspect room")
+
+        self.assertEqual(result["intent"], "inspect")
+
+    async def test_narrative_ai_supports_context_get_all_providers(self):
+        narrative_ai = NarrativeAI(
+            _ContextWithAllProvidersOnly(
+                [
+                    _StubProvider(
+                        '{"narrative":"You inspect the room.","summary":"inspect"}',
+                        provider_id="stub",
+                    )
+                ]
+            ),
+            provider_name="stub",
+            config={"narrative_ai_prompt": "{rule_info}\n{rhythm_info}\n{location}"},
+        )
+
+        result = await narrative_ai.generate(
+            player_input="inspect room",
+            rule_plan={
+                "normalized_action": {
+                    "verb": "inspect",
+                    "target_kind": "location",
+                    "target_key": "master_bedroom",
+                },
+                "feasibility": {"ok": True},
+                "location_context": self.manager.get_location_context(self.session_id),
+                "input_classification": "action",
+            },
+            rule_result={"check_type": None, "success": True, "result_description": "ok"},
+            rhythm_result={
+                "feasible": True,
+                "stage_assessment": "test",
+                "location_context": self.manager.get_location_context(self.session_id),
+                "object_context": None,
+                "npc_context": {},
+                "threat_entity_context": {},
+                "npc_action_guide": {},
+                "atmosphere_guide": {},
+            },
+            narrative_history=[],
+            history=[],
+        )
+
+        self.assertEqual(result["summary"], "inspect")
 
 
 class UsageMetricsTests(unittest.TestCase):

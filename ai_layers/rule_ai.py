@@ -15,7 +15,12 @@ from ..game_state.location_context import (
     is_threat_entity,
     should_enable_cross_wall_npc_context,
 )
-from .usage_metrics import extract_usage_metrics
+from .provider_failover import (
+    ProviderFailoverError,
+    normalize_provider_candidates,
+    text_chat_with_fallback,
+)
+from .provider_resolver import resolve_provider_by_id
 
 import json
 import os
@@ -29,9 +34,16 @@ class RuleAI:
     # 引号字符集：中文引号、日式方框引号、ASCII双引号
     DIALOGUE_QUOTE_CHARS = set('\u201c\u201d\u2018\u2019\u300c\u300d\u300e\u300f\u0022')
 
-    def __init__(self, context: Context, provider_name: str = None, config: dict = None):
+    def __init__(
+        self,
+        context: Context,
+        provider_name: str = None,
+        config: dict = None,
+        fallback_provider_names: list[str] | None = None,
+    ):
         self.context = context
         self.provider_name = provider_name
+        self.fallback_provider_names = list(fallback_provider_names or [])
         self.config = config or {}
         self.rules = self._load_rules()
         self.prompts = self._load_prompts()
@@ -72,12 +84,21 @@ class RuleAI:
             logger.error(f"[RuleAI] Prompt config JSON error: {e}")
             return {}
 
+    def _get_provider_candidates(self) -> list[str]:
+        candidates = normalize_provider_candidates(
+            self.provider_name,
+            self.fallback_provider_names,
+        )
+        if not candidates:
+            logger.error("[RuleAI] rule_ai_provider is not configured")
+        return candidates
+
     def _get_provider(self):
         if not self.provider_name:
             logger.error("[RuleAI] rule_ai_provider is not configured")
             return None
 
-        provider = self.context.get_provider(self.provider_name)
+        provider = resolve_provider_by_id(self.context, self.provider_name)
         if not provider:
             logger.error(
                 f"[RuleAI] Provider {self.provider_name} not found; strict provider mode disables fallback"
@@ -95,8 +116,8 @@ class RuleAI:
         return text.strip()
 
     async def parse_intent(self, player_input: str, trace_id: str = None) -> dict:
-        provider = self._get_provider()
-        if not provider:
+        provider_candidates = self._get_provider_candidates()
+        if not provider_candidates:
             logger.error("[RuleAI] No provider available for parse_intent")
             raise RuntimeError("规则AI意图解析失败：未找到可用 LLM provider，请使用重试按钮。")
 
@@ -111,16 +132,24 @@ class RuleAI:
         prompt = prompt_template.replace("{player_input}", player_input)
 
         try:
-            llm_response = await provider.text_chat(prompt=prompt, contexts=[])
+            outcome = await text_chat_with_fallback(
+                context=self.context,
+                primary_provider_id=self.provider_name,
+                fallback_provider_ids=self.fallback_provider_names,
+                prompt=prompt,
+                contexts=[],
+                trace_label="RuleAI.parse_intent",
+            )
+            llm_response = outcome.response
             response_text = llm_response.completion_text if hasattr(llm_response, "completion_text") else str(llm_response)
             if trace_id:
-                self._call_metrics[trace_id] = extract_usage_metrics(
-                    llm_response,
-                    prompt,
-                    response_text,
-                    provider=provider,
-                )
+                self._call_metrics[trace_id] = outcome.metrics
             return json.loads(self._strip_json_fence(response_text))
+        except ProviderFailoverError as e:
+            if trace_id:
+                self._call_metrics[trace_id] = e.metrics
+            logger.error("[RuleAI] parse_intent provider chain failed: %s", e)
+            raise RuntimeError("规则AI意图解析失败：所有候选模型都不可用，请检查主模型与备用模型配置。") from e
         except json.JSONDecodeError as e:
             logger.warning(f"[RuleAI] parse_intent JSON decode failed: {player_input}")
             raise RuntimeError("规则AI意图解析失败：返回结果不是合法 JSON，请使用重试按钮。") from e
@@ -136,8 +165,8 @@ class RuleAI:
         module_data: dict,
         trace_id: str = None,
     ) -> dict:
-        provider = self._get_provider()
-        if not provider:
+        provider_candidates = self._get_provider_candidates()
+        if not provider_candidates:
             logger.error("[RuleAI] No provider available for adjudicate_action")
             raise RuntimeError("规则AI动作裁定失败：未找到可用 LLM provider，请使用重试按钮。")
 
@@ -152,19 +181,27 @@ class RuleAI:
         prompt = self._build_action_prompt(prompt_template, player_input, intent, game_state, module_data)
 
         try:
-            llm_response = await provider.text_chat(prompt=prompt, contexts=[])
+            outcome = await text_chat_with_fallback(
+                context=self.context,
+                primary_provider_id=self.provider_name,
+                fallback_provider_ids=self.fallback_provider_names,
+                prompt=prompt,
+                contexts=[],
+                trace_label="RuleAI.adjudicate_action",
+            )
+            llm_response = outcome.response
             response_text = llm_response.completion_text if hasattr(llm_response, "completion_text") else str(llm_response)
             if trace_id:
-                self._call_metrics[trace_id] = extract_usage_metrics(
-                    llm_response,
-                    prompt,
-                    response_text,
-                    provider=provider,
-                )
+                self._call_metrics[trace_id] = outcome.metrics
             result = json.loads(self._strip_json_fence(response_text))
             normalized = self._normalize_action_plan(result, player_input, intent, game_state, module_data)
             logger.info(f"[RuleAI] adjudicate_action result: {normalized}")
             return normalized
+        except ProviderFailoverError as e:
+            if trace_id:
+                self._call_metrics[trace_id] = e.metrics
+            logger.error("[RuleAI] adjudicate_action provider chain failed: %s", e)
+            raise RuntimeError("规则AI动作裁定失败：所有候选模型都不可用，请检查主模型与备用模型配置。") from e
         except json.JSONDecodeError as e:
             logger.warning(f"[RuleAI] adjudicate_action JSON decode failed. Input={player_input}")
             raise RuntimeError("规则AI动作裁定失败：返回结果不是合法 JSON，请使用重试按钮。") from e

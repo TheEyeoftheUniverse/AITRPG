@@ -5,6 +5,11 @@ from ..game_state.location_context import (
     get_entity_profile_text,
     is_threat_entity,
 )
+from .provider_failover import (
+    ProviderFailoverError,
+    normalize_provider_candidates,
+    text_chat_with_fallback,
+)
 from .usage_metrics import extract_provider_meta, extract_usage_metrics
 
 import json
@@ -18,9 +23,16 @@ class NarrativeAI:
     RECENT_DIALOGUE_TURNS = 10
     OPENING_USER_TEXT = "缓缓苏醒"
 
-    def __init__(self, context: Context, provider_name: str = None, config: dict = None):
+    def __init__(
+        self,
+        context: Context,
+        provider_name: str = None,
+        config: dict = None,
+        fallback_provider_names: list[str] | None = None,
+    ):
         self.context = context
         self.provider_name = provider_name
+        self.fallback_provider_names = list(fallback_provider_names or [])
         self.config = config or {}
         self.prompts = self._load_prompts()
         self._call_metrics = {}
@@ -42,17 +54,14 @@ class NarrativeAI:
             logger.error(f"[NarrativeAI] Prompt config JSON error: {e}")
             return {}
 
-    def _get_provider(self):
-        if not self.provider_name:
+    def _get_provider_candidates(self) -> list[str]:
+        candidates = normalize_provider_candidates(
+            self.provider_name,
+            self.fallback_provider_names,
+        )
+        if not candidates:
             logger.error("[NarrativeAI] narrative_ai_provider is not configured")
-            return None
-
-        provider = self.context.get_provider(self.provider_name)
-        if not provider:
-            logger.error(
-                f"[NarrativeAI] Provider {self.provider_name} not found; strict provider mode disables fallback"
-            )
-        return provider
+        return candidates
 
     def _get_provider_meta(self, provider) -> dict:
         provider_meta = extract_provider_meta(provider)
@@ -78,10 +87,10 @@ class NarrativeAI:
         if history is None:
             history = []
 
-        provider = self._get_provider()
+        provider_candidates = self._get_provider_candidates()
         usage_metrics = {}
 
-        if not provider:
+        if not provider_candidates:
             logger.error("[NarrativeAI] No provider available")
             raise RuntimeError("文案AI生成失败：未找到可用 LLM provider，请使用重试按钮。")
 
@@ -97,32 +106,37 @@ class NarrativeAI:
             raise RuntimeError("文案AI生成失败：未找到可用提示词，请使用重试按钮。")
 
         try:
-            provider_meta = self._get_provider_meta(provider)
             logger.info(
-                "[NarrativeAI] sending request: provider=%s model=%s prompt_len=%s prompt_history_turns=%s provider_history_turns=%s preview=%s",
-                provider_meta.get("id"),
-                provider_meta.get("model"),
+                "[NarrativeAI] sending request: primary_provider=%s fallback_count=%s prompt_len=%s prompt_history_turns=%s provider_history_turns=%s preview=%s",
+                self.provider_name,
+                len(provider_candidates) - 1,
                 len(prompt),
                 len(narrative_history or []),
                 len(history or []),
                 self._trim_text(prompt.replace("\n", "\\n"), 220),
             )
-            # Narrative prompt already contains the condensed history and current structured context.
-            # Sending the raw provider history again makes this request much heavier than the rule/rhythm calls.
-            llm_response = await self._chat_once(provider, prompt)
+            outcome = await text_chat_with_fallback(
+                context=self.context,
+                primary_provider_id=self.provider_name,
+                fallback_provider_ids=self.fallback_provider_names,
+                prompt=prompt,
+                contexts=[],
+                trace_label="NarrativeAI.generate",
+            )
+            llm_response = outcome.response
             response_text = (
                 llm_response.completion_text
                 if hasattr(llm_response, "completion_text")
                 else str(llm_response)
             )
-            usage_metrics = extract_usage_metrics(
-                llm_response,
-                prompt,
-                response_text,
-                provider=provider,
-            )
+            usage_metrics = outcome.metrics
             response_text = self._strip_json_fence(response_text)
             result = json.loads(response_text)
+        except ProviderFailoverError as e:
+            logger.error("[NarrativeAI] provider chain failed: %s", e)
+            if trace_id:
+                self._call_metrics[trace_id] = e.metrics
+            raise RuntimeError("文案AI生成失败：所有候选模型都不可用，请检查主模型与备用模型配置。") from e
         except json.JSONDecodeError as e:
             logger.warning(f"[NarrativeAI] JSON decode failed. Response={response_text}")
             if trace_id:

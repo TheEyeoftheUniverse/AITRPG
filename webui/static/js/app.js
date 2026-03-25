@@ -256,6 +256,17 @@ function getProcessingStepMessage(step) {
     return "AI 正在处理中……";
 }
 
+function formatAttemptSummary(attempt) {
+    if (!attempt) return "";
+    const model = String(attempt.model_display || attempt.provider_id || "").trim();
+    const status = String(attempt.status || "").trim();
+    const message = String(attempt.message || "").trim();
+    if (status === "success") {
+        return `${model} 成功`;
+    }
+    return `${model} ${message || status || "失败"}`;
+}
+
 function summarizeProcessingGroup(groupDef, progress) {
     const stepsByKey = new Map(
         ((progress && progress.steps) || []).map((step) => [step.key, step || {}])
@@ -284,6 +295,15 @@ function summarizeProcessingGroup(groupDef, progress) {
             .map((step) => String(step.model_display || "").trim())
             .filter(Boolean)
     )];
+    const fallbackUsed = steps.some((step) => Boolean(step.fallback_used));
+    const selectedAttempt = steps.find((step) => Number(step.selected_attempt_index) > 0 && Number(step.candidate_count) > 0);
+    const attemptCarrier = activeStep
+        || [...steps].reverse().find((step) => Array.isArray(step.attempts) && step.attempts.length)
+        || selectedAttempt
+        || null;
+    const attemptSummary = attemptCarrier && Array.isArray(attemptCarrier.attempts)
+        ? attemptCarrier.attempts.map(formatAttemptSummary).filter(Boolean).join(" -> ")
+        : "";
 
     let status = "pending";
     if (statuses.includes("error")) {
@@ -311,6 +331,10 @@ function summarizeProcessingGroup(groupDef, progress) {
         message = `${groupDef.label} 已完成`;
     }
 
+    if (attemptSummary && (fallbackUsed || status === "error")) {
+        message = `${message} | ${attemptSummary}`;
+    }
+
     let tokenSource = null;
     if (tokenSources.size === 1) {
         tokenSource = [...tokenSources][0];
@@ -330,6 +354,10 @@ function summarizeProcessingGroup(groupDef, progress) {
         totalTokens,
         tokenSource,
         modelDisplay: modelDisplays.join(" | "),
+        fallbackUsed,
+        selectedAttemptIndex: selectedAttempt ? Number(selectedAttempt.selected_attempt_index) || 0 : 0,
+        candidateCount: selectedAttempt ? Number(selectedAttempt.candidate_count) || 0 : 0,
+        attemptSummary,
     };
 }
 

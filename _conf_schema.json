@@ -6,6 +6,16 @@
     "hint": "必填。填写 AstrBot 中真实存在的 provider ID，用于意图解析、动作裁定和规则判定。",
     "_special": "select_provider"
   },
+  "rule_ai_provider_fallbacks": {
+    "description": "规则AI备用模型列表",
+    "type": "list",
+    "default": [],
+    "items": {
+      "type": "string"
+    },
+    "hint": "主模型不可用时，按顺序切换到这些 provider。",
+    "_special": "select_providers"
+  },
   "rhythm_ai_provider": {
     "description": "节奏AI使用的 LLM 提供商 ID",
     "type": "string",
@@ -13,12 +23,32 @@
     "hint": "必填。填写 AstrBot 中真实存在的 provider ID，用于节奏评估、软引导和软变化补充。",
     "_special": "select_provider"
   },
+  "rhythm_ai_provider_fallbacks": {
+    "description": "节奏AI备用模型列表",
+    "type": "list",
+    "default": [],
+    "items": {
+      "type": "string"
+    },
+    "hint": "主模型不可用时，按顺序切换到这些 provider。",
+    "_special": "select_providers"
+  },
   "narrative_ai_provider": {
     "description": "文案AI使用的 LLM 提供商 ID",
     "type": "string",
     "default": "",
     "hint": "必填。填写 AstrBot 中真实存在的 provider ID，用于生成玩家可见叙述文本。",
     "_special": "select_provider"
+  },
+  "narrative_ai_provider_fallbacks": {
+    "description": "文案AI备用模型列表",
+    "type": "list",
+    "default": [],
+    "items": {
+      "type": "string"
+    },
+    "hint": "主模型不可用时，按顺序切换到这些 provider。",
+    "_special": "select_providers"
   },
   "module_name": {
     "description": "使用的模组名称",
