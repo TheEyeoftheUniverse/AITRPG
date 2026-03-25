@@ -530,11 +530,13 @@ class AITRPGPlugin(Star):
             move_check_result = None
             move_movement_note = None
             is_dialogue = False
+            pending_npc_report = {}
 
             if retry_from:
                 move_check_result = cache.get("move_check_result")
                 move_movement_note = cache.get("move_movement_note")
                 is_dialogue = cache.get("is_dialogue", False)
+                pending_npc_report = cache.get("pending_npc_report", {})
             else:
                 early_result, precheck_ctx = await self._precheck_action(
                     session_id, player_input, history, move_to, state, module_data)
@@ -553,6 +555,7 @@ class AITRPGPlugin(Star):
                     "move_check_result": move_check_result,
                     "move_movement_note": move_movement_note,
                     "is_dialogue": is_dialogue,
+                    "pending_npc_report": {},
                 }
                 cache = self._last_action_cache[session_id]
 
@@ -688,18 +691,42 @@ class AITRPGPlugin(Star):
                             npc_update["companion_state"] = cmd_action
                             npc_update["companion_task"] = companion_result.get("task", {})
 
+                preset_task_request = (rule_plan or {}).get("preset_task_request", {})
+                if isinstance(preset_task_request, dict) and preset_task_request.get("task_id") and preset_task_request.get("target_npc"):
+                    preset_result = self.session_manager.start_preset_task(
+                        session_id,
+                        str(preset_task_request.get("target_npc") or "").strip(),
+                        str(preset_task_request.get("task_id") or "").strip(),
+                    )
+                    logger.info(f"[AITRPG] 预设任务请求: {preset_task_request}, 结果: {preset_result}")
+                    if preset_result.get("success"):
+                        hard_changes = self._merge_world_changes(hard_changes, preset_result.get("changes", {}))
+
+                normalized_action = (rule_plan or {}).get("normalized_action", {}) if isinstance(rule_plan, dict) else {}
+                target_npc_for_dialogue = ""
+                if isinstance(normalized_action, dict) and normalized_action.get("target_kind") == "npc":
+                    target_npc_for_dialogue = str(normalized_action.get("target_key") or "").strip()
+                if is_dialogue and target_npc_for_dialogue:
+                    pending_npc_report = self.session_manager.deliver_pending_npc_reports(session_id, target_npc_for_dialogue)
+                    if isinstance(pending_npc_report, dict) and pending_npc_report.get("delivered"):
+                        logger.info(f"[AITRPG] 已交付NPC调查报告: {pending_npc_report}")
+                        rule_plan["pending_npc_report"] = copy.deepcopy(pending_npc_report)
+
                 # 缓存规则AI结果（用于重试）
                 cache["intent"] = intent
                 cache["rule_plan"] = rule_plan
                 cache["rule_result"] = rule_result
                 cache["sancheck_result"] = sancheck_result
                 cache["hard_changes"] = hard_changes
+                cache["pending_npc_report"] = copy.deepcopy(pending_npc_report) if isinstance(pending_npc_report, dict) else {}
                 self._cache_step_progress(session_id, cache, ["rule_intent", "rule_adjudication", "rule_check"])
 
             # ===== 节奏AI阶段 =====
             if retry_from == "narrative":
                 # 从缓存加载节奏AI结果
                 rhythm_result = cache["rhythm_result"]
+                if isinstance(pending_npc_report, dict) and pending_npc_report.get("delivered"):
+                    rhythm_result = self._inject_pending_npc_report_into_rhythm_result(rhythm_result, pending_npc_report)
                 self._replay_cached_steps(session_id, cache, ["rhythm"])
             else:
                 # === 第四步：节奏AI - 节奏评估与软变化补充 ===
@@ -741,6 +768,8 @@ class AITRPGPlugin(Star):
                 rhythm_result["object_context"] = rule_plan.get("object_context")
                 rhythm_result["threat_entity_context"] = rhythm_result.get("threat_entity_context") or rule_plan.get("threat_entity_context")
                 rhythm_result["npc_context"] = rhythm_result.get("npc_context") or rule_plan.get("npc_context", {})
+                if isinstance(pending_npc_report, dict) and pending_npc_report.get("delivered"):
+                    rhythm_result = self._inject_pending_npc_report_into_rhythm_result(rhythm_result, pending_npc_report)
                 rhythm_result["soft_world_changes"] = soft_changes
                 rhythm_result["world_changes"] = merged_changes
 
@@ -1856,6 +1885,56 @@ class AITRPGPlugin(Star):
             merged["san_delta"] = san_delta
 
         return merged
+
+    def _inject_pending_npc_report_into_rhythm_result(self, rhythm_result: dict, report_payload: dict) -> dict:
+        if not isinstance(rhythm_result, dict):
+            rhythm_result = {}
+        if not isinstance(report_payload, dict) or not report_payload.get("delivered"):
+            return rhythm_result
+
+        npc_name = str(report_payload.get("npc_name") or "").strip()
+        report_text = str(report_payload.get("text") or "").strip()
+        clue = str(report_payload.get("clue") or "").strip()
+        if not npc_name or not report_text:
+            return rhythm_result
+
+        adjusted = copy.deepcopy(rhythm_result)
+        npc_context = adjusted.setdefault("npc_context", {})
+        if not isinstance(npc_context, dict) or npc_name not in npc_context:
+            return adjusted
+
+        npc_action_guide = adjusted.setdefault("npc_action_guide", {})
+        if not isinstance(npc_action_guide, dict):
+            npc_action_guide = {}
+            adjusted["npc_action_guide"] = npc_action_guide
+
+        allowed_reveals = npc_action_guide.get("allowed_reveals", [])
+        if not isinstance(allowed_reveals, list):
+            allowed_reveals = []
+        if not any(isinstance(item, dict) and str(item.get("key") or "").strip() == clue for item in allowed_reveals):
+            allowed_reveals.append({
+                "key": clue or "调查报告",
+                "text": report_text,
+            })
+
+        must_acknowledge = npc_action_guide.get("must_acknowledge", [])
+        if not isinstance(must_acknowledge, list):
+            must_acknowledge = []
+        if "先向玩家完整交付调查报告" not in must_acknowledge:
+            must_acknowledge.insert(0, "先向玩家完整交付调查报告")
+
+        npc_action_guide["focus_npc"] = npc_name
+        npc_action_guide["dialogue_act"] = "reveal"
+        npc_action_guide["response_strategy"] = "本轮必须由该NPC先完整交付调查报告，再简短说明这是她独立调查后确认出的出口信息。"
+        npc_action_guide["next_line_goal"] = "完整交付调查报告并指出新的脱离路线"
+        npc_action_guide["must_acknowledge"] = must_acknowledge[:3]
+        npc_action_guide["allowed_reveals"] = allowed_reveals[:3]
+        npc_action_guide["knowledge_boundary"] = (
+            str(npc_action_guide.get("knowledge_boundary") or "").strip()
+            + " 本轮允许直接说出调查报告全文，不能只做模糊暗示。"
+        ).strip()
+        adjusted["pending_npc_report"] = copy.deepcopy(report_payload)
+        return adjusted
 
     def _deep_merge_dict(self, base: dict, incoming: dict) -> dict:
         merged = dict(base or {})

@@ -203,6 +203,8 @@ class SessionManager:
                 "trust_level": round(initial_trust, 2),
                 "memory": self._build_initial_npc_memory(memory_module),
                 "memory_long_term": self._build_initial_npc_long_term_memory(memory_module),
+                "preset_task": {},
+                "preset_task_history": [],
             }
             initial_location = str(
                 npc_data.get("location")
@@ -296,6 +298,11 @@ class SessionManager:
             if not isinstance(companion_task, dict):
                 npc_state["companion_task"] = {}
 
+        if not isinstance(npc_state.get("preset_task"), dict):
+            npc_state["preset_task"] = {}
+        if not isinstance(npc_state.get("preset_task_history"), list):
+            npc_state["preset_task_history"] = []
+
     def _get_primary_pursuer_name(self, module_data: Dict[str, Any]) -> str:
         return get_primary_pursuer_name(module_data)
 
@@ -305,6 +312,56 @@ class SessionManager:
 
     def _get_primary_pursuer_settings(self, module_data: Dict[str, Any]) -> Dict[str, Any]:
         return get_primary_pursuer_settings(module_data)
+
+    def _get_module_preset_tasks(self, module_data: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(module_data, dict):
+            return {}
+        preset_tasks = module_data.get("preset_tasks", {})
+        return preset_tasks if isinstance(preset_tasks, dict) else {}
+
+    def _append_preset_task_history(self, npc_state: Dict[str, Any], entry: Dict[str, Any]):
+        if not isinstance(npc_state, dict) or not isinstance(entry, dict):
+            return
+        history = npc_state.setdefault("preset_task_history", [])
+        if not isinstance(history, list):
+            history = []
+            npc_state["preset_task_history"] = history
+        history.append(copy.deepcopy(entry))
+
+    def _is_player_movement_restricted_by_pursuer_state(self, state: Dict[str, Any]) -> bool:
+        if not isinstance(state, dict):
+            return False
+        chase_state = self._get_butler_runtime_state(state).get("chase_state", {})
+        if not isinstance(chase_state, dict):
+            return False
+        current_location = str(state.get("current_location") or "").strip()
+        blocked_at = str(chase_state.get("blocked_at") or "").strip()
+        if bool(chase_state.get("active")) and str(chase_state.get("status") or "").strip() == "blocked":
+            return bool(current_location) and blocked_at == current_location
+        return (
+            bool(chase_state.get("active"))
+            and str(chase_state.get("status") or "").strip() != "blocked"
+            and str(chase_state.get("target") or "player").strip() == "player"
+        )
+
+    def _find_awaiting_cooperative_handoff(self, state: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+        if not isinstance(state, dict):
+            return "", {}
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        if not isinstance(npc_states, dict):
+            return "", {}
+        for npc_name, npc_state in npc_states.items():
+            if not isinstance(npc_state, dict):
+                continue
+            preset_task = npc_state.get("preset_task", {})
+            if not isinstance(preset_task, dict):
+                continue
+            if (
+                str(preset_task.get("kind") or "").strip() == "cooperative_escape"
+                and str(preset_task.get("phase") or "").strip() == "await_handoff"
+            ):
+                return npc_name, npc_state
+        return "", {}
 
     def _render_text_template(self, template: str, **kwargs) -> str:
         rendered = str(template or "")
@@ -863,6 +920,405 @@ class SessionManager:
                     })
 
         return changes
+
+    def start_preset_task(self, session_id: str, npc_name: str, task_id: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {"success": False, "message": "会话不存在"}
+
+        self._ensure_runtime_defaults(state)
+        module_data = self.get_module_data(session_id)
+        preset_tasks = self._get_module_preset_tasks(module_data)
+        task_cfg = preset_tasks.get(task_id, {})
+        if not isinstance(task_cfg, dict):
+            return {"success": False, "message": "预设任务不存在"}
+
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        npc_state = npc_states.get(npc_name, {}) if isinstance(npc_states, dict) else {}
+        if not isinstance(npc_state, dict):
+            return {"success": False, "message": f"NPC {npc_name} 不存在"}
+
+        actor_name = str(task_cfg.get("actor") or "").strip()
+        if actor_name and actor_name != npc_name:
+            return {"success": False, "message": f"{npc_name} 不能执行该预设任务"}
+
+        current_task = npc_state.get("preset_task", {})
+        if isinstance(current_task, dict) and current_task.get("task_id"):
+            return {"success": False, "message": f"{npc_name} 已在执行其他预设任务"}
+
+        requirements = task_cfg.get("requirements", {}) if isinstance(task_cfg.get("requirements"), dict) else {}
+        min_trust = float(requirements.get("min_trust", 0.0) or 0.0)
+        if float(npc_state.get("trust_level", 0.0) or 0.0) < min_trust:
+            return {"success": False, "message": f"{npc_name} 的信任不足，拒绝执行该计划"}
+
+        actor_location = str(requirements.get("actor_location") or "").strip()
+        current_location = str(npc_state.get("location") or "").strip()
+        if actor_location and current_location != actor_location:
+            return {"success": False, "message": f"{npc_name} 当前不在可执行该任务的位置"}
+
+        kind = str(task_cfg.get("kind") or "").strip()
+        started_round = int(state.get("round_count", 0) or 0)
+        preset_task: Dict[str, Any]
+        if kind == "solo_search":
+            preset_task = {
+                "task_id": task_id,
+                "kind": kind,
+                "status": "running",
+                "phase": "scheduled",
+                "rounds_left": max(1, int(task_cfg.get("duration_rounds", 1) or 1)),
+                "return_to": str(task_cfg.get("return_to") or current_location).strip() or current_location,
+                "started_round": started_round,
+            }
+        elif kind == "cooperative_escape":
+            failure_cfg = task_cfg.get("failure", {}) if isinstance(task_cfg.get("failure"), dict) else {}
+            preset_task = {
+                "task_id": task_id,
+                "kind": kind,
+                "status": "running",
+                "phase": "scheduled",
+                "staging_location": str(task_cfg.get("staging_location") or "").strip(),
+                "return_to": str(failure_cfg.get("return_to") or current_location).strip() or current_location,
+                "started_round": started_round,
+            }
+        else:
+            return {"success": False, "message": "当前预设任务类型尚未实现"}
+
+        npc_state["preset_task"] = preset_task
+        self._append_preset_task_history(
+            npc_state,
+            {
+                "round": started_round,
+                "task_id": task_id,
+                "event": "started",
+            },
+        )
+        return {
+            "success": True,
+            "task_id": task_id,
+            "preset_task": copy.deepcopy(preset_task),
+            "changes": {
+                "npc_updates": {
+                    npc_name: {
+                        "preset_task": copy.deepcopy(preset_task),
+                    }
+                }
+            },
+        }
+
+    def _advance_preset_tasks(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(state, dict):
+            return {}
+
+        module_data = state.get("module_data", {}) if isinstance(state.get("module_data"), dict) else {}
+        preset_tasks = self._get_module_preset_tasks(module_data)
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        flags = state.setdefault("world_state", {}).setdefault("flags", {})
+        changes: Dict[str, Any] = {}
+
+        for npc_name, npc_runtime in npc_states.items():
+            if not isinstance(npc_runtime, dict):
+                continue
+            preset_task = npc_runtime.get("preset_task", {})
+            if not isinstance(preset_task, dict):
+                continue
+            task_id = str(preset_task.get("task_id") or "").strip()
+            if not task_id:
+                continue
+
+            task_cfg = preset_tasks.get(task_id, {}) if isinstance(preset_tasks.get(task_id), dict) else {}
+            kind = str(preset_task.get("kind") or task_cfg.get("kind") or "").strip()
+            phase = str(preset_task.get("phase") or "").strip()
+
+            if kind == "solo_search":
+                if phase not in {"scheduled", "offstage"}:
+                    continue
+
+                if phase == "scheduled":
+                    preset_task["phase"] = "offstage"
+                    npc_runtime["location"] = ""
+
+                rounds_left = max(0, int(preset_task.get("rounds_left", 0) or 0) - 1)
+                preset_task["rounds_left"] = rounds_left
+
+                if rounds_left > 0:
+                    changes = self._merge_runtime_changes(
+                        changes,
+                        {
+                            "npc_updates": {
+                                npc_name: {
+                                    "location": npc_runtime.get("location", ""),
+                                    "preset_task": copy.deepcopy(preset_task),
+                                }
+                            }
+                        },
+                    )
+                    continue
+
+                return_to = str(preset_task.get("return_to") or task_cfg.get("return_to") or "").strip()
+                if return_to:
+                    npc_runtime["location"] = return_to
+
+                on_complete = task_cfg.get("on_complete", {}) if isinstance(task_cfg.get("on_complete"), dict) else {}
+                set_flags = on_complete.get("set_flags", {}) if isinstance(on_complete.get("set_flags"), dict) else {}
+                flags.update(copy.deepcopy(set_flags))
+                npc_runtime["preset_task"] = {}
+                self._append_preset_task_history(
+                    npc_runtime,
+                    {
+                        "round": int(state.get("round_count", 0) or 0),
+                        "task_id": task_id,
+                        "event": "completed",
+                    },
+                )
+                changes = self._merge_runtime_changes(
+                    changes,
+                    {
+                        "npc_updates": {
+                            npc_name: {
+                                "location": npc_runtime.get("location", ""),
+                                "preset_task": {},
+                            }
+                        },
+                        "flags": copy.deepcopy(set_flags),
+                    },
+                )
+                continue
+
+            if kind == "cooperative_escape":
+                if phase != "scheduled":
+                    continue
+
+                staging_location = str(preset_task.get("staging_location") or task_cfg.get("staging_location") or "").strip()
+                if staging_location:
+                    npc_runtime["location"] = staging_location
+                preset_task["phase"] = "await_handoff"
+                changes = self._merge_runtime_changes(
+                    changes,
+                    {
+                        "npc_updates": {
+                            npc_name: {
+                                "location": npc_runtime.get("location", ""),
+                                "preset_task": copy.deepcopy(preset_task),
+                            }
+                        }
+                    },
+                )
+
+                primary_pursuer = self._get_primary_pursuer_name_from_state(state)
+                if primary_pursuer:
+                    pursuer_state = self._get_butler_runtime_state(state)
+                    chase_state = pursuer_state.setdefault("chase_state", self._build_default_butler_chase_state())
+                    chase_state["active"] = True
+                    chase_state["status"] = "alerted"
+                    chase_state["target"] = npc_name
+                    chase_state["activation_round"] = None
+                    chase_state["same_location_rounds"] = 0
+                    chase_state["blocked_at"] = None
+                    chase_state["last_target_location"] = staging_location or str(pursuer_state.get("location") or "").strip()
+                    changes = self._merge_runtime_changes(
+                        changes,
+                        {
+                            "npc_updates": {
+                                primary_pursuer: {
+                                    "chase_state": {
+                                        "active": True,
+                                        "status": "alerted",
+                                        "target": npc_name,
+                                        "activation_round": None,
+                                        "same_location_rounds": 0,
+                                        "blocked_at": None,
+                                        "last_target_location": chase_state.get("last_target_location"),
+                                    }
+                                }
+                            }
+                        },
+                    )
+
+        return changes
+
+    def _resolve_preset_task_branch_state(self, state: Dict[str, Any], npc_name: str, branch: str) -> Dict[str, Any]:
+        if not isinstance(state, dict):
+            return {}
+
+        module_data = state.get("module_data", {}) if isinstance(state.get("module_data"), dict) else {}
+        module_entities = get_module_all_entities(module_data)
+        preset_tasks = self._get_module_preset_tasks(module_data)
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        npc_runtime = npc_states.get(npc_name, {}) if isinstance(npc_states, dict) else {}
+        if not isinstance(npc_runtime, dict):
+            return {}
+
+        preset_task = npc_runtime.get("preset_task", {})
+        if not isinstance(preset_task, dict):
+            return {}
+        task_id = str(preset_task.get("task_id") or "").strip()
+        task_cfg = preset_tasks.get(task_id, {}) if isinstance(preset_tasks.get(task_id), dict) else {}
+        if str(preset_task.get("kind") or task_cfg.get("kind") or "").strip() != "cooperative_escape":
+            return {}
+
+        changes: Dict[str, Any] = {}
+        current_round = int(state.get("round_count", 0) or 0)
+        if branch == "player_handoff_success":
+            success_cfg = task_cfg.get("success", {}) if isinstance(task_cfg.get("success"), dict) else {}
+            npc_runtime["location"] = str(state.get("current_location") or npc_runtime.get("location") or "").strip()
+            npc_runtime["companion_mode"] = str(success_cfg.get("npc_mode") or "follow").strip() or "follow"
+            npc_runtime["companion_state"] = npc_runtime["companion_mode"]
+            npc_runtime["companion_task"] = {
+                "type": "follow",
+                "target_entity": str(success_cfg.get("handoff_target") or "player").strip() or "player",
+                "lag": 0,
+                "last_target_location": None,
+                "awaiting_exit_release": False,
+            }
+            npc_runtime["preset_task"] = {}
+            self._append_preset_task_history(
+                npc_runtime,
+                {
+                    "round": current_round,
+                    "task_id": task_id,
+                    "event": "branch_player_handoff_success",
+                },
+            )
+
+            primary_pursuer = self._get_primary_pursuer_name_from_state(state)
+            if primary_pursuer:
+                pursuer_state = self._get_butler_runtime_state(state)
+                chase_state = pursuer_state.setdefault("chase_state", self._build_default_butler_chase_state())
+                chase_state["active"] = True
+                chase_state["status"] = "pursuing"
+                chase_state["target"] = "player"
+                chase_state["activation_round"] = current_round
+                chase_state["same_location_rounds"] = 0
+                chase_state["blocked_at"] = None
+                chase_state["last_target_location"] = str(state.get("current_location") or "").strip()
+                changes = self._merge_runtime_changes(
+                    changes,
+                    {
+                        "npc_updates": {
+                            primary_pursuer: {
+                                "chase_state": {
+                                    "active": True,
+                                    "status": "pursuing",
+                                    "target": "player",
+                                    "activation_round": current_round,
+                                    "same_location_rounds": 0,
+                                    "blocked_at": None,
+                                    "last_target_location": chase_state["last_target_location"],
+                                }
+                            }
+                        }
+                    },
+                )
+
+            self._sync_single_npc_runtime_state(npc_runtime, module_entities.get(npc_name, {}))
+            changes = self._merge_runtime_changes(
+                changes,
+                {
+                    "npc_updates": {
+                        npc_name: {
+                            "location": npc_runtime.get("location", ""),
+                            "companion_mode": npc_runtime["companion_mode"],
+                            "companion_state": npc_runtime["companion_state"],
+                            "companion_task": copy.deepcopy(npc_runtime["companion_task"]),
+                            "preset_task": {},
+                        }
+                    }
+                },
+            )
+            return changes
+
+        if branch == "player_abandoned":
+            failure_cfg = task_cfg.get("failure", {}) if isinstance(task_cfg.get("failure"), dict) else {}
+            return_to = str(failure_cfg.get("return_to") or preset_task.get("return_to") or "").strip()
+            if return_to:
+                npc_runtime["location"] = return_to
+            npc_runtime["companion_mode"] = "wait"
+            npc_runtime["companion_state"] = "wait"
+            npc_runtime["companion_task"] = {}
+            if "trust_set" in failure_cfg:
+                npc_runtime["trust_level"] = round(float(failure_cfg.get("trust_set", 0.0) or 0.0), 2)
+            npc_runtime["preset_task"] = {}
+            set_flags = failure_cfg.get("set_flags", {}) if isinstance(failure_cfg.get("set_flags"), dict) else {}
+            state.setdefault("world_state", {}).setdefault("flags", {}).update(copy.deepcopy(set_flags))
+            self._append_preset_task_history(
+                npc_runtime,
+                {
+                    "round": current_round,
+                    "task_id": task_id,
+                    "event": "branch_player_abandoned",
+                },
+            )
+            self._sync_single_npc_runtime_state(npc_runtime, module_entities.get(npc_name, {}))
+            changes = self._merge_runtime_changes(
+                changes,
+                {
+                    "npc_updates": {
+                        npc_name: {
+                            "location": npc_runtime.get("location", ""),
+                            "trust_level": npc_runtime.get("trust_level", 0.0),
+                            "companion_mode": "wait",
+                            "companion_state": "wait",
+                            "companion_task": {},
+                            "preset_task": {},
+                        }
+                    },
+                    "flags": copy.deepcopy(set_flags),
+                },
+            )
+            return changes
+
+        return {}
+
+    def resolve_preset_task_branch(self, session_id: str, npc_name: str, branch: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {"success": False, "message": "会话不存在"}
+        changes = self._resolve_preset_task_branch_state(state, npc_name, branch)
+        return {
+            "success": bool(changes),
+            "branch": branch,
+            "changes": changes,
+        }
+
+    def deliver_pending_npc_reports(self, session_id: str, npc_name: str) -> Dict[str, Any]:
+        state = self.sessions.get(session_id)
+        if not state:
+            return {"delivered": False}
+
+        self._ensure_runtime_defaults(state)
+        module_data = self.get_module_data(session_id)
+        preset_tasks = self._get_module_preset_tasks(module_data)
+        world_state = state.setdefault("world_state", {})
+        flags = world_state.setdefault("flags", {})
+        clues_found = world_state.setdefault("clues_found", [])
+
+        for task_id, task_cfg in preset_tasks.items():
+            if not isinstance(task_cfg, dict):
+                continue
+            if str(task_cfg.get("actor") or "").strip() != str(npc_name or "").strip():
+                continue
+            report_cfg = task_cfg.get("report", {}) if isinstance(task_cfg.get("report"), dict) else {}
+            pending_flag = str(report_cfg.get("pending_flag") or "").strip()
+            delivered_flag = str(report_cfg.get("delivered_flag") or "").strip()
+            if not pending_flag or not flags.get(pending_flag):
+                continue
+
+            clue = str(report_cfg.get("clue") or "").strip()
+            text = str(report_cfg.get("text") or "").strip()
+            if clue and clue not in clues_found:
+                clues_found.append(clue)
+            flags[pending_flag] = False
+            if delivered_flag:
+                flags[delivered_flag] = True
+            return {
+                "delivered": True,
+                "task_id": task_id,
+                "npc_name": npc_name,
+                "clue": clue,
+                "text": text,
+            }
+
+        return {"delivered": False}
 
     # ── 同伴状态管理 ──
 
@@ -1758,6 +2214,10 @@ class SessionManager:
         loc_data = module_data.get("locations", {}).get(current, {})
         if loc_data.get("is_ending_location"):
             ending_id = loc_data.get("ending_id", "getlost")
+            if ending_id in {"escaped", "emily_escaped"}:
+                influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions())
+                influence["escape_success"] = True
+                influence["npc_together"] = self._get_effective_npc_together(state)
             self.trigger_ending(session_id, ending_id)
             return True
         return False
@@ -1912,6 +2372,7 @@ class SessionManager:
 
         runtime_changes = {}
         if not bool(state.get("influence_dimensions", {}).get("butler_gaze")):
+            runtime_changes = self._merge_runtime_changes(runtime_changes, self._advance_preset_tasks(state))
             runtime_changes = self._advance_butler_chase(state)
             self._evaluate_butler_exposure(state)
 
@@ -2112,6 +2573,7 @@ class SessionManager:
         })
         runtime_changes = {}
         if not bool(state.get("influence_dimensions", {}).get("butler_gaze")):
+            runtime_changes = self._merge_runtime_changes(runtime_changes, self._advance_preset_tasks(state))
             runtime_changes = self._merge_runtime_changes(runtime_changes, self._advance_companion_tasks(state))
             runtime_changes = self._merge_runtime_changes(runtime_changes, self._advance_butler_chase(state))
             runtime_changes = self._merge_runtime_changes(runtime_changes, self._finalize_companion_tasks(state))
@@ -2305,7 +2767,7 @@ class SessionManager:
             return set()
 
         available_moves = set(self._get_adjacent_moves(session_id))
-        if self.is_butler_active(session_id):
+        if self._is_player_movement_restricted_by_pursuer_state(state):
             return available_moves
 
         current = state["current_location"]
@@ -2411,7 +2873,7 @@ class SessionManager:
         adjacent_moves = self._get_adjacent_moves(session_id)
         available_moves = self._get_available_moves(session_id)
         if target_key not in available_moves:
-            if self.is_butler_active(session_id) and target_key not in adjacent_moves:
+            if self._is_player_movement_restricted_by_pursuer_state(state) and target_key not in adjacent_moves:
                 return {
                     "success": False,
                     "message": self._get_primary_pursuer_message_from_state(
@@ -2448,7 +2910,7 @@ class SessionManager:
 
         dodge_result = None
         movement_note = None
-        if self.is_butler_active(session_id):
+        if self._is_player_movement_restricted_by_pursuer_state(state):
             butler_location = self._get_butler_contact_location_from_state(state)
             activation_grace_exit = self._is_butler_activation_grace_exit(state, current, target_key)
             needs_dodge = (
@@ -2474,6 +2936,14 @@ class SessionManager:
 
         previous_location = current
         state["current_location"] = target_key
+
+        cooperative_npc_name, cooperative_npc_state = self._find_awaiting_cooperative_handoff(state)
+        if cooperative_npc_name and isinstance(cooperative_npc_state, dict):
+            cooperative_location = str(cooperative_npc_state.get("location") or "").strip()
+            if target_key == cooperative_location:
+                self._resolve_preset_task_branch_state(state, cooperative_npc_name, "player_handoff_success")
+            else:
+                self._resolve_preset_task_branch_state(state, cooperative_npc_name, "player_abandoned")
 
         if self.is_butler_active(session_id):
             butler_state = self._get_butler_runtime_state(state)

@@ -601,6 +601,13 @@ class RuleAI:
             scene_npcs,
             module_data,
         )
+        normalized["preset_task_request"] = self._extract_preset_task_request(
+            normalized.get("preset_task_request"),
+            normalized_action,
+            player_input,
+            scene_npcs,
+            module_data,
+        )
 
         if normalized_action.get("target_kind") == "npc" and target_key in scene_npcs:
             npc_data = scene_npcs.get(target_key, {})
@@ -675,6 +682,11 @@ class RuleAI:
                 "target_entity": None,
                 "destination": None,
             },
+            "preset_task_request": {
+                "target_npc": None,
+                "task_id": None,
+                "reason": None,
+            },
             "on_success": {
                 "discover_clues": [],
                 "add_inventory": [],
@@ -708,6 +720,13 @@ class RuleAI:
                 plan["feasibility"]["reason"] = "这个对象不能正常说话，不会回应交谈"
             plan["companion_command"] = self._normalize_companion_command(
                 plan.get("companion_command"),
+                plan["normalized_action"],
+                player_input,
+                scene_npcs,
+                module_data,
+            )
+            plan["preset_task_request"] = self._extract_preset_task_request(
+                plan.get("preset_task_request"),
                 plan["normalized_action"],
                 player_input,
                 scene_npcs,
@@ -773,7 +792,73 @@ class RuleAI:
             scene_npcs,
             module_data,
         )
+        plan["preset_task_request"] = self._extract_preset_task_request(
+            plan.get("preset_task_request"),
+            plan["normalized_action"],
+            player_input,
+            scene_npcs,
+            module_data,
+        )
         return plan
+
+    def _extract_preset_task_request(
+        self,
+        request_data: Any,
+        normalized_action: dict,
+        player_input: str,
+        scene_npcs: Dict[str, Dict[str, Any]],
+        module_data: dict,
+    ) -> dict:
+        normalized = {
+            "target_npc": None,
+            "task_id": None,
+            "reason": None,
+        }
+        source = request_data if isinstance(request_data, dict) else {}
+        preset_tasks = module_data.get("preset_tasks", {}) if isinstance(module_data, dict) else {}
+        preset_tasks = preset_tasks if isinstance(preset_tasks, dict) else {}
+
+        if normalized_action.get("target_kind") == "npc" and normalized_action.get("target_key") in scene_npcs:
+            normalized["target_npc"] = normalized_action.get("target_key")
+        elif len(scene_npcs) == 1:
+            normalized["target_npc"] = next(iter(scene_npcs))
+
+        for key in ("target_npc", "task_id", "reason"):
+            value = str(source.get(key) or "").strip()
+            if value:
+                normalized[key] = value
+
+        text = str(player_input or "").strip()
+        lowered = text.lower()
+        if not normalized["task_id"]:
+            requests_solo_search = (
+                any(keyword in text for keyword in ["你去调查", "你去查", "去查全屋", "独立调查", "你去搜"])
+                and any(keyword in text for keyword in ["我来引开", "我来吸引", "我拖住", "我来拖住", "我引开管家", "我吸引管家"])
+            )
+            requests_cooperative_escape = any(
+                keyword in text for keyword in ["配合逃脱", "一起引开", "你先去二楼走廊", "先把管家引到二楼", "我们分工引开"]
+            ) or any(keyword in lowered for keyword in ["cooperative escape", "handoff chase", "draw the butler upstairs"])
+            if requests_solo_search and "solo_search_escape" in preset_tasks:
+                normalized["task_id"] = "solo_search_escape"
+                normalized["reason"] = normalized["reason"] or "玩家请求由自己吸引管家、由NPC独立调查全屋"
+            elif requests_cooperative_escape and "cooperative_escape" in preset_tasks:
+                normalized["task_id"] = "cooperative_escape"
+                normalized["reason"] = normalized["reason"] or "玩家请求与NPC分工配合吸引管家并准备逃脱"
+
+        if normalized["task_id"]:
+            task_cfg = preset_tasks.get(normalized["task_id"], {}) if isinstance(preset_tasks.get(normalized["task_id"]), dict) else {}
+            actor = str(task_cfg.get("actor") or "").strip()
+            if actor and not normalized["target_npc"]:
+                normalized["target_npc"] = actor
+            if actor and normalized["target_npc"] and actor != normalized["target_npc"]:
+                return {"target_npc": None, "task_id": None, "reason": None}
+        if normalized["task_id"] not in preset_tasks:
+            normalized["task_id"] = None
+            normalized["reason"] = None
+        if not normalized["task_id"]:
+            normalized["target_npc"] = None if not source.get("target_npc") else normalized["target_npc"]
+
+        return normalized
 
     def _normalize_companion_command(
         self,
