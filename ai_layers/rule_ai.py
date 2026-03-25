@@ -20,7 +20,6 @@ from .provider_failover import (
     normalize_provider_candidates,
     text_chat_with_fallback,
 )
-from .provider_resolver import resolve_provider_by_id
 
 import json
 import os
@@ -92,18 +91,6 @@ class RuleAI:
         if not candidates:
             logger.error("[RuleAI] rule_ai_provider is not configured")
         return candidates
-
-    def _get_provider(self):
-        if not self.provider_name:
-            logger.error("[RuleAI] rule_ai_provider is not configured")
-            return None
-
-        provider = resolve_provider_by_id(self.context, self.provider_name)
-        if not provider:
-            logger.error(
-                f"[RuleAI] Provider {self.provider_name} not found; strict provider mode disables fallback"
-            )
-        return provider
 
     def _strip_json_fence(self, text: str) -> str:
         text = (text or "").strip()

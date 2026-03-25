@@ -10,7 +10,6 @@ from .provider_failover import (
     normalize_provider_candidates,
     text_chat_with_fallback,
 )
-from .usage_metrics import extract_provider_meta, extract_usage_metrics
 
 import json
 import os
@@ -62,17 +61,6 @@ class NarrativeAI:
         if not candidates:
             logger.error("[NarrativeAI] narrative_ai_provider is not configured")
         return candidates
-
-    def _get_provider_meta(self, provider) -> dict:
-        provider_meta = extract_provider_meta(provider)
-        return {
-            "id": provider_meta.get("id"),
-            "model": provider_meta.get("configured_model"),
-            "base_url": provider_meta.get("base_url"),
-        }
-
-    async def _chat_once(self, provider, prompt: str):
-        return await provider.text_chat(prompt=prompt, contexts=[])
 
     async def generate(
         self,

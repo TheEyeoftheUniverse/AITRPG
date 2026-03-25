@@ -7,10 +7,13 @@ AITRPG 不再内置任何默认模型配置。
 以下三项都需要你在 AstrBot 插件配置里显式填写，而且值必须是 AstrBot 里真实存在的 provider ID：
 
 - `rule_ai_provider`
+- `rule_ai_provider_fallbacks`
 - `rhythm_ai_provider`
+- `rhythm_ai_provider_fallbacks`
 - `narrative_ai_provider`
+- `narrative_ai_provider_fallbacks`
 
-如果任意一项为空，或填写的 provider ID 在当前环境里不存在，插件会直接报错，不会再自动切到当前会话模型，也不会偷偷换模型。
+主模型为空时会直接报错。备用列表可以为空。
 
 ## 配置项
 
@@ -20,17 +23,38 @@ AITRPG 不再内置任何默认模型配置。
 - 要求：必填
 - 填写内容：AstrBot 中聊天模型 provider 的精确 ID
 
+### `rule_ai_provider_fallbacks`
+
+- 用途：规则AI备用模型列表
+- 要求：选填
+- 填写内容：AstrBot 中聊天模型 provider 的精确 ID 列表
+- 行为：主模型不可用时按顺序切换
+
 ### `rhythm_ai_provider`
 
 - 用途：节奏AI，负责节奏评估、软引导、软变化补充
 - 要求：必填
 - 填写内容：AstrBot 中聊天模型 provider 的精确 ID
 
+### `rhythm_ai_provider_fallbacks`
+
+- 用途：节奏AI备用模型列表
+- 要求：选填
+- 填写内容：AstrBot 中聊天模型 provider 的精确 ID 列表
+- 行为：主模型不可用时按顺序切换
+
 ### `narrative_ai_provider`
 
 - 用途：文案AI，负责生成玩家可见叙述文本
 - 要求：必填
 - 填写内容：AstrBot 中聊天模型 provider 的精确 ID
+
+### `narrative_ai_provider_fallbacks`
+
+- 用途：文案AI备用模型列表
+- 要求：选填
+- 填写内容：AstrBot 中聊天模型 provider 的精确 ID 列表
+- 行为：主模型不可用时按顺序切换
 
 ### `module_name`
 
@@ -62,6 +86,19 @@ AITRPG 不再内置任何默认模型配置。
 ## 生效方式
 
 修改插件配置后，需要让 AstrBot 重新加载插件或重启服务，新的 provider 配置才会进入插件实例。
+
+## 切换规则
+
+只有 provider/服务不可用时才会切到备用模型，例如：
+
+- provider ID 不存在
+- 网络错误、超时
+- 429
+- 5xx
+- 鉴权失效
+- provider disabled / unavailable
+
+如果主模型已经返回内容，但内容不是合法 JSON，这类错误不会自动切到备用模型。
 
 ## 故障排查
 
