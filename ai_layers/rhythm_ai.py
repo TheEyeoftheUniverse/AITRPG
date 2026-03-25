@@ -55,14 +55,14 @@ class RhythmAI:
             return {}
 
     def _get_provider(self):
-        provider = None
         if self.provider_name:
             provider = self.context.get_provider(self.provider_name)
             if not provider:
-                logger.warning(f"[RhythmAI] Provider {self.provider_name} not found, fallback to current provider")
-        if not provider:
-            provider = self.context.get_using_provider()
-        return provider
+                logger.error(
+                    f"[RhythmAI] Provider {self.provider_name} not found; strict provider mode disables fallback"
+                )
+            return provider
+        return self.context.get_using_provider()
 
     def _strip_json_fence(self, text: str) -> str:
         text = (text or "").strip()
@@ -122,7 +122,12 @@ class RhythmAI:
                 else str(llm_response)
             )
             if trace_id:
-                self._call_metrics[trace_id] = extract_usage_metrics(llm_response, prompt, response_text)
+                self._call_metrics[trace_id] = extract_usage_metrics(
+                    llm_response,
+                    prompt,
+                    response_text,
+                    provider=provider,
+                )
             result = json.loads(self._strip_json_fence(response_text))
             normalized = self._normalize_result(result, base_result)
             logger.info(f"[RhythmAI] process result: {normalized}")

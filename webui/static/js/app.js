@@ -279,6 +279,11 @@ function summarizeProcessingGroup(groupDef, progress) {
     const completionTokens = steps.reduce((sum, step) => sum + Math.max(0, Number(step.completion_tokens) || 0), 0);
     const totalTokens = steps.reduce((sum, step) => sum + Math.max(0, Number(step.total_tokens) || 0), 0);
     const tokenSources = new Set(steps.map((step) => step.token_source).filter(Boolean));
+    const modelDisplays = [...new Set(
+        steps
+            .map((step) => String(step.model_display || "").trim())
+            .filter(Boolean)
+    )];
 
     let status = "pending";
     if (statuses.includes("error")) {
@@ -324,6 +329,7 @@ function summarizeProcessingGroup(groupDef, progress) {
         completionTokens,
         totalTokens,
         tokenSource,
+        modelDisplay: modelDisplays.join(" | "),
     };
 }
 
@@ -380,6 +386,7 @@ function renderProcessingGroup(group) {
             <div class="processing-step-meta">
                 <span class="processing-chip ${statusTone}">${statusLabel}</span>
                 <span class="processing-chip">${escapeHtml(formatDurationMs(group.durationMs))}</span>
+                ${group.modelDisplay ? `<span class="processing-chip">实际模型 ${escapeHtml(group.modelDisplay)}</span>` : ""}
                 ${group.promptTokens ? `<span class="processing-chip">输入 ${group.promptTokens}</span>` : ""}
                 ${group.completionTokens ? `<span class="processing-chip">输出 ${group.completionTokens}</span>` : ""}
                 ${group.totalTokens ? `<span class="processing-chip">总计 ${group.totalTokens}</span>` : ""}

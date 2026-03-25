@@ -5,7 +5,7 @@ from ..game_state.location_context import (
     get_entity_profile_text,
     is_threat_entity,
 )
-from .usage_metrics import extract_usage_metrics
+from .usage_metrics import extract_provider_meta, extract_usage_metrics
 
 import json
 import os
@@ -43,23 +43,21 @@ class NarrativeAI:
             return {}
 
     def _get_provider(self):
-        provider = None
         if self.provider_name:
             provider = self.context.get_provider(self.provider_name)
             if not provider:
-                logger.warning(
-                    f"[NarrativeAI] Provider {self.provider_name} not found, fallback to current provider"
+                logger.error(
+                    f"[NarrativeAI] Provider {self.provider_name} not found; strict provider mode disables fallback"
                 )
-        if not provider:
-            provider = self.context.get_using_provider()
-        return provider
+            return provider
+        return self.context.get_using_provider()
 
     def _get_provider_meta(self, provider) -> dict:
-        provider_config = getattr(provider, "provider_config", {}) or {}
+        provider_meta = extract_provider_meta(provider)
         return {
-            "id": provider_config.get("id") or getattr(getattr(provider, "meta", lambda: None)(), "id", None),
-            "model": provider_config.get("model") or getattr(provider, "get_model", lambda: None)(),
-            "base_url": provider_config.get("api_base"),
+            "id": provider_meta.get("id"),
+            "model": provider_meta.get("configured_model"),
+            "base_url": provider_meta.get("base_url"),
         }
 
     async def _chat_once(self, provider, prompt: str):
@@ -115,7 +113,12 @@ class NarrativeAI:
                 if hasattr(llm_response, "completion_text")
                 else str(llm_response)
             )
-            usage_metrics = extract_usage_metrics(llm_response, prompt, response_text)
+            usage_metrics = extract_usage_metrics(
+                llm_response,
+                prompt,
+                response_text,
+                provider=provider,
+            )
             response_text = self._strip_json_fence(response_text)
             result = json.loads(response_text)
         except json.JSONDecodeError as e:

@@ -38,21 +38,38 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from aitrpg.ai_layers.narrative_ai import NarrativeAI
 from aitrpg.ai_layers.rhythm_ai import RhythmAI
 from aitrpg.ai_layers.rule_ai import RuleAI
+from aitrpg.ai_layers.usage_metrics import extract_usage_metrics
 from aitrpg.game_state.session_manager import SessionManager
 
 
+class _StubRawCompletion:
+    def __init__(self, model: str | None = None):
+        self.model = model
+
+
 class _StubResponse:
-    def __init__(self, completion_text: str):
+    def __init__(self, completion_text: str, raw_model: str | None = None):
         self.completion_text = completion_text
+        self.raw_completion = _StubRawCompletion(raw_model) if raw_model else None
 
 
 class _StubProvider:
-    def __init__(self, completion_text: str):
+    def __init__(
+        self,
+        completion_text: str,
+        provider_id: str = "stub",
+        configured_model: str = "stub-model",
+        actual_model: str | None = None,
+    ):
         self.completion_text = completion_text
-        self.provider_config = {"id": "stub", "model": "stub-model"}
+        self.actual_model = actual_model
+        self.provider_config = {"id": provider_id, "model": configured_model}
+
+    def get_model(self):
+        return self.provider_config.get("model")
 
     async def text_chat(self, prompt: str, contexts: list):
-        return _StubResponse(self.completion_text)
+        return _StubResponse(self.completion_text, raw_model=self.actual_model)
 
 
 class _StubContext:
@@ -64,6 +81,17 @@ class _StubContext:
 
     def get_using_provider(self):
         return self.provider
+
+
+class _ExplicitMissingProviderContext:
+    def __init__(self, current_provider):
+        self.current_provider = current_provider
+
+    def get_provider(self, provider_name: str):
+        return None
+
+    def get_using_provider(self):
+        return self.current_provider
 
 
 class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
@@ -143,6 +171,87 @@ class LlmFailureRetryOnlyTests(unittest.IsolatedAsyncioTestCase):
                 narrative_history=[],
                 history=[],
             )
+
+
+    async def test_rule_ai_missing_explicit_provider_does_not_fallback(self):
+        fallback_provider = _StubProvider('{"intent":"inspect","target":null,"category":"观察"}')
+        rule_ai = RuleAI(
+            _ExplicitMissingProviderContext(fallback_provider),
+            provider_name="missing-provider",
+            config={"rule_ai_intent_prompt": "{player_input}"},
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "LLM provider"):
+            await rule_ai.parse_intent("查看房间")
+
+    async def test_rhythm_ai_missing_explicit_provider_does_not_fallback(self):
+        fallback_provider = _StubProvider('{"feasible":true,"hint":"ok","stage_assessment":"ok"}')
+        rhythm_ai = RhythmAI(
+            _ExplicitMissingProviderContext(fallback_provider),
+            provider_name="missing-provider",
+            config={"rhythm_ai_prompt": "{player_input} {intent} {rule_plan} {rule_result} {scene_context}"},
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "LLM provider"):
+            await rhythm_ai.process(
+                intent={"intent": "inspect"},
+                player_input="查看房间",
+                rule_plan={"feasibility": {"ok": True}},
+                rule_result={"success": True},
+                game_state=self.state,
+                module_data=self.module_data,
+                history=[],
+            )
+
+    async def test_narrative_ai_missing_explicit_provider_does_not_fallback(self):
+        fallback_provider = _StubProvider('{"narrative":"ok","summary":"ok"}')
+        narrative_ai = NarrativeAI(
+            _ExplicitMissingProviderContext(fallback_provider),
+            provider_name="missing-provider",
+            config={"narrative_ai_prompt": "{rule_info}\n{rhythm_info}\n{location}"},
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "LLM provider"):
+            await narrative_ai.generate(
+                player_input="查看房间",
+                rule_plan={
+                    "normalized_action": {"verb": "inspect", "target_kind": "location", "target_key": "master_bedroom"},
+                    "feasibility": {"ok": True},
+                    "location_context": self.manager.get_location_context(self.session_id),
+                    "input_classification": "action",
+                },
+                rule_result={"check_type": None, "success": True, "result_description": "无需检定"},
+                rhythm_result={
+                    "feasible": True,
+                    "stage_assessment": "测试",
+                    "location_context": self.manager.get_location_context(self.session_id),
+                    "object_context": None,
+                    "npc_context": {},
+                    "threat_entity_context": {},
+                    "npc_action_guide": {},
+                    "atmosphere_guide": {},
+                },
+                narrative_history=[],
+                history=[],
+            )
+
+
+class UsageMetricsTests(unittest.TestCase):
+    def test_extract_usage_metrics_prefers_actual_response_model(self):
+        provider = _StubProvider(
+            "{}",
+            provider_id="selected-provider",
+            configured_model="configured-model",
+            actual_model="actual-model",
+        )
+        response = _StubResponse("{}", raw_model="actual-model")
+
+        metrics = extract_usage_metrics(response, "prompt", "{}", provider=provider)
+
+        self.assertEqual(metrics["provider_id"], "selected-provider")
+        self.assertEqual(metrics["configured_model"], "configured-model")
+        self.assertEqual(metrics["actual_model"], "actual-model")
+        self.assertEqual(metrics["model_display"], "selected-provider / actual-model")
 
 
 if __name__ == "__main__":

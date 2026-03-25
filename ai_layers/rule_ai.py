@@ -73,14 +73,14 @@ class RuleAI:
             return {}
 
     def _get_provider(self):
-        provider = None
         if self.provider_name:
             provider = self.context.get_provider(self.provider_name)
             if not provider:
-                logger.warning(f"[RuleAI] Provider {self.provider_name} not found, fallback to current provider")
-        if not provider:
-            provider = self.context.get_using_provider()
-        return provider
+                logger.error(
+                    f"[RuleAI] Provider {self.provider_name} not found; strict provider mode disables fallback"
+                )
+            return provider
+        return self.context.get_using_provider()
 
     def _strip_json_fence(self, text: str) -> str:
         text = (text or "").strip()
@@ -112,7 +112,12 @@ class RuleAI:
             llm_response = await provider.text_chat(prompt=prompt, contexts=[])
             response_text = llm_response.completion_text if hasattr(llm_response, "completion_text") else str(llm_response)
             if trace_id:
-                self._call_metrics[trace_id] = extract_usage_metrics(llm_response, prompt, response_text)
+                self._call_metrics[trace_id] = extract_usage_metrics(
+                    llm_response,
+                    prompt,
+                    response_text,
+                    provider=provider,
+                )
             return json.loads(self._strip_json_fence(response_text))
         except json.JSONDecodeError as e:
             logger.warning(f"[RuleAI] parse_intent JSON decode failed: {player_input}")
@@ -148,7 +153,12 @@ class RuleAI:
             llm_response = await provider.text_chat(prompt=prompt, contexts=[])
             response_text = llm_response.completion_text if hasattr(llm_response, "completion_text") else str(llm_response)
             if trace_id:
-                self._call_metrics[trace_id] = extract_usage_metrics(llm_response, prompt, response_text)
+                self._call_metrics[trace_id] = extract_usage_metrics(
+                    llm_response,
+                    prompt,
+                    response_text,
+                    provider=provider,
+                )
             result = json.loads(self._strip_json_fence(response_text))
             normalized = self._normalize_action_plan(result, player_input, intent, game_state, module_data)
             logger.info(f"[RuleAI] adjudicate_action result: {normalized}")

@@ -451,6 +451,11 @@ class AITRPGPlugin(Star):
                         "completion_tokens": step.get("completion_tokens", 0),
                         "total_tokens": step.get("total_tokens", 0),
                         "token_source": step.get("token_source"),
+                        "provider_id": step.get("provider_id"),
+                        "configured_model": step.get("configured_model"),
+                        "actual_model": step.get("actual_model"),
+                        "model_source": step.get("model_source"),
+                        "model_display": step.get("model_display"),
                     }
                 }
 
@@ -1275,6 +1280,11 @@ class AITRPGPlugin(Star):
                     "total_tokens": 0,
                     "token_source": None,
                     "call_count": 0,
+                    "provider_id": None,
+                    "configured_model": None,
+                    "actual_model": None,
+                    "model_source": None,
+                    "model_display": None,
                 }
                 for key, label, llm in self.PROGRESS_STEPS
             ],
@@ -1301,6 +1311,11 @@ class AITRPGPlugin(Star):
         step["started_at"] = now
         step["finished_at"] = None
         step["duration_ms"] = None
+        step["provider_id"] = None
+        step["configured_model"] = None
+        step["actual_model"] = None
+        step["model_source"] = None
+        step["model_display"] = None
 
         progress["current_step_key"] = step_key
         progress["current_step_label"] = step.get("label")
@@ -1328,6 +1343,11 @@ class AITRPGPlugin(Star):
         step["total_tokens"] = int(metrics.get("total_tokens", 0) or 0)
         step["token_source"] = metrics.get("token_source")
         step["call_count"] = int(metrics.get("call_count", 0) or 0)
+        step["provider_id"] = metrics.get("provider_id")
+        step["configured_model"] = metrics.get("configured_model")
+        step["actual_model"] = metrics.get("actual_model")
+        step["model_source"] = metrics.get("model_source")
+        step["model_display"] = metrics.get("model_display")
 
         progress["updated_at"] = now
 
@@ -1342,6 +1362,11 @@ class AITRPGPlugin(Star):
         step["started_at"] = None
         step["finished_at"] = None
         step["duration_ms"] = 0
+        step["provider_id"] = None
+        step["configured_model"] = None
+        step["actual_model"] = None
+        step["model_source"] = None
+        step["model_display"] = None
         progress["updated_at"] = time.perf_counter()
 
     def _fail_progress_step(self, session_id: str, step_key: str, message: str = ""):
