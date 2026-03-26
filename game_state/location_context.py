@@ -76,10 +76,7 @@ def get_entity_dialogue_guide(entity_data: dict = None) -> Dict[str, Any]:
     entity_data = entity_data if isinstance(entity_data, dict) else {}
     dialogue = get_entity_dialogue_module(entity_data)
     guide = dialogue.get("guide", {})
-    if isinstance(guide, dict) and guide:
-        return guide
-    legacy = entity_data.get("dialogue_guide", {})
-    return legacy if isinstance(legacy, dict) else {}
+    return guide if isinstance(guide, dict) else {}
 
 
 def get_entity_first_appearance(entity_data: dict = None) -> str:
@@ -99,26 +96,20 @@ def get_entity_trust_map(entity_data: dict = None) -> Dict[str, Any]:
     entity_data = entity_data if isinstance(entity_data, dict) else {}
     trust = get_entity_trust_module(entity_data)
     mapping = trust.get("map", {})
-    if isinstance(mapping, dict) and mapping:
-        return mapping
-    legacy = entity_data.get("trust_map", {})
-    return legacy if isinstance(legacy, dict) else {}
+    return mapping if isinstance(mapping, dict) else {}
 
 
 def get_entity_trust_gates(entity_data: dict = None) -> Dict[str, Any]:
     entity_data = entity_data if isinstance(entity_data, dict) else {}
     trust = get_entity_trust_module(entity_data)
     gates = trust.get("gates", {})
-    if isinstance(gates, dict) and gates:
-        return gates
-    legacy = entity_data.get("trust_gates", {})
-    return legacy if isinstance(legacy, dict) else {}
+    return gates if isinstance(gates, dict) else {}
 
 
 def get_entity_trust_threshold(entity_data: dict = None, default: float = 0.5) -> float:
     entity_data = entity_data if isinstance(entity_data, dict) else {}
     trust = get_entity_trust_module(entity_data)
-    raw_value = trust.get("threshold", entity_data.get("trust_threshold", default))
+    raw_value = trust.get("threshold", default)
     try:
         return float(raw_value or default)
     except (TypeError, ValueError):
@@ -129,18 +120,11 @@ def get_entity_reveal_text_map(entity_data: dict = None) -> Dict[str, str]:
     entity_data = entity_data if isinstance(entity_data, dict) else {}
     reveal_cfg = entity_data.get("reveal", {})
     reveal_items = reveal_cfg.get("items", {}) if isinstance(reveal_cfg, dict) else {}
-    if isinstance(reveal_items, dict) and reveal_items:
+    if isinstance(reveal_items, dict):
         return {
             key: str(item.get("text") or "").strip()
             for key, item in reveal_items.items()
             if isinstance(item, dict) and str(item.get("text") or "").strip()
-        }
-    key_info = entity_data.get("key_info", {})
-    if isinstance(key_info, dict):
-        return {
-            key: str(value or "").strip()
-            for key, value in key_info.items()
-            if isinstance(key, str) and str(value or "").strip()
         }
     return {}
 
@@ -256,18 +240,12 @@ def _normalize_dialogue_module(entity_name: str, entity_data: dict, is_threat: b
             return None
         if isinstance(explicit, dict):
             normalized = copy.deepcopy(explicit)
-            normalized.setdefault("guide", copy.deepcopy(entity_data.get("dialogue_guide", {})))
+            normalized.setdefault("guide", {})
             normalized.setdefault("first_appearance", entity_data.get("first_appearance", ""))
             return normalized
         return None
 
-    if is_threat or is_threat_entity(entity_name, entity_data):
-        return None
-
-    return {
-        "guide": copy.deepcopy(entity_data.get("dialogue_guide", {})),
-        "first_appearance": entity_data.get("first_appearance", ""),
-    }
+    return None
 
 
 def _normalize_trust_module(entity_data: dict, can_speak: bool) -> dict | None:
@@ -277,28 +255,17 @@ def _normalize_trust_module(entity_data: dict, can_speak: bool) -> dict | None:
             return None
         if isinstance(explicit, dict):
             normalized = copy.deepcopy(explicit)
-            normalized.setdefault("initial", float(normalized.get("initial", entity_data.get("trust_level", 0.0)) or 0.0))
-            normalized.setdefault("map", copy.deepcopy(normalized.get("map", entity_data.get("trust_map", {}))))
+            normalized.setdefault("initial", float(normalized.get("initial", 0.0) or 0.0))
+            normalized.setdefault("map", copy.deepcopy(normalized.get("map", {})))
             normalized.setdefault(
                 "threshold",
-                float(normalized.get("threshold", entity_data.get("trust_threshold", 0.5)) or 0.5),
+                float(normalized.get("threshold", 0.5) or 0.5),
             )
-            normalized.setdefault("gates", copy.deepcopy(normalized.get("gates", entity_data.get("trust_gates", {}))))
+            normalized.setdefault("gates", copy.deepcopy(normalized.get("gates", {})))
             return normalized
         return None
 
-    legacy_map = entity_data.get("trust_map", {})
-    legacy_threshold = entity_data.get("trust_threshold")
-    legacy_gates = entity_data.get("trust_gates", {})
-    if not can_speak and not legacy_map and legacy_threshold is None and not legacy_gates:
-        return None
-
-    return {
-        "initial": 0.0,
-        "map": copy.deepcopy(legacy_map if isinstance(legacy_map, dict) else {}),
-        "threshold": float(legacy_threshold or 0.5),
-        "gates": copy.deepcopy(legacy_gates if isinstance(legacy_gates, dict) else {}),
-    }
+    return None
 
 
 def _build_default_long_term_memory(entity_data: dict) -> dict:
@@ -339,36 +306,16 @@ def _normalize_memory_module(entity_data: dict, is_threat: bool, can_speak: bool
 
 def _normalize_reveal_module(entity_data: dict, trust_module: dict | None, can_speak: bool) -> dict | None:
     explicit = _normalize_nullish_module(entity_data.get("reveal", "__missing__"))
-    reveal_items = {}
-
     if explicit != "__missing__":
         if explicit is None:
             return None
         if isinstance(explicit, dict):
-            reveal_items = copy.deepcopy(explicit.get("items", {})) if isinstance(explicit.get("items"), dict) else {}
             normalized = copy.deepcopy(explicit)
-            normalized["items"] = reveal_items
+            normalized["items"] = copy.deepcopy(explicit.get("items", {})) if isinstance(explicit.get("items"), dict) else {}
             return normalized
         return None
 
-    key_info = entity_data.get("key_info", {})
-    if not can_speak or not isinstance(key_info, dict) or not key_info:
-        return None
-
-    gates = trust_module.get("gates", {}) if isinstance(trust_module, dict) else {}
-    medium_min = float(((gates.get("medium") or {}).get("min", 0.2)) or 0.2)
-    high_min = float(((gates.get("high") or {}).get("min", trust_module.get("threshold", 0.5) if isinstance(trust_module, dict) else 0.5)) or 0.5)
-    ordered_keys = list(key_info.keys())
-    for index, key in enumerate(ordered_keys):
-        text = str(key_info.get(key) or "").strip()
-        if not text:
-            continue
-        reveal_items[key] = {
-            "text": text,
-            "min_trust": medium_min if index == 0 else high_min,
-        }
-
-    return {"items": reveal_items} if reveal_items else None
+    return None
 
 
 def _normalize_soft_state_module(entity_data: dict, can_speak: bool) -> dict | None:
@@ -411,16 +358,7 @@ def _normalize_companion_module(entity_data: dict, trust_module: dict | None, is
             return normalized
         return None
 
-    if is_threat or not entity_data.get("can_escape_together"):
-        return None
-
-    high_gate = ((trust_module or {}).get("gates", {}) or {}).get("high", {})
-    return {
-        "enabled_modes": ["follow", "wait", "bait"],
-        "default_mode": "wait",
-        "require_explicit_exit": False,
-        "unlock_trust": float(high_gate.get("min", (trust_module or {}).get("threshold", 0.5)) or 0.5),
-    }
+    return None
 
 
 def _normalize_entity_record(entity_name: str, entity_data: dict, is_threat: bool = False) -> dict:
@@ -450,21 +388,6 @@ def _normalize_entity_record(entity_name: str, entity_data: dict, is_threat: boo
     normalized["reveal"] = reveal_module
     normalized["soft_state"] = _normalize_soft_state_module(normalized, can_speak)
     normalized["companion"] = _normalize_companion_module(normalized, trust_module, is_threat)
-
-    if isinstance(trust_module, dict):
-        normalized.setdefault("trust_map", copy.deepcopy(trust_module.get("map", {})))
-        normalized.setdefault("trust_threshold", trust_module.get("threshold", 0.5))
-        normalized.setdefault("trust_gates", copy.deepcopy(trust_module.get("gates", {})))
-
-    if isinstance(reveal_module, dict):
-        normalized.setdefault(
-            "key_info",
-            {
-                key: item.get("text", "")
-                for key, item in reveal_module.get("items", {}).items()
-                if isinstance(item, dict)
-            },
-        )
 
     return normalized
 

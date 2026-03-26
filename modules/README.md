@@ -9,7 +9,6 @@
 一个模组通常由这些顶层字段组成：
 
 - `module_info`
-- `special_messages`
 - `mechanics`
 - `locations`
 - `objects`
@@ -36,17 +35,6 @@
 | `atmosphere_note` | string | 氛围字段说明 |
 | `prompt_context` | string | 预留给系统或说明用途 |
 | `opening` | string | 开场文本 |
-
-## special_messages
-
-用于少量通用阻挡提示。
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `first_living_room_entry_blocked` | string | 首次进入特定场景时的阻挡提示 |
-| `first_outside_entry_blocked` | string | 首次离开特定出口时的阻挡提示 |
-
-如果你已经改用通用 `first_entry_blocked`，这里可以只保留兼容文本，或完全不写。
 
 ## mechanics
 
@@ -100,6 +88,7 @@
 | `hidden_name` | string | 地图或 UI 上的表名 |
 | `show_name_when_visible` | bool | 未进入但已显现时是否直接显示名称 |
 | `reveal_conditions` | object | 隐藏地点显现条件 |
+| `first_entry_blocked` | object | 首次尝试进入时阻止并返回提示 |
 
 `reveal_conditions` 当前常用子字段：
 
@@ -107,6 +96,18 @@
 - `true_name`
 
 这些条件通常由线索、物品或 flag 驱动。
+
+`first_entry_blocked` 适用于任何“第一次尝试进入时先警告、第二次才真正进入”的地点。
+
+常见子字段：
+
+- `flag`
+- `text`
+- `reason_flag`
+- `reason_value`
+- `requires_current_location`
+- `visited_locations_on_block`
+- `set_flags`
 
 ### 结局字段
 
@@ -180,17 +181,6 @@
 | `current_state` | string | 当前状态摘要 |
 | `first_appearance` | string | 初见文本或初见提示 |
 | `initial_attitude` | string | 初始态度 |
-
-### 旧版兼容字段
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `can_escape_together` | bool | 旧字段，决定是否默认可同伴化 |
-| `key_info` | object | 旧字段，会被归并到 reveal |
-| `trust_map` | object | 旧字段，会被归并到 trust |
-| `trust_threshold` | number | 旧字段，会被归并到 trust |
-| `trust_gates` | object | 旧字段，会被归并到 trust |
-| `dialogue_guide` | object | 旧字段，会被归并到 dialogue |
 
 ### 推荐模块字段
 

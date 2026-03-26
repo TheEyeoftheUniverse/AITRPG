@@ -18,15 +18,6 @@ from .location_context import (
 
 
 PRIMARY_PURSUER_ROLE = "primary_pursuer"
-LIVING_ROOM_FIRST_ENTRY_WARNING_MESSAGE = (
-    "你刚想踏进客厅深处，那道背对入口的人形便极轻地调整了站姿，像是已经把你的存在纳入了视野。"
-    "直觉告诉你，现在贸然进去只会立刻引来它的注意。你暂时退了回来，也许该先想办法把它引开。"
-)
-OUTSIDE_LOST_WARNING_MESSAGE = (
-    "你刚想推开厨房的后门，门外那片灰蒙蒙的平原便先一步压进了你的视野。"
-    "那里没有道路，没有参照物，也看不出任何尽头。直觉告诉你，从这里逃走绝不是正确的选择。"
-    "你停在门边，没有真正踏出去。"
-)
 
 
 PRESET_PLAYER_PROFILE = {
@@ -476,40 +467,6 @@ class SessionManager:
         locations = module_data.get("locations", {}) if isinstance(module_data.get("locations"), dict) else {}
         location_cfg = locations.get(target_key, {}) if isinstance(locations.get(target_key), dict) else {}
         block_cfg = self._build_first_entry_block_config(location_cfg)
-        if not block_cfg:
-            warning_location = self._get_primary_pursuer_warning_location(module_data)
-            if (
-                target_key == warning_location
-                and not bool(self._get_butler_runtime_state(state).get("chase_state", {}).get("active"))
-                and target_key == self.get_butler_location(state.get("session_id", ""))
-            ):
-                block_cfg = self._build_first_entry_block_config(
-                    {},
-                    fallback_flag="butler_living_room_warning_shown",
-                    fallback_text=self._get_module_special_message(
-                        state.get("session_id", ""),
-                        "first_living_room_entry_blocked",
-                        LIVING_ROOM_FIRST_ENTRY_WARNING_MESSAGE,
-                    ),
-                    fallback_reason_flag="butler_living_room_warning_reason",
-                    fallback_reason="player_attempted_first_entry_to_living_room",
-                )
-            elif target_key == "outside" and not self.get_ending_phase(state.get("session_id", "")):
-                block_cfg = self._build_first_entry_block_config(
-                    {
-                        "first_entry_blocked": {
-                            "flag": "outside_lost_warning_shown",
-                            "text": self._get_module_special_message(
-                                state.get("session_id", ""),
-                                "first_outside_entry_blocked",
-                                OUTSIDE_LOST_WARNING_MESSAGE,
-                            ),
-                            "reason_flag": "outside_lost_warning_reason",
-                            "reason_value": "player_attempted_first_exit_through_kitchen_backdoor",
-                            "visited_locations_on_block": ["outside"],
-                        }
-                    }
-                )
         return self._consume_first_entry_block(state, block_cfg)
 
     def get_available_micro_scenes(self, session_id: str) -> Dict[str, Dict[str, Any]]:
@@ -732,7 +689,7 @@ class SessionManager:
         )
         npc_together = False
         for npc_name, npc_cfg in module_npcs.items():
-            if not isinstance(npc_cfg, dict) or not npc_cfg.get("can_escape_together"):
+            if not isinstance(npc_cfg, dict) or not isinstance(npc_cfg.get("companion"), dict):
                 continue
             runtime = npc_states.get(npc_name, {})
             npc_location = str((runtime or {}).get("location") or npc_cfg.get("location") or "").strip()
@@ -753,22 +710,6 @@ class SessionManager:
         if not pursuer_name:
             return {}
         return npc_states.setdefault(pursuer_name, {})
-
-    def _get_module_special_message(self, session_id: str, key: str, default: str = "") -> str:
-        module_data = self.get_module_data(session_id)
-        if not isinstance(module_data, dict):
-            return default
-
-        special_messages = module_data.get("special_messages", {})
-        if not isinstance(special_messages, dict):
-            return default
-
-        message = special_messages.get(key)
-        if isinstance(message, str):
-            message = message.strip()
-            if message:
-                return message
-        return default
 
     def get_butler_state(self, session_id: str) -> Dict[str, Any]:
         state = self.sessions.get(session_id)
@@ -1923,87 +1864,11 @@ class SessionManager:
         flags = state.get("world_state", {}).get("flags", {})
         return bool(flags.get("butler_living_room_warning_shown"))
 
-    def _set_butler_living_room_warning_state(self, state: Dict[str, Any], reason: str):
-        if not isinstance(state, dict):
-            return
-
-        world_state = state.setdefault("world_state", {})
-        flags = world_state.setdefault("flags", {})
-        flags["butler_living_room_warning_shown"] = True
-        flags["butler_living_room_warning_reason"] = reason
-
-        butler_state = self._get_butler_runtime_state(state)
-        chase_state = butler_state.setdefault("chase_state", self._build_default_butler_chase_state())
-        if not isinstance(chase_state, dict):
-            chase_state = self._build_default_butler_chase_state()
-            butler_state["chase_state"] = chase_state
-        chase_state["active"] = False
-        chase_state["status"] = "waiting"
-        chase_state["target"] = None
-        chase_state["activation_round"] = None
-        chase_state["last_target_location"] = state.get("current_location")
-        chase_state["same_location_rounds"] = 0
-        chase_state["blocked_at"] = None
-
-    def trigger_butler_living_room_warning(self, session_id: str, reason: str) -> Dict[str, Any]:
-        state = self.sessions.get(session_id)
-        if not state:
-            return {}
-        self._set_butler_living_room_warning_state(state, reason)
-        self._sync_influence_dimensions(state)
-        return copy.deepcopy(state)
-
-    def should_warn_on_living_room_entry(self, session_id: str, target_key: str) -> bool:
-        state = self.sessions.get(session_id)
-        if not state or self.is_butler_active(session_id):
-            return False
-        warning_location = self._get_primary_pursuer_warning_location(self.get_module_data(session_id))
-        if target_key != warning_location or target_key != self.get_butler_location(session_id):
-            return False
-        return not self.has_butler_living_room_warning(session_id)
-
     def should_activate_butler_on_entry(self, session_id: str, target_key: str) -> bool:
         state = self.sessions.get(session_id)
         if not state or self.is_butler_active(session_id):
             return False
         return bool(target_key) and target_key == self.get_butler_location(session_id)
-
-    def has_outside_lost_warning(self, session_id: str) -> bool:
-        state = self.sessions.get(session_id)
-        if not state:
-            return False
-        flags = state.get("world_state", {}).get("flags", {})
-        return bool(flags.get("outside_lost_warning_shown"))
-
-    def _set_outside_lost_warning_state(self, state: Dict[str, Any], reason: str):
-        if not isinstance(state, dict):
-            return
-
-        world_state = state.setdefault("world_state", {})
-        flags = world_state.setdefault("flags", {})
-        flags["outside_lost_warning_shown"] = True
-        flags["outside_lost_warning_reason"] = reason
-
-        # Reveal "outside" on the map as "后门" (via hidden_name)
-        visited = state.setdefault("visited_locations", [])
-        if "outside" not in visited:
-            visited.append("outside")
-
-    def trigger_outside_lost_warning(self, session_id: str, reason: str) -> Dict[str, Any]:
-        state = self.sessions.get(session_id)
-        if not state:
-            return {}
-        self._set_outside_lost_warning_state(state, reason)
-        self._sync_influence_dimensions(state)
-        return copy.deepcopy(state)
-
-    def should_warn_on_outside_entry(self, session_id: str, current_key: str, target_key: str) -> bool:
-        state = self.sessions.get(session_id)
-        if not state or self.get_ending_phase(session_id):
-            return False
-        if target_key != "outside":
-            return False
-        return not self.has_outside_lost_warning(session_id)
 
     def should_activate_butler_for_action(self, session_id: str, player_input: str) -> bool:
         state = self.sessions.get(session_id)
@@ -2279,7 +2144,7 @@ class SessionManager:
         module_npcs = get_module_npcs(state.get("module_data", {}))
         npc_states = state.get("world_state", {}).get("npcs", {}) if isinstance(state.get("world_state", {}).get("npcs"), dict) else {}
         for npc_name, npc_cfg in module_npcs.items():
-            if not isinstance(npc_cfg, dict) or not npc_cfg.get("can_escape_together"):
+            if not isinstance(npc_cfg, dict) or not isinstance(npc_cfg.get("companion"), dict):
                 continue
             runtime = npc_states.get(npc_name, {})
             npc_location = str((runtime or {}).get("location") or npc_cfg.get("location") or "").strip()
