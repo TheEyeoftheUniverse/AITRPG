@@ -18,7 +18,7 @@ import copy
 import time
 
 
-@register("aitrpg", "TheEyeoftheUniverse", "AI驱动TRPG跑团系统", "2.0.0")
+@register("aitrpg", "TheEyeoftheUniverse", "AI驱动TRPG跑团系统", "2.1.0")
 class AITRPGPlugin(Star):
     OPENING_USER_TEXT = "缓缓苏醒"
     OPENING_KIND = "opening"
