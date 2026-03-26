@@ -204,6 +204,10 @@ cython_debug/
 # Runtime save files
 data/web_sessions/
 
+# Local-only development assets
+docs/
+tests/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

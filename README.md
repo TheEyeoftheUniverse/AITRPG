@@ -53,8 +53,7 @@ aitrpg/
 ├── game_state/
 ├── webui/
 ├── modules/
-├── docs/
-└── tests/
+└── LICENSE
 ```
 
 主要目录职责：
@@ -64,20 +63,10 @@ aitrpg/
 - [game_state](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/game_state)：地图、状态、NPC、威胁实体、结局、存档
 - [webui](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/webui)：Quart 接口、前端模板、样式、脚本
 - [modules](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/modules)：模组 JSON 和模组字段文档
-- [tests](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/tests)：规则与系统回归测试
 
 ## 文档导航
 
 - 模组字段说明请看 [modules/README.md](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/modules/README.md)
-- 设计与实现记录请看 [docs/plans](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/docs/plans)
-- 测试入口请看 [tests](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/tests)
-
-## 开发约束
-
-- 主 README 不放模组剧情或结局细节
-- 面向玩家或集成者的说明与面向模组作者的字段参考分开维护
-- 模组字段说明以当前代码真实支持的行为为准
-- 新系统上线时，应同步补测试和文档
 
 ## 作者
 
