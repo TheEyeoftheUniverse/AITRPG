@@ -82,7 +82,7 @@
                       "guest_bedroom":  {
                                             "name":  "次卧",
                                             "description":  "次卧的门缝里透出微弱的光，里面则是普通的卧室。",
-                                            "npc_present_description":  "当玩家初次靠近时，门后会传来冰冷的女声：“谁？”",
+                                            "npc_present_description":  "当玩家初次靠近时，门后会传来冰冷的女声：“谁？”如果这是玩家初次见到艾米莉，禁止在文本中剧透她的名字。",
                                             "has_door":  true,
                                             "objects":  [
                                                             "紧锁的门"

@@ -36,6 +36,23 @@ class MicroSceneTests(unittest.TestCase):
 
         self.assertIn("master_bedroom_peek", available)
 
+    def test_guarded_room_micro_scene_is_in_map_data(self):
+        self.state["current_location"] = "master_bedroom"
+        self._set_guard_room("master_bedroom")
+
+        map_data = self.manager.get_map_data(self.session_id)
+
+        self.assertIn("master_bedroom_peek", map_data["locations"])
+        self.assertIn("master_bedroom_peek", map_data["reachable"])
+        self.assertIn(
+            {"from": "master_bedroom", "to": "master_bedroom_peek", "locked": False},
+            map_data["edges"],
+        )
+        self.assertEqual(
+            map_data["locations"]["master_bedroom_peek"]["display_name"],
+            "门缝",
+        )
+
     def test_location_first_entry_blocked_warns_then_allows(self):
         self.state["current_location"] = "first_floor_hallway"
 

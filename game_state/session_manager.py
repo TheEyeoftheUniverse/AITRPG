@@ -3239,6 +3239,7 @@ class SessionManager:
         reachable = self._get_available_moves(session_id)
         locked_exits = self._get_locked_exits(session_id)
         name_to_key = self._build_name_to_key_map(module_data)
+        available_micro_scenes = self.get_available_micro_scenes(session_id)
         danger_locations = set()
         if self.is_butler_active(session_id) or self.has_butler_living_room_warning(session_id):
             butler_location = self.get_butler_location(session_id)
@@ -3284,6 +3285,21 @@ class SessionManager:
                 "visited": is_visited,
             }
 
+        # 将当前房间下可用的微场景挂入地图数据，供前端显式展示为特殊入口。
+        for micro_scene_id, micro_scene_cfg in available_micro_scenes.items():
+            parent_location = str(micro_scene_cfg.get("parent_location") or "").strip()
+            if not parent_location:
+                continue
+            parent_loc = locations.get(parent_location, {})
+            visible_locations[micro_scene_id] = {
+                "display_name": str(micro_scene_cfg.get("display_name") or micro_scene_cfg.get("name") or micro_scene_id),
+                "floor": parent_loc.get("floor", 1),
+                "visited": True,
+                "is_micro_scene": True,
+                "parent_location": parent_location,
+            }
+            reachable.add(micro_scene_id)
+
         # 应用持久化的地图腐蚀
         corrupt_map = state.get("world_state", {}).get("corrupt_map", {})
         for key, corrupted_name in corrupt_map.items():
@@ -3308,6 +3324,20 @@ class SessionManager:
                             "to": neighbor_key,
                             "locked": is_locked,
                         })
+
+        for micro_scene_id, micro_scene_cfg in available_micro_scenes.items():
+            parent_location = str(micro_scene_cfg.get("parent_location") or "").strip()
+            if not parent_location or parent_location not in visible_keys:
+                continue
+            edge_pair = tuple(sorted([parent_location, micro_scene_id]))
+            if edge_pair in seen_edges:
+                continue
+            seen_edges.add(edge_pair)
+            edges.append({
+                "from": parent_location,
+                "to": micro_scene_id,
+                "locked": False,
+            })
 
         # 收集NPC位置（非威胁实体，仅玩家已访问过的位置）
         npc_marker_locations = set()

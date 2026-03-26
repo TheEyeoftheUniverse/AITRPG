@@ -314,6 +314,10 @@ class AITRPGPlugin(Star):
         move_check_result = None
         move_movement_note = None
         micro_scene_id = self._match_micro_scene_request(session_id, player_input)
+        if not micro_scene_id and move_to:
+            available_micro_scenes = self.session_manager.get_available_micro_scenes(session_id)
+            if move_to in available_micro_scenes:
+                micro_scene_id = move_to
 
         # === 结局已完全结束 ===
         if self.session_manager.is_game_over(session_id):
