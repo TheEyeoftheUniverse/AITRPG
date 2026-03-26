@@ -803,7 +803,7 @@
                                                                           "guard_room_is_parent":  true
                                                                       },
                                                      "first_enter_warning_flag":  "master_bedroom_peek_warned",
-                                                     "first_enter_text":  "你刚想试着贴近门缝，以窥视那道身影是否还在门外，就感觉后颈一阵发冷。",
+                                                     "first_enter_text":  "你刚想试着贴近门缝，以窥视那道身影是否还在门外，就感觉后颈一阵发冷——你没敢看，直觉也告诉你不该看。",
                                                      "ending_on_reenter":  "door_peek_gaze"
                                                  },
                          "guest_bedroom_peek":  {
@@ -813,7 +813,7 @@
                                                                          "guard_room_is_parent":  true
                                                                      },
                                                     "first_enter_warning_flag":  "guest_bedroom_peek_warned",
-                                                    "first_enter_text":  "你靠近门缝的瞬间，门外那种不属于活人的静默几乎沿着门板渗了进来，你感觉后背一阵阴冷。",
+                                                    "first_enter_text":  "你靠近门缝的瞬间，门外那种不属于活人的静默几乎沿着门板渗了进来，你感觉后背一阵阴冷——你没敢看，直觉也告诉你不该看。",
                                                     "ending_on_reenter":  "door_peek_gaze"
                                                 },
                          "study_peek":  {
@@ -823,7 +823,7 @@
                                                                  "guard_room_is_parent":  true
                                                              },
                                             "first_enter_warning_flag":  "study_peek_warned",
-                                            "first_enter_text":  "你贴近书房门缝时，门外没有脚步，也没有呼吸声，安静得让你毛骨悚然。",
+                                            "first_enter_text":  "你贴近书房门缝时，门外没有脚步，也没有呼吸声，安静得让你毛骨悚然——你没敢看，直觉也告诉你不该看。",
                                             "ending_on_reenter":  "door_peek_gaze"
                                         },
                          "kitchen_suicide":  {
@@ -862,7 +862,7 @@
                                                          "default_mode":  "wait"
                                                      },
                                        "appearance":  "人形存在，穿着一套老式执事服，剪裁考究但属于某个不确定的年代。它有呼吸——你能看到它的背部随着呼吸轻微起伏，这让它看起来像是活着的。",
-                                       "appearance_warning":  "【绝对禁止描写管家的脸部或正面】玩家永远只能看管家的背影或侧影或头部以下的位置。与管家对视意味着即时疯狂结局，因此其脸部在整个游戏中必须保持未知。",
+                                       "appearance_warning":  "【绝对禁止描写管家脖子以上的内容】玩家永远只能看管家头部以下的位置，因为与管家对视意味着即时疯狂结局，其脸部在整个游戏中必须保持未知。",
                                        "nature":  "神话生物目光的具现化。它不是真正的存在，而是某个超越理解的存在投射在这个空间里的注视，被中间带具现化成人形。它没有恶意，只是本能地凝视空间内的活物。",
                                        "behavior":  {
                                                         "default":  "在客厅背对入口，凝视老式电话。呼吸缓慢而均匀。",
@@ -929,7 +929,7 @@
                                                                       "trigger":  "",
                                                                       "priority":  2,
                                                                       "description":  "窥视门缝结局：在管家守门时执意透过门缝窥视，最终与那道不该被看见的视线相撞。",
-                                                                      "hardcoded_text":  "你还是把眼睛贴上了那道狭窄的门缝。起初，门外什么都没有，只有一片静得过分的昏暗。<paragraph=1800ms>然后，一种完全不属于人类骨骼的扭动声，几乎贴着门板响了起来。</paragraph><paragraph=1800ms><glitch>门外那道高大的人形没有转身，没有迈步，却像把整条脊柱一节一节拧断那样，将本该在更高处的头颅硬生生扭到你面前——</glitch></paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>……</paragraph>"
+                                                                      "hardcoded_text":  "你还是把眼睛贴上了那道狭窄的门缝。起初，门外什么都没有，只有一片静得过分的昏暗。<paragraph=2500ms>然后，一种完全不属于人类骨骼的扭动声，几乎贴着门板响了起来。</paragraph><paragraph=2500ms><glitch>门外那道高大的人形没有转身，没有迈步，却像把整条脊柱一节一节拧断那样，将本该在更高处的头颅硬生生扭到你面前——</glitch></paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>……</paragraph>"
                                                                   },
                                               "escaped":  {
                                                               "trigger":  "escape_success===true AND amnesia===false",
