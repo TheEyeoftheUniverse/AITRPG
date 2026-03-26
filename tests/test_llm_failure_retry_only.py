@@ -7,6 +7,8 @@ from pathlib import Path
 astrbot_module = types.ModuleType("astrbot")
 astrbot_api_module = types.ModuleType("astrbot.api")
 astrbot_star_module = types.ModuleType("astrbot.api.star")
+astrbot_event_module = types.ModuleType("astrbot.api.event")
+quart_module = types.ModuleType("quart")
 
 
 class _DummyLogger:
@@ -24,18 +26,64 @@ class _DummyContext:
     pass
 
 
+class _DummyStar:
+    def __init__(self, context=None):
+        self.context = context
+
+
+class _DummyAstrMessageEvent:
+    pass
+
+
+class _DummyFilter:
+    class EventMessageType:
+        ALL = "all"
+
+    @staticmethod
+    def command(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+    @staticmethod
+    def event_message_type(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+
+def _dummy_register(*args, **kwargs):
+    def decorator(obj):
+        return obj
+    return decorator
+
+
 astrbot_api_module.logger = _DummyLogger()
 astrbot_api_module.star = astrbot_star_module
+astrbot_api_module.event = astrbot_event_module
 astrbot_star_module.Context = _DummyContext
+astrbot_star_module.Star = _DummyStar
+astrbot_star_module.register = _dummy_register
+astrbot_event_module.filter = _DummyFilter
+astrbot_event_module.AstrMessageEvent = _DummyAstrMessageEvent
 astrbot_module.api = astrbot_api_module
+
+quart_module.Quart = object
+quart_module.render_template = lambda *args, **kwargs: None
+quart_module.request = types.SimpleNamespace(get_json=None)
+quart_module.jsonify = lambda *args, **kwargs: None
+quart_module.make_response = lambda *args, **kwargs: None
 
 sys.modules.setdefault("astrbot", astrbot_module)
 sys.modules.setdefault("astrbot.api", astrbot_api_module)
 sys.modules.setdefault("astrbot.api.star", astrbot_star_module)
+sys.modules.setdefault("astrbot.api.event", astrbot_event_module)
+sys.modules.setdefault("quart", quart_module)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from aitrpg.ai_layers.provider_failover import normalize_provider_candidates, text_chat_with_fallback
+from aitrpg.main import AITRPGPlugin
 from aitrpg.ai_layers.rule_ai import RuleAI
 from aitrpg.ai_layers.usage_metrics import extract_usage_metrics
 from aitrpg.game_state.session_manager import SessionManager
@@ -181,6 +229,94 @@ class UsageMetricsTests(unittest.TestCase):
         self.assertEqual(metrics["configured_model"], "configured-model")
         self.assertEqual(metrics["actual_model"], "actual-model")
         self.assertEqual(metrics["model_display"], "selected-provider / actual-model")
+
+
+class CurrentTurnRetryPayloadTests(unittest.TestCase):
+    def _make_plugin(self):
+        plugin = AITRPGPlugin(_DummyContext())
+        plugin._action_progress = {}
+        plugin._last_action_cache = {}
+        return plugin
+
+    def test_progress_payload_exposes_rule_partial_results_while_running(self):
+        plugin = self._make_plugin()
+        session_id = "partial-rule-running"
+        plugin._begin_action_progress(session_id, "inspect room")
+        plugin._finish_progress_step(session_id, "rule_intent", {}, "done")
+        plugin._finish_progress_step(session_id, "rule_adjudication", {}, "done")
+        plugin._finish_progress_step(session_id, "rule_check", {}, "done")
+        plugin._last_action_cache[session_id] = {
+            "player_input": "inspect room",
+            "rule_plan": {"intent": "inspect"},
+            "rule_result": {"success": True},
+            "hard_changes": {"flags": {"rope_cut": True}},
+        }
+
+        payload = plugin.get_action_progress_payload(session_id)
+
+        self.assertEqual(payload["partial_results"]["rule_plan"]["intent"], "inspect")
+        self.assertTrue(payload["partial_results"]["rule_result"]["success"])
+        self.assertEqual(payload["retry_from_hint"], "rhythm")
+        self.assertFalse(payload["can_retry"])
+
+    def test_progress_payload_maps_rhythm_failure_to_rhythm_retry(self):
+        plugin = self._make_plugin()
+        session_id = "partial-rhythm-error"
+        plugin._begin_action_progress(session_id, "talk")
+        plugin._start_progress_step(session_id, "rhythm", "running")
+        plugin._last_action_cache[session_id] = {
+            "player_input": "talk",
+            "rule_plan": {"intent": "talk"},
+            "rule_result": {"success": True},
+            "hard_changes": {},
+        }
+        plugin._fail_progress_step(session_id, "rhythm", "boom", {})
+        plugin._complete_action_progress(session_id, status="error", message="boom")
+
+        payload = plugin.get_action_progress_payload(session_id)
+
+        self.assertEqual(payload["retry_from_hint"], "rhythm")
+        self.assertTrue(payload["can_retry"])
+
+    def test_progress_payload_keeps_rhythm_result_for_narrative_retry(self):
+        plugin = self._make_plugin()
+        session_id = "partial-narrative-error"
+        plugin._begin_action_progress(session_id, "look around")
+        plugin._start_progress_step(session_id, "narrative", "running")
+        plugin._last_action_cache[session_id] = {
+            "player_input": "look around",
+            "rule_plan": {"intent": "inspect"},
+            "rule_result": {"success": True},
+            "hard_changes": {},
+            "rhythm_result": {"feasible": True, "hint": "continue"},
+        }
+        plugin._fail_progress_step(session_id, "narrative", "boom", {})
+        plugin._complete_action_progress(session_id, status="error", message="boom")
+
+        payload = plugin.get_action_progress_payload(session_id)
+
+        self.assertEqual(payload["retry_from_hint"], "narrative")
+        self.assertTrue(payload["partial_results"]["rhythm_result"]["feasible"])
+        self.assertTrue(payload["can_retry"])
+
+    def test_progress_payload_disables_retry_after_completed_turn(self):
+        plugin = self._make_plugin()
+        session_id = "partial-completed"
+        plugin._begin_action_progress(session_id, "move")
+        plugin._complete_action_progress(session_id, status="completed", message="done")
+        plugin._last_action_cache[session_id] = {
+            "player_input": "move",
+            "rule_plan": {"intent": "move"},
+            "rule_result": {"success": True},
+            "hard_changes": {},
+            "rhythm_result": {"feasible": True},
+            "narrative_result": {"narrative": "ok", "summary": "ok"},
+        }
+
+        payload = plugin.get_action_progress_payload(session_id)
+
+        self.assertFalse(payload["can_retry"])
+        self.assertEqual(payload["retry_from_hint"], "narrative")
 
 
 if __name__ == "__main__":

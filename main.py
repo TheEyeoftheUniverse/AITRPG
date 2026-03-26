@@ -535,6 +535,62 @@ class AITRPGPlugin(Star):
                     }
                 }
 
+    def _step_key_to_retry_from(self, step_key: str) -> str | None:
+        if step_key in ("rule_intent", "rule_adjudication", "rule_check"):
+            return "rule"
+        if step_key == "rhythm":
+            return "rhythm"
+        if step_key == "narrative":
+            return "narrative"
+        return None
+
+    def _build_cached_partial_results(self, session_id: str, cache: dict | None = None) -> dict:
+        cache = cache if isinstance(cache, dict) else (self._last_action_cache.get(session_id) or {})
+        if not isinstance(cache, dict) or not cache:
+            return {}
+
+        partial_results = {}
+        for key in ("rule_plan", "rule_result", "hard_changes", "rhythm_result", "narrative_result"):
+            if cache.get(key) is not None:
+                partial_results[key] = copy.deepcopy(cache.get(key))
+        return partial_results
+
+    def _get_retry_from_hint(
+        self,
+        session_id: str,
+        cache: dict | None = None,
+        progress: dict | None = None,
+    ) -> str | None:
+        cache = cache if isinstance(cache, dict) else (self._last_action_cache.get(session_id) or {})
+        explicit_hint = str(cache.get("retry_from_hint") or "").strip().lower()
+        if explicit_hint in ("rule", "rhythm", "narrative"):
+            return explicit_hint
+
+        progress_snapshot = progress if isinstance(progress, dict) else self.get_action_progress(session_id)
+        for step in progress_snapshot.get("steps", []):
+            if step.get("status") == "error":
+                return self._step_key_to_retry_from(step.get("key"))
+
+        if cache.get("rhythm_result") is not None:
+            return "narrative"
+        if cache.get("rule_result") is not None or cache.get("rule_plan") is not None or cache.get("intent") is not None:
+            return "rhythm"
+        if cache:
+            return "rule"
+        return None
+
+    def get_action_progress_payload(self, session_id: str) -> dict:
+        progress = self.get_action_progress(session_id)
+        cache = self._last_action_cache.get(session_id) or {}
+        can_retry = bool(cache) and progress.get("status") == "error"
+        retry_from_hint = self._get_retry_from_hint(session_id, cache=cache, progress=progress)
+        return {
+            "progress": progress,
+            "partial_results": self._build_cached_partial_results(session_id, cache=cache),
+            "retry_from_hint": retry_from_hint,
+            "can_retry": can_retry,
+        }
+
     def _match_micro_scene_request(self, session_id: str, player_input: str) -> str | None:
         text = str(player_input or "").strip()
         if not text:
@@ -623,6 +679,7 @@ class AITRPGPlugin(Star):
                     "move_movement_note": move_movement_note,
                     "is_dialogue": is_dialogue,
                     "pending_npc_report": {},
+                    "retry_from_hint": "rule",
                 }
                 cache = self._last_action_cache[session_id]
 
@@ -786,6 +843,7 @@ class AITRPGPlugin(Star):
                 cache["sancheck_result"] = sancheck_result
                 cache["hard_changes"] = hard_changes
                 cache["pending_npc_report"] = copy.deepcopy(pending_npc_report) if isinstance(pending_npc_report, dict) else {}
+                cache["retry_from_hint"] = "rhythm"
                 self._cache_step_progress(session_id, cache, ["rule_intent", "rule_adjudication", "rule_check"])
 
             # ===== 节奏AI阶段 =====
@@ -953,6 +1011,7 @@ class AITRPGPlugin(Star):
 
                 # 缓存节奏AI结果（用于重试）
                 cache["rhythm_result"] = rhythm_result
+                cache["retry_from_hint"] = "narrative"
                 self._cache_step_progress(session_id, cache, ["rhythm"])
 
             # ===== 文案AI阶段（始终执行） =====
@@ -971,6 +1030,8 @@ class AITRPGPlugin(Star):
             self._finish_progress_step(session_id, "narrative", self.narrative_ai.pop_call_metric(narrative_trace_id), "叙述生成完成")
             logger.info(f"[AITRPG] 文案生成完成")
             self._record_revealed_info(session_id, rhythm_result, narrative_result)
+            cache["narrative_result"] = narrative_result
+            cache["retry_from_hint"] = None
 
             return self._finalize_action_result(
                 session_id,
@@ -992,6 +1053,9 @@ class AITRPGPlugin(Star):
             if progress:
                 for step in progress.get("steps", []):
                     if step.get("status") == "running":
+                        failed_retry_from = self._step_key_to_retry_from(step.get("key"))
+                        if failed_retry_from and isinstance(cache, dict):
+                            cache["retry_from_hint"] = failed_retry_from
                         self._fail_progress_step(
                             session_id,
                             step["key"],

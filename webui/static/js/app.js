@@ -11,6 +11,10 @@ let endingPhase = null;           // null | "triggered" | "concluded"
 let currentAbortController = null; // 用于中断正在进行的fetch请求
 let lastPlayerInput = "";          // 上次玩家输入（用于重试恢复）
 let lastMoveDestination = null;    // 上次移动目标（用于重试恢复）
+let availableModules = [];         // 可选模组列表缓存
+let currentSaveSummary = null;     // 当前浏览器的显式恢复摘要
+let latestRetryFrom = null;        // 后端建议的断点重试层
+let canRetryCurrentTurn = false;   // 当前轮是否允许直接调用服务端重试
 
 const PROCESSING_STAGE_GROUPS = [
     {
@@ -44,9 +48,8 @@ const PROCESSING_STEP_FALLBACK_MESSAGES = {
 // ─── 初始化 ───
 
 document.addEventListener("DOMContentLoaded", () => {
-    loadModules();
     setupInputHandlers();
-    checkExistingSession();
+    initializeModuleSelection();
 });
 
 function setupInputHandlers() {
@@ -68,83 +71,106 @@ function setupInputHandlers() {
 
 // ─── 模组加载 ───
 
+async function initializeModuleSelection() {
+    await loadModules();
+    await loadSaveSummary();
+}
+
 async function loadModules() {
     try {
         const resp = await fetch("/trpg/api/modules");
         const data = await resp.json();
-        const list = document.getElementById("module-list");
-        list.innerHTML = "";
-
-        data.modules.forEach((mod, index) => {
-            const card = document.createElement("div");
-            card.className = "module-card";
-            card.onclick = () => startGame(index);
-            card.innerHTML = `
-                <div class="module-card-name">${escapeHtml(mod.name)}</div>
-                ${mod.module_type ? `<span class="module-card-type">${escapeHtml(mod.module_type)}</span>` : ""}
-                <div class="module-card-desc">${escapeHtml(mod.description)}</div>
-            `;
-            list.appendChild(card);
-        });
+        availableModules = Array.isArray(data.modules) ? data.modules : [];
+        renderModuleCards();
     } catch (err) {
         console.error("Failed to load modules:", err);
     }
 }
 
-// ─── 检查已有会话 ───
-
-async function checkExistingSession() {
+async function loadSaveSummary() {
     try {
-        const resp = await fetch("/trpg/api/state");
+        const resp = await fetch("/trpg/api/save-summary");
         const data = await resp.json();
-        if (data.game_started) {
-            showGameUI();
-            // 恢复聊天消息
-            if (data.chat_messages) {
-                data.chat_messages.forEach((msg) => {
-                    addMessage(msg.role, msg.content, false);
-                });
-                scrollToBottom();
-            }
-            // 恢复状态
-            if (data.game_state) {
-                updatePlayerStatus(data.game_state);
-            }
-            if (data.last_workflow) {
-                updateRulePanel(
-                    data.last_workflow.rule_plan,
-                    data.last_workflow.rule_result,
-                    data.last_workflow.hard_changes
-                );
-                updateRhythmPanel(data.last_workflow.rhythm_result);
-                // 恢复上次AI处理进度（含重试按钮）
-                if (data.last_workflow.telemetry) {
-                    renderProcessingStatus(data.last_workflow.telemetry, { forceCollapsed: true });
-                }
-            }
-            // 恢复地图
-            if (data.map_data) {
-                currentMapData = data.map_data;
-                renderMap(data.map_data);
-            }
-            // 恢复结局阶段
-            handleEndingPhase(data.ending_phase, data.game_over, data.ending_id);
-        }
+        currentSaveSummary = data && data.has_save ? data.save : null;
+        renderModuleCards();
     } catch (err) {
-        // 首次访问，正常显示模组选择
+        console.error("Failed to load save summary:", err);
+        currentSaveSummary = null;
+        renderModuleCards();
+    }
+}
+
+function renderModuleCards() {
+    const list = document.getElementById("module-list");
+    if (!list) return;
+    list.innerHTML = "";
+
+    availableModules.forEach((mod, index) => {
+        const hasResume = Boolean(
+            currentSaveSummary
+            && Number(currentSaveSummary.module_index) === index
+            && !currentSaveSummary.game_over
+        );
+        const card = document.createElement("div");
+        card.className = `module-card${hasResume ? " module-card--has-save" : ""}`;
+
+        const saveMeta = hasResume
+            ? `
+                <div class="module-card-save">
+                    <div class="module-card-save-title">检测到中断存档</div>
+                    <div class="module-card-save-meta">
+                        第 ${Number(currentSaveSummary.round_count || 0)} 回合 · ${escapeHtml(currentSaveSummary.current_location_name || currentSaveSummary.current_location || "未知地点")}
+                    </div>
+                    ${currentSaveSummary.saved_at ? `<div class="module-card-save-time">保存于 ${escapeHtml(formatSaveTime(currentSaveSummary.saved_at))}</div>` : ""}
+                </div>
+            `
+            : "";
+
+        card.innerHTML = `
+            <div class="module-card-name">${escapeHtml(mod.name)}</div>
+            ${mod.module_type ? `<span class="module-card-type">${escapeHtml(mod.module_type)}</span>` : ""}
+            <div class="module-card-desc">${escapeHtml(mod.description)}</div>
+            ${saveMeta}
+            <div class="module-card-actions">
+                ${hasResume ? `<button class="module-card-btn module-card-btn--primary" type="button" data-role="resume" data-index="${index}">继续存档</button>` : ""}
+                <button class="module-card-btn${hasResume ? " module-card-btn--secondary" : " module-card-btn--primary"}" type="button" data-role="start" data-index="${index}">
+                    ${hasResume ? "开始新游戏" : "开始游戏"}
+                </button>
+            </div>
+        `;
+
+        const startBtn = card.querySelector('[data-role="start"]');
+        if (startBtn) {
+            startBtn.addEventListener("click", () => startGame(index));
+        }
+        const resumeBtn = card.querySelector('[data-role="resume"]');
+        if (resumeBtn) {
+            resumeBtn.addEventListener("click", () => resumeGame());
+        }
+        list.appendChild(card);
+    });
+
+    if (availableModules.length === 0) {
+        list.innerHTML = `<div class="module-card"><div class="module-card-desc">未找到可用模组。</div></div>`;
     }
 }
 
 // ─── 开始游戏 ───
 
-async function startGame(moduleIndex) {
+async function startGame(moduleIndex, forceNew = false) {
     let data = null;
+
+    if (currentSaveSummary && !forceNew) {
+        const confirmed = confirm("检测到未完成的断点存档。开始新游戏会覆盖当前断点，是否继续？");
+        if (!confirmed) return;
+        forceNew = true;
+    }
 
     try {
         const resp = await fetch("/trpg/api/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ module_index: moduleIndex })
+            body: JSON.stringify({ module_index: moduleIndex, force_new: forceNew })
         });
 
         const responseText = await resp.text();
@@ -155,6 +181,12 @@ async function startGame(moduleIndex) {
         }
 
         if (!resp.ok || data.error) {
+            if (data && data.requires_confirm && !forceNew) {
+                const confirmed = confirm("检测到未完成的断点存档。开始新游戏会覆盖当前断点，是否继续？");
+                if (confirmed) {
+                    return startGame(moduleIndex, true);
+                }
+            }
             alert(data.error || `启动游戏失败（HTTP ${resp.status}）`);
             return;
         }
@@ -175,6 +207,7 @@ async function startGame(moduleIndex) {
             titleEl.textContent = data.module_name || "AI驱动TRPG";
         }
 
+        currentSaveSummary = null;
         if (data.game_state) {
             updatePlayerStatus(data.game_state);
         }
@@ -186,6 +219,7 @@ async function startGame(moduleIndex) {
         }
 
         clearProcessingStatus();
+        clearRetryState();
 
         showGameUI(() => {
             try {
@@ -212,6 +246,93 @@ async function startGame(moduleIndex) {
         });
     } catch (uiErr) {
         console.error("Failed to initialize game UI:", uiErr, data);
+    }
+}
+
+async function resumeGame() {
+    let data = null;
+    try {
+        const resp = await fetch("/trpg/api/resume", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
+        });
+        data = await resp.json();
+        if (!resp.ok || data.error) {
+            alert(data.error || `恢复存档失败（HTTP ${resp.status}）`);
+            return;
+        }
+    } catch (err) {
+        console.error("Failed to resume game:", err);
+        alert(err && err.message ? err.message : "恢复存档失败，请刷新重试。");
+        return;
+    }
+
+    try {
+        const messages = document.getElementById("chat-messages");
+        if (messages) {
+            messages.innerHTML = "";
+        }
+
+        const titleEl = document.getElementById("game-title");
+        if (titleEl) {
+            const resumedModuleName = data.game_state
+                && data.game_state.module_data
+                && data.game_state.module_data.module_info
+                ? data.game_state.module_data.module_info.name
+                : "";
+            titleEl.textContent = resumedModuleName
+                || (currentSaveSummary && currentSaveSummary.module_name)
+                || "AI驱动TRPG";
+        }
+
+        if (Array.isArray(data.chat_messages)) {
+            data.chat_messages.forEach((msg) => {
+                addMessage(msg.role, msg.content, false);
+            });
+            scrollToBottom();
+        }
+
+        if (data.game_state) {
+            updatePlayerStatus(data.game_state);
+        }
+
+        if (data.last_workflow) {
+            updateRulePanel(
+                data.last_workflow.rule_plan,
+                data.last_workflow.rule_result,
+                data.last_workflow.hard_changes
+            );
+            updateRhythmPanel(data.last_workflow.rhythm_result);
+            if (data.last_workflow.telemetry) {
+                renderProcessingStatus(data.last_workflow.telemetry, { forceCollapsed: true });
+            }
+        } else {
+            clearProcessingStatus();
+        }
+
+        if (data.map_data) {
+            currentMapData = data.map_data;
+        } else {
+            currentMapData = null;
+        }
+
+        clearRetryState();
+        currentSaveSummary = null;
+
+        showGameUI(() => {
+            if (currentMapData) {
+                try {
+                    renderMap(currentMapData);
+                } catch (mapErr) {
+                    console.error("Failed to render resumed map:", mapErr, currentMapData);
+                }
+            }
+        });
+
+        handleEndingPhase(data.ending_phase, data.game_over, data.ending_id);
+    } catch (uiErr) {
+        console.error("Failed to initialize resumed game UI:", uiErr, data);
     }
 }
 
@@ -509,11 +630,136 @@ function buildInitialProcessingState() {
     };
 }
 
+function setRetryState(retryFromHint, canRetry) {
+    canRetryCurrentTurn = Boolean(canRetry);
+    latestRetryFrom = canRetryCurrentTurn ? (retryFromHint || "rule") : null;
+}
+
+function clearRetryState() {
+    setRetryState(null, false);
+}
+
+function applyPartialWorkflowResults(partialResults) {
+    const pr = partialResults || {};
+    if (pr.rule_plan || pr.rule_result || pr.hard_changes) {
+        updateRulePanel(pr.rule_plan, pr.rule_result, pr.hard_changes);
+    }
+    if (pr.rhythm_result) {
+        updateRhythmPanel(pr.rhythm_result);
+    }
+}
+
+function restoreLastInputDraft() {
+    const input = document.getElementById("chat-input");
+    if (!input) return;
+
+    if (lastPlayerInput || lastMoveDestination) {
+        input.value = lastPlayerInput || "";
+        input.style.height = "auto";
+        input.style.height = Math.min(input.scrollHeight, 120) + "px";
+
+        if (lastMoveDestination && currentMapData) {
+            const reachable = new Set(currentMapData.reachable || []);
+            if (reachable.has(lastMoveDestination)) {
+                selectedDestination = lastMoveDestination;
+                const loc = currentMapData.locations[lastMoveDestination];
+                const locName = loc ? loc.display_name : lastMoveDestination;
+                const indicator = document.getElementById("move-indicator");
+                const indicatorText = document.getElementById("move-indicator-text");
+                indicatorText.textContent = `即将移动到：${locName}`;
+                indicator.classList.remove("hidden");
+                renderMap(currentMapData);
+            }
+        }
+    }
+}
+
+function removeTrailingRetryableMessage() {
+    const chatMessages = document.getElementById("chat-messages");
+    if (!chatMessages || !chatMessages.lastElementChild) return;
+
+    const lastMsg = chatMessages.lastElementChild;
+    const bubble = lastMsg.querySelector(".message-bubble");
+    if (bubble && (
+        bubble.textContent.startsWith("处理出错:") ||
+        bubble.textContent === "网络错误，请重试。" ||
+        lastMsg.querySelector(".loading-dots")
+    )) {
+        lastMsg.remove();
+    }
+}
+
+function handleActionErrorResponse(data) {
+    const errorTelemetry = data.telemetry || {
+        status: "error",
+        message: data.error,
+        total_duration_ms: 0,
+        summary: {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            token_source: null,
+        },
+        steps: [],
+    };
+    if (errorTelemetry.status !== "error") {
+        errorTelemetry.status = "error";
+    }
+    renderProcessingStatus(errorTelemetry);
+    applyPartialWorkflowResults(data.partial_results);
+    setRetryState(data.retry_from_hint, data.can_retry);
+    addMessage("assistant", "处理出错: " + data.error);
+}
+
+async function handleActionSuccessResponse(data) {
+    clearRetryState();
+    lastPlayerInput = "";
+    lastMoveDestination = null;
+
+    if (data.dice_rolls && data.dice_rolls.length > 0) {
+        for (const diceRoll of data.dice_rolls) {
+            await showDiceRollPanel(diceRoll);
+        }
+        await theatricalSleep(3000);
+    }
+
+    addMessage("assistant", data.narrative);
+
+    const lastNarrMsg = document.getElementById("chat-messages").lastElementChild;
+    processInlineMarkers(lastNarrMsg);
+
+    if (data.theatrical_effects && data.theatrical_effects.length) {
+        await processTheatricalEffects(data.theatrical_effects);
+    }
+
+    updateRulePanel(data.rule_plan, data.rule_result, data.hard_changes);
+    updateRhythmPanel(data.rhythm_result);
+
+    if (data.game_state) {
+        updatePlayerStatus(data.game_state);
+    }
+
+    if (data.map_data) {
+        currentMapData = data.map_data;
+        renderMap(data.map_data);
+    }
+
+    renderProcessingStatus(data.telemetry || null, { forceCollapsed: true });
+    handleEndingPhase(data.ending_phase, data.game_over, data.ending_id);
+}
+
 async function fetchAndRenderActionProgress() {
     try {
         const resp = await fetch("/trpg/api/progress", { cache: "no-store" });
         const data = await resp.json();
         const progress = data.progress || {};
+        applyPartialWorkflowResults(data.partial_results);
+        if (progress.status === "error") {
+            setRetryState(data.retry_from_hint, data.can_retry);
+        } else if (progress.status === "running" || progress.status === "completed") {
+            clearRetryState();
+        }
+        updateRetryButtonVisibility();
         if (progress && Object.keys(progress).length) {
             renderProcessingStatus(progress);
             if (progress.status !== "running" && !isProcessing) {
@@ -573,79 +819,110 @@ window.clearProcessingStatus = clearProcessingStatus;
 
 // ─── 中断并重试 ───
 
-function abortAndRetry() {
-    // 1. 中断正在进行的fetch请求
+async function retryCurrentTurnFromStage(retryFrom) {
+    if (!retryFrom || isProcessing) return;
+
+    isProcessing = true;
+    setInputEnabled(false);
+    updateRetryButtonVisibility();
+    removeTrailingRetryableMessage();
+    const loadingEl = addLoadingIndicator();
+    renderProcessingStatus(buildInitialProcessingState(), { forceExpanded: true });
+    startProgressPolling();
+    currentAbortController = new AbortController();
+
+    try {
+        const resp = await fetch("/trpg/api/retry", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ retry_from: retryFrom }),
+            signal: currentAbortController.signal,
+        });
+        const data = await resp.json();
+
+        loadingEl.remove();
+        currentAbortController = null;
+
+        if (data.error) {
+            handleActionErrorResponse(data);
+        } else {
+            await handleActionSuccessResponse(data);
+        }
+    } catch (err) {
+        loadingEl.remove();
+        currentAbortController = null;
+
+        if (err.name === "AbortError") {
+            return;
+        }
+
+        clearRetryState();
+        renderProcessingStatus({
+            status: "error",
+            message: "网络错误",
+            total_duration_ms: 0,
+            summary: {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0,
+                token_source: null,
+            },
+            steps: [],
+        });
+        addMessage("assistant", "网络错误，请重试。");
+        console.error("Retry failed:", err);
+    } finally {
+        stopProgressPolling();
+        isProcessing = false;
+        updateRetryButtonVisibility();
+        if (endingPhase !== "concluded") {
+            setInputEnabled(true);
+            document.getElementById("chat-input").focus();
+        }
+    }
+}
+
+async function abortAndRetry() {
     if (currentAbortController) {
         currentAbortController.abort();
         currentAbortController = null;
+        clearRetryState();
+        isProcessing = false;
+        stopProgressPolling();
+        removeTrailingRetryableMessage();
+        restoreLastInputDraft();
+        setInputEnabled(true);
+        document.getElementById("chat-input").focus();
+        renderProcessingStatus({ status: "error", message: "已中断，请重新发送", total_duration_ms: 0, summary: {}, steps: [] }, { forceCollapsed: true });
+        updateRetryButtonVisibility();
+        return;
     }
 
-    // 2. 重置前端处理状态
-    isProcessing = false;
-    stopProgressPolling();
-
-    // 3. 移除loading指示器
-    const chatMessages = document.getElementById("chat-messages");
-    if (chatMessages) {
-        const loadingMsg = chatMessages.querySelector(".loading-dots");
-        if (loadingMsg) {
-            loadingMsg.closest(".message").remove();
-        }
+    if (canRetryCurrentTurn && latestRetryFrom) {
+        await retryCurrentTurnFromStage(latestRetryFrom);
+        return;
     }
 
-    // 4. 移除上次的错误消息或AI回复（因为要重新发送）
-    if (chatMessages && chatMessages.lastElementChild) {
-        const lastMsg = chatMessages.lastElementChild;
-        const bubble = lastMsg.querySelector(".message-bubble");
-        if (bubble && (
-            bubble.textContent.startsWith("处理出错:") ||
-            bubble.textContent === "网络错误，请重试。" ||
-            lastMsg.querySelector(".loading-dots")
-        )) {
-            lastMsg.remove();
-        }
-    }
-
-    // 5. 恢复玩家输入到输入框
-    const input = document.getElementById("chat-input");
-    if (lastPlayerInput || lastMoveDestination) {
-        input.value = lastPlayerInput || "";
-        input.style.height = "auto";
-        input.style.height = Math.min(input.scrollHeight, 120) + "px";
-
-        // 恢复移动选择
-        if (lastMoveDestination && currentMapData) {
-            const reachable = new Set(currentMapData.reachable || []);
-            if (reachable.has(lastMoveDestination)) {
-                selectedDestination = lastMoveDestination;
-                const loc = currentMapData.locations[lastMoveDestination];
-                const locName = loc ? loc.display_name : lastMoveDestination;
-                const indicator = document.getElementById("move-indicator");
-                const indicatorText = document.getElementById("move-indicator-text");
-                indicatorText.textContent = `即将移动到：${locName}`;
-                indicator.classList.remove("hidden");
-                renderMap(currentMapData);
-            }
-        }
-    }
-
-    // 6. 重新启用输入
+    removeTrailingRetryableMessage();
+    restoreLastInputDraft();
     setInputEnabled(true);
-    input.focus();
-
-    // 7. 折叠处理状态面板
-    renderProcessingStatus({ status: "error", message: "已中断，请重新发送", total_duration_ms: 0, summary: {}, steps: [] }, { forceCollapsed: true });
-
-    // 8. 更新按钮可见性
+    document.getElementById("chat-input").focus();
+    renderProcessingStatus({ status: "error", message: "请重新发送本轮行动", total_duration_ms: 0, summary: {}, steps: [] }, { forceCollapsed: true });
     updateRetryButtonVisibility();
 }
 
 function updateRetryButtonVisibility() {
     const btn = document.getElementById("btn-retry");
     if (!btn) return;
-    // 处理中 或 有上次输入可恢复时显示
-    const shouldShow = isProcessing || (lastPlayerInput || lastMoveDestination);
+    const shouldShow = isProcessing || canRetryCurrentTurn || (lastPlayerInput || lastMoveDestination);
     btn.classList.toggle("hidden", !shouldShow);
+    if (isProcessing) {
+        btn.title = "中断当前处理";
+    } else if (canRetryCurrentTurn && latestRetryFrom) {
+        btn.title = `从${latestRetryFrom}层继续重试`;
+    } else {
+        btn.title = "恢复并重发本轮输入";
+    }
 }
 
 window.abortAndRetry = abortAndRetry;
@@ -670,6 +947,7 @@ async function sendAction() {
     // 保存本轮输入（用于重试恢复）
     lastPlayerInput = text;
     lastMoveDestination = moveTo;
+    clearRetryState();
 
     // 清空输入
     input.value = "";
@@ -729,81 +1007,9 @@ async function sendAction() {
         currentAbortController = null;
 
         if (data.error) {
-            // 使用后端返回的遥测数据（包含失败步骤信息），否则用兜底
-            const errorTelemetry = data.telemetry || {
-                status: "error",
-                message: data.error,
-                total_duration_ms: 0,
-                summary: {
-                    prompt_tokens: 0,
-                    completion_tokens: 0,
-                    total_tokens: 0,
-                    token_source: null,
-                },
-                steps: [],
-            };
-            if (errorTelemetry.status !== "error") {
-                errorTelemetry.status = "error";
-            }
-            renderProcessingStatus(errorTelemetry);
-
-            // 用已完成的中间结果更新面板
-            if (data.partial_results) {
-                const pr = data.partial_results;
-                if (pr.rule_result) {
-                    updateRulePanel(pr.rule_plan, pr.rule_result, pr.hard_changes);
-                }
-                if (pr.rhythm_result) {
-                    updateRhythmPanel(pr.rhythm_result);
-                }
-            }
-
-            addMessage("assistant", "处理出错: " + data.error);
+            handleActionErrorResponse(data);
         } else {
-            // 成功：清除重试输入记录
-            lastPlayerInput = "";
-            lastMoveDestination = null;
-
-            // 骰子演出：先展示检定，再展示叙述
-            if (data.dice_rolls && data.dice_rolls.length > 0) {
-                for (const diceRoll of data.dice_rolls) {
-                    await showDiceRollPanel(diceRoll);
-                }
-                // 等待后再展示叙述
-                await theatricalSleep(3000);
-            }
-
-            // 显示叙述
-            addMessage("assistant", data.narrative);
-
-            // 处理内联标记 (glitch/echo-text → span)
-            const lastNarrMsg = document.getElementById("chat-messages").lastElementChild;
-            processInlineMarkers(lastNarrMsg);
-
-            // 执行演出效果
-            if (data.theatrical_effects && data.theatrical_effects.length) {
-                await processTheatricalEffects(data.theatrical_effects);
-            }
-
-            // 更新左侧面板
-            updateRulePanel(data.rule_plan, data.rule_result, data.hard_changes);
-            updateRhythmPanel(data.rhythm_result);
-
-            // 更新右侧状态
-            if (data.game_state) {
-                updatePlayerStatus(data.game_state);
-            }
-
-            // 更新地图
-            if (data.map_data) {
-                currentMapData = data.map_data;
-                renderMap(data.map_data);
-            }
-
-            renderProcessingStatus(data.telemetry || null, { forceCollapsed: true });
-
-            // 处理结局阶段
-            handleEndingPhase(data.ending_phase, data.game_over, data.ending_id);
+            await handleActionSuccessResponse(data);
         }
     } catch (err) {
         loadingEl.remove();
@@ -814,6 +1020,7 @@ async function sendAction() {
             return;
         }
 
+        clearRetryState();
         renderProcessingStatus({
             status: "error",
             message: "网络错误",
@@ -1117,6 +1324,7 @@ async function resetGame() {
         endingPhase = null;
         lastPlayerInput = "";
         lastMoveDestination = null;
+        clearRetryState();
         if (currentAbortController) {
             currentAbortController.abort();
             currentAbortController = null;
@@ -1155,9 +1363,10 @@ async function resetGame() {
         const overlay = document.getElementById("module-overlay");
         overlay.style.display = "";
         overlay.classList.remove("fade-out");
+        currentSaveSummary = null;
         clearProcessingStatus();
         updateRetryButtonVisibility();
-        loadModules();
+        initializeModuleSelection();
     } catch (err) {
         console.error("Reset failed:", err);
     }
@@ -1170,6 +1379,20 @@ function escapeHtml(text) {
     const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
+}
+
+function formatSaveTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return String(value);
+    }
+    return date.toLocaleString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
 }
 
 function renderWhitelistedInlineHtml(text) {

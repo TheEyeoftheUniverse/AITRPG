@@ -5,12 +5,52 @@ import socket
 import os
 import platform
 import re
+from datetime import datetime, timezone
 from collections import deque
 from quart import Quart, render_template, request, jsonify, make_response
 
 from astrbot.api import logger
 from ..game_state.save_store import JsonSaveStore
 from ..theatrical_parser import parse_theatrical_tags
+
+
+def _extract_location_name_from_state(game_state: dict) -> str:
+    if not isinstance(game_state, dict):
+        return ""
+    current_location = str(game_state.get("current_location") or "").strip()
+    module_data = game_state.get("module_data", {}) if isinstance(game_state.get("module_data"), dict) else {}
+    locations = module_data.get("locations", {}) if isinstance(module_data.get("locations"), dict) else {}
+    location_data = locations.get(current_location, {}) if isinstance(locations.get(current_location), dict) else {}
+    return str(location_data.get("name") or current_location).strip()
+
+
+def _build_save_summary(saved_data: dict) -> dict:
+    if not isinstance(saved_data, dict):
+        return {"has_save": False, "save": None}
+
+    web_session = saved_data.get("web_session", {}) if isinstance(saved_data.get("web_session"), dict) else {}
+    game_state = saved_data.get("game_state", {}) if isinstance(saved_data.get("game_state"), dict) else {}
+    if not web_session or not game_state or not bool(web_session.get("game_started")):
+        return {"has_save": False, "save": None}
+
+    game_over = bool(saved_data.get("game_over", False))
+    if game_over:
+        return {"has_save": False, "save": None}
+
+    module_data = game_state.get("module_data", {}) if isinstance(game_state.get("module_data"), dict) else {}
+    module_info = module_data.get("module_info", {}) if isinstance(module_data.get("module_info"), dict) else {}
+    current_location = str(game_state.get("current_location") or "").strip()
+
+    save_payload = {
+        "module_index": web_session.get("module_index"),
+        "module_name": str(module_info.get("name") or game_state.get("module_filename") or "AI驱动TRPG").strip(),
+        "round_count": int(game_state.get("round_count", 0) or 0),
+        "current_location": current_location or None,
+        "current_location_name": _extract_location_name_from_state(game_state) or current_location or None,
+        "saved_at": saved_data.get("saved_at"),
+        "game_over": game_over,
+    }
+    return {"has_save": True, "save": save_payload}
 
 
 async def _is_port_available(port: int) -> bool:
@@ -183,7 +223,11 @@ def create_trpg_app(plugin):
         if not web_session.get("game_started") or not game_state:
             return
 
+        saved_at = datetime.now(timezone.utc).astimezone().isoformat()
         save_store.save(cookie_id, {
+            "saved_at": saved_at,
+            "game_over": plugin.session_manager.is_game_over(session_id),
+            "ending_phase": plugin.session_manager.get_ending_phase(session_id),
             "web_session": {
                 "session_id": session_id,
                 "game_started": web_session.get("game_started", False),
@@ -195,6 +239,43 @@ def create_trpg_app(plugin):
             },
             "game_state": game_state,
         })
+
+    def _get_saved_data(cookie_id: str) -> dict:
+        """读取持久化存档，不触发恢复"""
+        saved_data = save_store.load(cookie_id)
+        return saved_data if isinstance(saved_data, dict) else {}
+
+    def _build_live_save_snapshot(cookie_id: str) -> dict:
+        """从当前内存态构建存档摘要源数据，不做恢复。"""
+        web_session = _web_sessions.get(cookie_id)
+        if not isinstance(web_session, dict) or not web_session.get("game_started"):
+            return {}
+        session_id = str(web_session.get("session_id") or "").strip()
+        if not session_id or not plugin.session_manager.has_session(session_id):
+            return {}
+        game_state = plugin.session_manager.export_session(session_id)
+        if not isinstance(game_state, dict):
+            return {}
+        saved_data = _get_saved_data(cookie_id)
+        return {
+            "saved_at": saved_data.get("saved_at"),
+            "game_over": plugin.session_manager.is_game_over(session_id),
+            "ending_phase": plugin.session_manager.get_ending_phase(session_id),
+            "web_session": {
+                "session_id": session_id,
+                "game_started": True,
+                "history": list(web_session.get("history") or []),
+                "chat_messages": list(web_session.get("chat_messages") or []),
+                "last_workflow": web_session.get("last_workflow"),
+                "module_index": web_session.get("module_index"),
+                "conv_id": web_session.get("conv_id"),
+            },
+            "game_state": game_state,
+        }
+
+    def _get_save_summary_payload(cookie_id: str) -> dict:
+        """返回当前浏览器的中断存档摘要，不触发恢复。"""
+        return _build_save_summary(_build_live_save_snapshot(cookie_id) or _get_saved_data(cookie_id))
 
     def _restore_web_session(cookie_id: str) -> dict:
         """如果存在 JSON 存档，则恢复 Web 会话和游戏状态"""
@@ -225,6 +306,30 @@ def create_trpg_app(plugin):
 
         return restored_web
 
+    def _build_runtime_state_payload(web_session: dict) -> dict:
+        """构建前端进入游戏界面所需的完整运行态载荷。"""
+        session_id = web_session["session_id"]
+        if not plugin.session_manager.has_session(session_id):
+            return {
+                "game_started": False,
+                "game_state": None,
+                "chat_messages": [],
+            }
+
+        state = plugin.session_manager.get_session(session_id)
+        map_data = plugin.session_manager.get_map_data(session_id)
+        return {
+            "success": True,
+            "game_started": bool(web_session.get("game_started")),
+            "game_state": _serialize_state(state),
+            "chat_messages": web_session.get("chat_messages", []),
+            "last_workflow": web_session.get("last_workflow"),
+            "map_data": map_data,
+            "ending_phase": plugin.session_manager.get_ending_phase(session_id),
+            "ending_id": plugin.session_manager.get_ending_id(session_id),
+            "game_over": plugin.session_manager.is_game_over(session_id),
+        }
+
     # ─── 路由 ───
 
     @app.route("/")
@@ -250,6 +355,14 @@ def create_trpg_app(plugin):
         modules = plugin.session_manager.list_modules()
         return jsonify({"modules": modules})
 
+    @app.route("/trpg/api/save-summary", methods=["GET"])
+    async def api_save_summary():
+        """返回当前浏览器的中断存档摘要，不恢复运行态。"""
+        cookie_id = _get_cookie_id()
+        if not cookie_id:
+            return jsonify({"has_save": False, "save": None})
+        return jsonify(_get_save_summary_payload(cookie_id))
+
     @app.route("/trpg/api/start", methods=["POST"])
     async def api_start():
         """选择模组并开始游戏"""
@@ -268,10 +381,19 @@ def create_trpg_app(plugin):
                     return jsonify({"error": "请求格式错误"}), 400
 
                 module_index = data.get("module_index", 0)
+                force_new = bool(data.get("force_new"))
 
                 modules = plugin.session_manager.list_modules()
                 if module_index < 0 or module_index >= len(modules):
                     return jsonify({"error": "无效的模组序号"}), 400
+
+                existing_save = _get_save_summary_payload(cookie_id)
+                if existing_save.get("has_save") and not force_new:
+                    return jsonify({
+                        "error": "存在可继续的存档，请先继续存档或确认覆盖后再开始新游戏。",
+                        "requires_confirm": True,
+                        "save": existing_save.get("save"),
+                    }), 409
 
                 selected = modules[module_index]
                 session_id = web_session["session_id"]
@@ -509,19 +631,13 @@ def create_trpg_app(plugin):
                 logger.error(f"[AITRPG WebUI] 处理行动出错: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-                # 返回错误信息 + 遥测数据（含失败步骤信息）+ 已完成的中间结果
-                telemetry = plugin.get_action_progress(session_id)
-                cache = plugin._last_action_cache.get(session_id, {})
+                progress_payload = plugin.get_action_progress_payload(session_id)
                 return jsonify({
                     "error": str(e),
-                    "telemetry": telemetry,
-                    "partial_results": {
-                        "rule_plan": cache.get("rule_plan"),
-                        "rule_result": cache.get("rule_result"),
-                        "hard_changes": cache.get("hard_changes"),
-                        "rhythm_result": cache.get("rhythm_result"),
-                    },
-                    "can_retry": bool(cache),
+                    "telemetry": progress_payload.get("progress", {}),
+                    "partial_results": progress_payload.get("partial_results", {}),
+                    "retry_from_hint": progress_payload.get("retry_from_hint"),
+                    "can_retry": progress_payload.get("can_retry", False),
                 }), 500
 
     @app.route("/trpg/api/progress", methods=["GET"])
@@ -533,9 +649,7 @@ def create_trpg_app(plugin):
 
         web_session = _restore_web_session(cookie_id)
         session_id = web_session["session_id"]
-        return jsonify({
-            "progress": plugin.get_action_progress(session_id)
-        })
+        return jsonify(plugin.get_action_progress_payload(session_id))
 
     @app.route("/trpg/api/retry", methods=["POST"])
     async def api_retry():
@@ -551,8 +665,10 @@ def create_trpg_app(plugin):
         lock = _session_locks[cookie_id]
 
         async with lock:
-            data = await request.get_json()
-            retry_from = data.get("retry_from", "rule")  # "rule" | "rhythm" | "narrative"
+            data = await request.get_json() or {}
+            retry_from = data.get("retry_from")
+            if not retry_from:
+                retry_from = plugin.get_action_progress_payload(web_session["session_id"]).get("retry_from_hint") or "rule"
 
             if retry_from not in ("rule", "rhythm", "narrative"):
                 return jsonify({"error": f"无效的重试起点: {retry_from}"}), 400
@@ -685,19 +801,31 @@ def create_trpg_app(plugin):
                 logger.error(f"[AITRPG WebUI] 重试处理出错: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-                telemetry = plugin.get_action_progress(session_id)
-                retry_cache = plugin._last_action_cache.get(session_id, {})
+                progress_payload = plugin.get_action_progress_payload(session_id)
                 return jsonify({
                     "error": str(e),
-                    "telemetry": telemetry,
-                    "partial_results": {
-                        "rule_plan": retry_cache.get("rule_plan"),
-                        "rule_result": retry_cache.get("rule_result"),
-                        "hard_changes": retry_cache.get("hard_changes"),
-                        "rhythm_result": retry_cache.get("rhythm_result"),
-                    },
-                    "can_retry": bool(retry_cache),
+                    "telemetry": progress_payload.get("progress", {}),
+                    "partial_results": progress_payload.get("partial_results", {}),
+                    "retry_from_hint": progress_payload.get("retry_from_hint"),
+                    "can_retry": progress_payload.get("can_retry", False),
                 }), 500
+
+    @app.route("/trpg/api/resume", methods=["POST"])
+    async def api_resume():
+        """显式恢复已持久化的中断存档。"""
+        cookie_id = _get_cookie_id()
+        if not cookie_id:
+            return jsonify({"error": "无有效会话"}), 400
+
+        summary = _get_save_summary_payload(cookie_id)
+        if not summary.get("has_save"):
+            return jsonify({"error": "没有可恢复的存档"}), 404
+
+        web_session = _restore_web_session(cookie_id)
+        if not web_session.get("game_started") or not plugin.session_manager.has_session(web_session["session_id"]):
+            return jsonify({"error": "恢复存档失败"}), 500
+
+        return jsonify(_build_runtime_state_payload(web_session))
 
     @app.route("/trpg/api/state", methods=["GET"])
     async def api_state():
@@ -706,28 +834,8 @@ def create_trpg_app(plugin):
         if not cookie_id:
             return jsonify({"error": "无有效会话"}), 400
 
-        web_session = _restore_web_session(cookie_id)
-        session_id = web_session["session_id"]
-
-        if not plugin.session_manager.has_session(session_id):
-            return jsonify({
-                "game_started": False,
-                "game_state": None,
-                "chat_messages": []
-            })
-
-        state = plugin.session_manager.get_session(session_id)
-        map_data = plugin.session_manager.get_map_data(session_id)
-        return jsonify({
-            "game_started": web_session["game_started"],
-            "game_state": _serialize_state(state),
-            "chat_messages": web_session["chat_messages"],
-            "last_workflow": web_session.get("last_workflow"),
-            "map_data": map_data,
-            "ending_phase": plugin.session_manager.get_ending_phase(session_id),
-            "ending_id": plugin.session_manager.get_ending_id(session_id),
-            "game_over": plugin.session_manager.is_game_over(session_id),
-        })
+        web_session = _get_or_create_web_session(cookie_id)
+        return jsonify(_build_runtime_state_payload(web_session))
 
     @app.route("/trpg/api/reset", methods=["POST"])
     async def api_reset():
