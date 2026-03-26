@@ -198,6 +198,78 @@ html, body {
     font-size: 13px;
 }
 
+.module-card--has-save {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-sm);
+}
+
+.module-card-save {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    background: var(--accent-bg);
+    border: 1px solid rgba(108, 126, 225, 0.18);
+}
+
+.module-card-save-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 4px;
+}
+
+.module-card-save-meta {
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.module-card-save-time {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.module-card-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+
+.module-card-btn {
+    appearance: none;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 8px 14px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all var(--transition-fast);
+}
+
+.module-card-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+.module-card-btn--primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.module-card-btn--primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+}
+
+.module-card-btn--secondary:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+}
+
 /* ═══════════════════════════════════════
    Game Container
    ═══════════════════════════════════════ */
