@@ -579,16 +579,34 @@ class SessionManager:
         pursuer_data = all_entities.get(pursuer_name, {}) if pursuer_name else {}
         return str(pursuer_data.get("location") or "").strip()
 
-    def _build_default_influence_dimensions(self) -> Dict[str, Any]:
-        return {
-            "escape_success": False,
-            "ritual_destroyed": False,
-            "npc_together": False,
-            "truth_revealed": False,
-            "butler_gaze": False,
-            "san_remaining": 65,
-            "rounds_used": 0,
-        }
+    def _build_default_influence_dimensions(self, module_data: Dict[str, Any] = None) -> Dict[str, Any]:
+        dims_cfg = (
+            (module_data or self.default_module_data or {})
+            .get("endings", {})
+            .get("influence_dimensions", {})
+            .get("dimensions", {})
+        )
+        if not isinstance(dims_cfg, dict) or not dims_cfg:
+            return {
+                "escape_success": False,
+                "ritual_destroyed": False,
+                "npc_together": False,
+                "truth_revealed": False,
+                "butler_gaze": False,
+                "san_remaining": 65,
+                "rounds_used": 0,
+            }
+        result = {}
+        for dim_name, dim_cfg in dims_cfg.items():
+            default_val = dim_cfg.get("default") if isinstance(dim_cfg, dict) else None
+            if default_val is None:
+                # infer type from name
+                if dim_name in {"san_remaining", "rounds_used"}:
+                    default_val = 0
+                else:
+                    default_val = False
+            result[dim_name] = default_val
+        return result
 
     def _get_insane_ending_description(self, state: Dict[str, Any]) -> str:
         module_data = (state or {}).get("module_data", {}) if isinstance(state, dict) else {}
@@ -657,8 +675,9 @@ class SessionManager:
                 for key, value in self._build_default_butler_chase_state().items():
                     chase_state.setdefault(key, value)
 
-        influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions())
-        for key, value in self._build_default_influence_dimensions().items():
+        _mod = state.get("module_data")
+        influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions(_mod))
+        for key, value in self._build_default_influence_dimensions(_mod).items():
             influence.setdefault(key, value)
         self._sync_influence_dimensions(state)
 
@@ -666,8 +685,9 @@ class SessionManager:
         if not isinstance(state, dict):
             return
 
-        influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions())
-        for key, value in self._build_default_influence_dimensions().items():
+        _mod = state.get("module_data")
+        influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions(_mod))
+        for key, value in self._build_default_influence_dimensions(_mod).items():
             influence.setdefault(key, value)
 
         player = state.setdefault("player", {})
@@ -679,14 +699,7 @@ class SessionManager:
         module_npcs = get_module_npcs(state.get("module_data", {}))
         npc_states = world_state.get("npcs", {}) if isinstance(world_state.get("npcs"), dict) else {}
 
-        ritual_destroyed = bool(
-            flags.get("ritual_destroyed")
-            or flags.get("仪式已破坏")
-            or flags.get("carpet_burned")
-            or flags.get("符咒地毯已焚毁")
-            or "已破坏仪式" in clues_found
-            or "已破坏仪式" in inventory
-        )
+        influence["ritual_destroyed"] = self._resolve_bool_influence_dim(state, "ritual_destroyed")
         npc_together = False
         for npc_name, npc_cfg in module_npcs.items():
             if not isinstance(npc_cfg, dict) or not isinstance(npc_cfg.get("companion"), dict):
@@ -697,7 +710,6 @@ class SessionManager:
                 npc_together = True
                 break
 
-        influence["ritual_destroyed"] = ritual_destroyed
         influence["npc_together"] = bool(flags.get("npc_together", npc_together))
         influence["truth_revealed"] = bool(flags.get("truth_revealed", influence.get("truth_revealed", False)))
         influence["san_remaining"] = int(player.get("san", 0) or 0)
@@ -2121,21 +2133,41 @@ class SessionManager:
         validation = self._get_ending_validation_config(state, ending_id)
         return bool(validation.get("require_ai_request"))
 
-    def _is_effective_ritual_destroyed(self, state: Dict[str, Any]) -> bool:
+    def _resolve_bool_influence_dim(self, state: Dict[str, Any], dim_name: str) -> bool:
+        """Read equivalent_flags/clues/inventory from module config to resolve a bool influence dimension."""
         if not isinstance(state, dict):
             return False
+        module_data = state.get("module_data") or self.default_module_data or {}
+        dim_cfg = (
+            module_data.get("endings", {})
+            .get("influence_dimensions", {})
+            .get("dimensions", {})
+            .get(dim_name, {})
+        )
         world_state = state.get("world_state", {})
         flags = world_state.get("flags", {}) if isinstance(world_state.get("flags"), dict) else {}
         clues = world_state.get("clues_found", []) if isinstance(world_state.get("clues_found"), list) else []
         inventory = state.get("player", {}).get("inventory", []) if isinstance(state.get("player", {}).get("inventory"), list) else []
-        return bool(
-            flags.get("ritual_destroyed")
-            or flags.get("仪式已破坏")
-            or flags.get("carpet_burned")
-            or flags.get("符咒地毯已焚毁")
-            or "已破坏仪式" in clues
-            or "已破坏仪式" in inventory
-        )
+        influence = state.get("influence_dimensions", {})
+        if bool(influence.get(dim_name)):
+            return True
+        if bool(flags.get(dim_name)):
+            return True
+        if isinstance(dim_cfg, dict):
+            for alias in (dim_cfg.get("equivalent_flags") or []):
+                if flags.get(alias):
+                    return True
+            for alias in (dim_cfg.get("equivalent_clues") or []):
+                if alias in clues:
+                    return True
+            for alias in (dim_cfg.get("equivalent_inventory") or []):
+                if alias in inventory:
+                    return True
+        return False
+
+    def _is_effective_ritual_destroyed(self, state: Dict[str, Any]) -> bool:
+        return self._resolve_bool_influence_dim(state, "ritual_destroyed")
+
 
     def _get_effective_npc_together(self, state: Dict[str, Any]) -> bool:
         if not isinstance(state, dict):
@@ -2159,21 +2191,9 @@ class SessionManager:
         world_state = state.get("world_state", {})
         flags = world_state.get("flags", {}) if isinstance(world_state.get("flags"), dict) else {}
         influence = state.get("influence_dimensions", {}) if isinstance(state.get("influence_dimensions"), dict) else {}
-        if key in {"ritual_destroyed", "仪式已破坏", "carpet_burned", "符咒地毯已焚毁"}:
-            return self._is_effective_ritual_destroyed(state)
         if key == "npc_together":
             return bool(flags.get("npc_together")) or self._get_effective_npc_together(state) or bool(influence.get("npc_together"))
-        if key == "truth_revealed":
-            return bool(flags.get("truth_revealed")) or bool(influence.get("truth_revealed"))
-        if key == "escape_success":
-            return bool(flags.get("escape_success")) or bool(influence.get("escape_success"))
-        if key == "butler_gaze":
-            return bool(flags.get("butler_gaze")) or bool(influence.get("butler_gaze"))
-        if key in flags:
-            return bool(flags.get(key))
-        if key in influence:
-            return bool(influence.get(key))
-        return False
+        return self._resolve_bool_influence_dim(state, key)
 
     def validate_ending_request(self, session_id: str, ending_id: str) -> Dict[str, Any]:
         state = self.sessions.get(session_id)
@@ -2465,7 +2485,13 @@ class SessionManager:
             })
 
         runtime_changes = {}
-        if not bool(state.get("influence_dimensions", {}).get("butler_gaze")):
+        _pause_dim = str(
+            (state.get("module_data") or self.default_module_data or {})
+            .get("endings", {})
+            .get("influence_dimensions", {})
+            .get("pause_advance_when") or ""
+        ).strip()
+        if not _pause_dim or not bool(state.get("influence_dimensions", {}).get(_pause_dim)):
             runtime_changes = self._merge_runtime_changes(runtime_changes, self._advance_preset_tasks(state))
             runtime_changes = self._advance_butler_chase(state)
             self._evaluate_butler_exposure(state)
@@ -2666,7 +2692,13 @@ class SessionManager:
             "world_changes": rhythm_result.get("world_changes", {})
         })
         runtime_changes = {}
-        if not bool(state.get("influence_dimensions", {}).get("butler_gaze")):
+        _pause_dim = str(
+            (state.get("module_data") or self.default_module_data or {})
+            .get("endings", {})
+            .get("influence_dimensions", {})
+            .get("pause_advance_when") or ""
+        ).strip()
+        if not _pause_dim or not bool(state.get("influence_dimensions", {}).get(_pause_dim)):
             runtime_changes = self._merge_runtime_changes(runtime_changes, self._advance_preset_tasks(state))
             runtime_changes = self._merge_runtime_changes(runtime_changes, self._advance_companion_tasks(state))
             runtime_changes = self._merge_runtime_changes(runtime_changes, self._advance_butler_chase(state))

@@ -865,11 +865,12 @@
                                                  "pause_advance_when":  "butler_gaze",
                                                  "dimensions":  {
                                                                     "escape_success":  {
+                                                                                           "default":  false,
                                                                                            "description":  "是否成功逃离中间带",
-                                                                                           "affects":  "是否回到现实世界",
-                                                                                           "sets_escape_success":  true
+                                                                                           "affects":  "是否回到现实世界"
                                                                                        },
                                                                     "ritual_destroyed":  {
+                                                                                             "default":  false,
                                                                                              "description":  "是否完全破坏了仪式",
                                                                                              "affects":  "神话生物是否永久失去兴趣，房子是否恢复正常",
                                                                                              "equivalent_flags":  ["ritual_destroyed", "仪式已破坏", "carpet_burned", "符咒地毯已焚毁"],
@@ -877,20 +878,30 @@
                                                                                              "equivalent_inventory":  ["已破坏仪式"]
                                                                                          },
                                                                     "npc_together":  {
+                                                                                         "default":  false,
                                                                                          "description":  "艾米莉的态度",
                                                                                          "affects":  "艾米莉的命运（由于艾米莉来自过去，回到现实后的玩家联系到艾米莉，会发现她已经老了（主角的时代对她来说是50年后），而且她找了主角很久，也没能找到有这么个人，直到主角如今找上她）"
                                                                                      },
                                                                     "truth_revealed":  {
+                                                                                           "default":  false,
                                                                                            "description":  "玩家是否理解了中间带的完整真相",
                                                                                            "affects":  "玩家对这段经历的理解和心理状态"
                                                                                        },
                                                                     "san_remaining":  {
+                                                                                          "default":  65,
                                                                                           "description":  "逃离时的理智值(0-65)",
                                                                                           "affects":  "玩家的心理创伤程度"
                                                                                       },
                                                                     "rounds_used":  {
+                                                                                        "default":  0,
                                                                                         "description":  "使用了多少轮次",
                                                                                         "affects":  "在中间带停留的时间对心理的影响"
+                                                                                    },
+                                                                    "butler_gaze":  {
+                                                                                        "default":  false,
+                                                                                        "description":  "是否与管家对视",
+                                                                                        "affects":  "疯狂结局子类型",
+                                                                                        "equivalent_flags":  ["butler_gaze"]
                                                                                     }
                                                                 }
                                              },

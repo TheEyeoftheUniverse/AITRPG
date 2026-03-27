@@ -599,19 +599,17 @@ class AITRPGPlugin(Star):
         if not isinstance(available, dict) or not available:
             return None
 
-        if any(keyword in text for keyword in ["门缝", "偷看门外", "从门缝看", "看门缝", "贴近门缝", "窥视门外"]):
-            peek_map = {
-                "master_bedroom": "master_bedroom_peek",
-                "guest_bedroom": "guest_bedroom_peek",
-                "study": "study_peek",
-            }
-            target = peek_map.get(current_location)
-            if target and target in available:
-                return target
-
-        if any(keyword in text for keyword in ["自尽", "自杀", "用刀自杀", "用刀自尽", "拿刀割喉", "了结自己"]):
-            if "kitchen_suicide" in available:
-                return "kitchen_suicide"
+        module_data = state.get("module_data") or {}
+        micro_scenes_cfg = module_data.get("micro_scenes") or {}
+        for scene_id, scene_cfg in available.items():
+            if not isinstance(scene_cfg, dict):
+                continue
+            keywords = scene_cfg.get("trigger_keywords") or micro_scenes_cfg.get(scene_id, {}).get("trigger_keywords") or []
+            if not any(kw in text for kw in keywords):
+                continue
+            parent = scene_cfg.get("parent_location") or micro_scenes_cfg.get(scene_id, {}).get("parent_location")
+            if not parent or current_location == parent:
+                return scene_id
 
         return None
 
