@@ -418,6 +418,20 @@ class RuleAI:
                 "- 对话应体现隔墙/门后的物理隔断感\n"
                 "- 这些NPC仍然可以作为对话目标（target_kind=npc），feasibility应为ok\n"
             )
+        # 可用预设任务及触发描述
+        preset_tasks = module_data.get("preset_tasks", {}) if isinstance(module_data, dict) else {}
+        if isinstance(preset_tasks, dict) and preset_tasks:
+            available_tasks = {
+                tid: str(tcfg.get("trigger_description") or "")
+                for tid, tcfg in preset_tasks.items()
+                if isinstance(tcfg, dict) and str(tcfg.get("trigger_description") or "").strip()
+            }
+            if available_tasks:
+                prompt += (
+                    "\n# 可用预设任务\n"
+                    "以下预设任务可由玩家发起（preset_task_request），括号内为触发条件描述：\n"
+                    + "".join(f"- {tid}：{desc}\n" for tid, desc in available_tasks.items())
+                )
         return prompt
 
     def _normalize_action_plan(
@@ -780,22 +794,7 @@ class RuleAI:
             if value:
                 normalized[key] = value
 
-        text = str(player_input or "").strip()
-        lowered = text.lower()
-        if not normalized["task_id"]:
-            requests_solo_search = (
-                any(keyword in text for keyword in ["你去调查", "你去查", "去查全屋", "独立调查", "你去搜"])
-                and any(keyword in text for keyword in ["我来引开", "我来吸引", "我拖住", "我来拖住", "我引开管家", "我吸引管家"])
-            )
-            requests_cooperative_escape = any(
-                keyword in text for keyword in ["配合逃脱", "一起引开", "你先去二楼走廊", "先把管家引到二楼", "我们分工引开"]
-            ) or any(keyword in lowered for keyword in ["cooperative escape", "handoff chase", "draw the butler upstairs"])
-            if requests_solo_search and "solo_search_escape" in preset_tasks:
-                normalized["task_id"] = "solo_search_escape"
-                normalized["reason"] = normalized["reason"] or "玩家请求由自己吸引管家、由NPC独立调查全屋"
-            elif requests_cooperative_escape and "cooperative_escape" in preset_tasks:
-                normalized["task_id"] = "cooperative_escape"
-                normalized["reason"] = normalized["reason"] or "玩家请求与NPC分工配合吸引管家并准备逃脱"
+        # 硬编码关键词匹配已移除，preset_task_request.task_id 完全由规则AI输出
 
         if normalized["task_id"]:
             task_cfg = preset_tasks.get(normalized["task_id"], {}) if isinstance(preset_tasks.get(normalized["task_id"]), dict) else {}

@@ -452,8 +452,10 @@ class AITRPGPlugin(Star):
             threat_present = bool(target_loc.get("threat_present"))
             non_follow_npc_present = self.session_manager.has_non_follow_present_npc(session_id, move_to)
             follow_arrival_reaction_context = self.session_manager.get_follow_arrival_reaction_context(session_id, move_to)
+            active_task_note = self.session_manager.get_active_preset_task_note(session_id)
+            effective_movement_note = move_movement_note or active_task_note or None
 
-            if threat_present or non_follow_npc_present or chase_active or follow_arrival_reaction_context:
+            if threat_present or non_follow_npc_present or chase_active or follow_arrival_reaction_context or effective_movement_note:
                 if follow_arrival_reaction_context:
                     self.session_manager.mark_follow_arrival_reactions_seen(
                         session_id,
@@ -470,7 +472,7 @@ class AITRPGPlugin(Star):
                     module_data=module_data,
                     history=history,
                     move_check_result=move_check_result,
-                    movement_note=move_movement_note,
+                    movement_note=effective_movement_note,
                     non_follow_npc_present=non_follow_npc_present,
                     follow_arrival_reaction_context=follow_arrival_reaction_context,
                 )
@@ -877,7 +879,12 @@ class AITRPGPlugin(Star):
                 rhythm_result["world_changes"] = merged_changes
 
                 # 更新游戏状态
-                self.session_manager.update_state(session_id, rhythm_result)
+                runtime_changes = self.session_manager.update_state(session_id, rhythm_result) or {}
+                if runtime_changes:
+                    active_note = str(runtime_changes.get("movement_note") or "").strip()
+                    if active_note and not rhythm_result.get("hint"):
+                        rhythm_result["hint"] = active_note
+                    rhythm_result["world_changes"] = self._merge_world_changes(rhythm_result["world_changes"], runtime_changes)
                 state = self.session_manager.get_session(session_id)
                 self._refresh_rhythm_runtime_context(
                     session_id,
@@ -1268,6 +1275,10 @@ class AITRPGPlugin(Star):
                 session_id,
                 "player_entered_living_room",
             )
+
+        active_task_note = self.session_manager.get_active_preset_task_note(session_id)
+        if active_task_note and not movement_note:
+            movement_note = active_task_note
 
         butler_chase = self.session_manager.get_butler_chase_context(session_id)
         chase_active = bool((butler_chase or {}).get("active"))

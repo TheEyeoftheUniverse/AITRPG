@@ -1138,6 +1138,11 @@ class SessionManager:
         if actor_location and current_location != actor_location:
             return {"success": False, "message": f"{npc_name} 当前不在可执行该任务的位置"}
 
+        player_location_req = str(requirements.get("player_location") or "").strip()
+        player_current = str(state.get("current_location") or "").strip()
+        if player_location_req and player_current != player_location_req:
+            return {"success": False, "message": f"玩家当前不在可执行该任务的位置（需要在 {player_location_req}）"}
+
         kind = str(task_cfg.get("kind") or "").strip()
         started_round = int(state.get("round_count", 0) or 0)
         preset_task: Dict[str, Any]
@@ -1161,6 +1166,68 @@ class SessionManager:
                 "staging_location": str(task_cfg.get("staging_location") or "").strip(),
                 "return_to": str(failure_cfg.get("return_to") or current_location).strip() or current_location,
                 "started_round": started_round,
+            }
+        elif kind == "decoy":
+            staging_location = str(task_cfg.get("staging_location") or "").strip()
+            # NPC 瞬移到 staging_location
+            if staging_location:
+                npc_state["location"] = staging_location
+            npc_state["companion_mode"] = "wait"
+            npc_state["companion_state"] = "wait"
+            npc_state["companion_task"] = {}
+            npc_state["preset_task"] = {}
+            # 管家 target 转为 NPC
+            primary_pursuer = self._get_primary_pursuer_name_from_state(state)
+            decoy_changes: Dict[str, Any] = {}
+            if primary_pursuer:
+                pursuer_state = self._get_butler_runtime_state(state)
+                chase_state = pursuer_state.setdefault("chase_state", self._build_default_butler_chase_state())
+                chase_state["active"] = True
+                chase_state["status"] = "alerted"
+                chase_state["target"] = npc_name
+                chase_state["activation_round"] = None
+                chase_state["same_location_rounds"] = 0
+                chase_state["blocked_at"] = None
+                chase_state["last_target_location"] = staging_location or str(pursuer_state.get("location") or "").strip()
+                if staging_location:
+                    pursuer_state["location"] = staging_location
+                decoy_changes = self._merge_runtime_changes(decoy_changes, {
+                    "npc_updates": {
+                        primary_pursuer: {
+                            "location": staging_location,
+                            "chase_state": copy.deepcopy(chase_state),
+                        }
+                    }
+                })
+            # set_flags
+            on_complete_cfg = task_cfg.get("on_complete", {}) if isinstance(task_cfg.get("on_complete"), dict) else {}
+            set_flags = on_complete_cfg.get("set_flags", {}) if isinstance(on_complete_cfg.get("set_flags"), dict) else {}
+            if set_flags:
+                state.setdefault("world_state", {}).setdefault("flags", {}).update(copy.deepcopy(set_flags))
+                decoy_changes = self._merge_runtime_changes(decoy_changes, {"flags": copy.deepcopy(set_flags)})
+            _note = str(task_cfg.get("on_start_note") or "").strip()
+            if _note:
+                decoy_changes["movement_note"] = _note
+            decoy_changes = self._merge_runtime_changes(decoy_changes, {
+                "npc_updates": {
+                    npc_name: {
+                        "location": npc_state.get("location", ""),
+                        "companion_mode": "wait",
+                        "companion_state": "wait",
+                        "companion_task": {},
+                        "preset_task": {},
+                    }
+                }
+            })
+            self._append_preset_task_history(
+                npc_state,
+                {"round": started_round, "task_id": task_id, "event": "started_and_completed"},
+            )
+            return {
+                "success": True,
+                "task_id": task_id,
+                "preset_task": {},
+                "changes": decoy_changes,
             }
         else:
             return {"success": False, "message": "当前预设任务类型尚未实现"}
@@ -1218,11 +1285,17 @@ class SessionManager:
                 if phase == "scheduled":
                     preset_task["phase"] = "offstage"
                     npc_runtime["location"] = ""
+                    _note = str(task_cfg.get("on_start_note") or "").strip()
+                    if _note:
+                        changes["movement_note"] = _note
 
                 rounds_left = max(0, int(preset_task.get("rounds_left", 0) or 0) - 1)
                 preset_task["rounds_left"] = rounds_left
 
                 if rounds_left > 0:
+                    _note = str(task_cfg.get("in_progress_note") or "").strip()
+                    if _note and "movement_note" not in changes:
+                        changes["movement_note"] = _note
                     changes = self._merge_runtime_changes(
                         changes,
                         {
@@ -1243,6 +1316,9 @@ class SessionManager:
                 on_complete = task_cfg.get("on_complete", {}) if isinstance(task_cfg.get("on_complete"), dict) else {}
                 set_flags = on_complete.get("set_flags", {}) if isinstance(on_complete.get("set_flags"), dict) else {}
                 flags.update(copy.deepcopy(set_flags))
+                _note = str(task_cfg.get("on_complete_note") or "").strip()
+                if _note:
+                    changes["movement_note"] = _note
                 npc_runtime["preset_task"] = {}
                 self._append_preset_task_history(
                     npc_runtime,
@@ -1274,6 +1350,9 @@ class SessionManager:
                 if staging_location:
                     npc_runtime["location"] = staging_location
                 preset_task["phase"] = "await_handoff"
+                _note = str(task_cfg.get("on_start_note") or "").strip()
+                if _note:
+                    changes["movement_note"] = _note
                 changes = self._merge_runtime_changes(
                     changes,
                     {
@@ -1393,6 +1472,9 @@ class SessionManager:
                 )
 
             self._sync_single_npc_runtime_state(npc_runtime, module_entities.get(npc_name, {}))
+            _note = str(success_cfg.get("movement_note") or "").strip()
+            if _note:
+                changes["movement_note"] = _note
             changes = self._merge_runtime_changes(
                 changes,
                 {
@@ -1422,6 +1504,9 @@ class SessionManager:
             npc_runtime["preset_task"] = {}
             set_flags = failure_cfg.get("set_flags", {}) if isinstance(failure_cfg.get("set_flags"), dict) else {}
             state.setdefault("world_state", {}).setdefault("flags", {}).update(copy.deepcopy(set_flags))
+            _note = str(failure_cfg.get("movement_note") or "").strip()
+            if _note:
+                changes["movement_note"] = _note
             self._append_preset_task_history(
                 npc_runtime,
                 {
@@ -2507,6 +2592,29 @@ class SessionManager:
         """检查会话是否存在"""
         return session_id in self.sessions
 
+    def get_active_preset_task_note(self, session_id: str) -> str:
+        """若有进行中的 preset_task，返回其当前阶段对应的 movement_note，否则返回空串。"""
+        state = self.sessions.get(session_id) or {}
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        module_data = state.get("module_data") or self.default_module_data or {}
+        preset_tasks_cfg = module_data.get("preset_tasks", {})
+        for npc_state in npc_states.values():
+            if not isinstance(npc_state, dict):
+                continue
+            pt = npc_state.get("preset_task", {})
+            if not isinstance(pt, dict) or not pt.get("task_id"):
+                continue
+            if str(pt.get("status") or "").strip() != "running":
+                continue
+            task_id = str(pt.get("task_id") or "").strip()
+            phase = str(pt.get("phase") or "").strip()
+            task_cfg = preset_tasks_cfg.get(task_id, {}) if isinstance(preset_tasks_cfg.get(task_id), dict) else {}
+            if phase == "offstage":
+                return str(task_cfg.get("in_progress_note") or "").strip()
+            if phase == "await_handoff":
+                return str(task_cfg.get("await_handoff_note") or task_cfg.get("on_start_note") or "").strip()
+        return ""
+
     def get_session(self, session_id: str) -> Dict[str, Any]:
         """获取会话状态"""
         return self.sessions.get(session_id)
@@ -3050,10 +3158,11 @@ class SessionManager:
         cooperative_npc_name, cooperative_npc_state = self._find_awaiting_cooperative_handoff(state)
         if cooperative_npc_name and isinstance(cooperative_npc_state, dict):
             cooperative_location = str(cooperative_npc_state.get("location") or "").strip()
-            if target_key == cooperative_location:
-                self._resolve_preset_task_branch_state(state, cooperative_npc_name, "player_handoff_success")
-            else:
-                self._resolve_preset_task_branch_state(state, cooperative_npc_name, "player_abandoned")
+            branch = "player_handoff_success" if target_key == cooperative_location else "player_abandoned"
+            branch_changes = self._resolve_preset_task_branch_state(state, cooperative_npc_name, branch)
+            _task_note = str(branch_changes.get("movement_note") or "").strip()
+            if _task_note:
+                movement_note = f"{_task_note} {movement_note}".strip() if movement_note else _task_note
 
         if self.is_butler_active(session_id):
             butler_state = self._get_butler_runtime_state(state)
