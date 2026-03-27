@@ -36,7 +36,6 @@ const WORKFLOW_LABELS = {
     attitude: "态度",
     response_strategy: "回应策略",
     next_line_goal: "下一句目标",
-    revealable_info: "可透露信息",
     should_open_door: "是否开门",
     atmosphere_guide: "氛围指引",
     runtime_state: "运行状态",

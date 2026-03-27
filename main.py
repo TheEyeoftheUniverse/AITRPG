@@ -1029,7 +1029,6 @@ class AITRPGPlugin(Star):
             )
             self._finish_progress_step(session_id, "narrative", self.narrative_ai.pop_call_metric(narrative_trace_id), "叙述生成完成")
             logger.info(f"[AITRPG] 文案生成完成")
-            self._record_revealed_info(session_id, rhythm_result, narrative_result)
             cache["narrative_result"] = narrative_result
             cache["retry_from_hint"] = None
 
@@ -1897,49 +1896,6 @@ class AITRPGPlugin(Star):
                     if r not in applied_list:
                         applied_list.append(r)
 
-    def _record_revealed_info(self, session_id: str, rhythm_result: dict, narrative_result: dict):
-        npc_guide = rhythm_result.get("npc_action_guide", {}) if isinstance(rhythm_result, dict) else {}
-        if not isinstance(npc_guide, dict):
-            return
-
-        focus_npc = str(npc_guide.get("focus_npc") or "").strip()
-        if not focus_npc:
-            return
-
-        allowed_reveals = npc_guide.get("allowed_reveals", [])
-        if not isinstance(allowed_reveals, list) or not allowed_reveals:
-            return
-
-        narrative_text = str((narrative_result or {}).get("narrative") or "").strip()
-        disclosed = []
-        for item in allowed_reveals:
-            if not isinstance(item, dict):
-                continue
-            key = str(item.get("key") or "").strip()
-            text = str(item.get("text") or "").strip()
-            if not key:
-                continue
-            if len(allowed_reveals) == 1:
-                disclosed.append({"key": key, "text": text})
-                continue
-            if text and text in narrative_text:
-                disclosed.append({"key": key, "text": text})
-
-        if not disclosed:
-            first = allowed_reveals[0]
-            if isinstance(first, dict):
-                key = str(first.get("key") or "").strip()
-                text = str(first.get("text") or "").strip()
-                if key:
-                    disclosed.append({"key": key, "text": text})
-
-        if not disclosed:
-            return
-
-        state = self.session_manager.get_session(session_id) or {}
-        round_no = int(state.get("round_count", 0) or 0)
-        self.session_manager.record_npc_revealed_info(session_id, focus_npc, disclosed, round_no=round_no)
-
     def _apply_soft_state_updates(self, rhythm_result: dict, merged_changes: dict, game_state: dict = None):
         npc_guide = rhythm_result.get("npc_action_guide", {})
         if not isinstance(npc_guide, dict):
@@ -2039,15 +1995,6 @@ class AITRPGPlugin(Star):
             npc_action_guide = {}
             adjusted["npc_action_guide"] = npc_action_guide
 
-        allowed_reveals = npc_action_guide.get("allowed_reveals", [])
-        if not isinstance(allowed_reveals, list):
-            allowed_reveals = []
-        if not any(isinstance(item, dict) and str(item.get("key") or "").strip() == clue for item in allowed_reveals):
-            allowed_reveals.append({
-                "key": clue or "调查报告",
-                "text": report_text,
-            })
-
         must_acknowledge = npc_action_guide.get("must_acknowledge", [])
         if not isinstance(must_acknowledge, list):
             must_acknowledge = []
@@ -2055,15 +2002,14 @@ class AITRPGPlugin(Star):
             must_acknowledge.insert(0, "先向玩家完整交付调查报告")
 
         npc_action_guide["focus_npc"] = npc_name
-        npc_action_guide["dialogue_act"] = "reveal"
-        npc_action_guide["response_strategy"] = "本轮必须由该NPC先完整交付调查报告，再简短说明这是她独立调查后确认出的出口信息。"
+        npc_action_guide["dialogue_act"] = "propose_plan"
+        npc_action_guide["response_strategy"] = (
+            "本轮必须先完整交付调查报告，再简短说明这是她独立调查后确认出的出口信息。"
+            f" 调查报告内容如下：{report_text}"
+        )
         npc_action_guide["next_line_goal"] = "完整交付调查报告并指出新的脱离路线"
         npc_action_guide["must_acknowledge"] = must_acknowledge[:3]
-        npc_action_guide["allowed_reveals"] = allowed_reveals[:3]
-        npc_action_guide["knowledge_boundary"] = (
-            str(npc_action_guide.get("knowledge_boundary") or "").strip()
-            + " 本轮允许直接说出调查报告全文，不能只做模糊暗示。"
-        ).strip()
+        npc_action_guide["knowledge_boundary"] = "本轮应按调查报告与当前记忆回应，不要编造报告之外的新情报。"
         adjusted["pending_npc_report"] = copy.deepcopy(report_payload)
         return adjusted
 

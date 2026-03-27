@@ -190,7 +190,6 @@
 | `dialogue` | object\|null | 对话系统配置；为 `null` 时表示不能正常说话 |
 | `trust` | object\|null | 信任系统配置 |
 | `memory` | object\|null | 记忆系统配置 |
-| `reveal` | object\|null | 情报揭示配置 |
 | `soft_state` | object\|null | 互动基调配置 |
 | `companion` | object\|null | 同伴系统配置 |
 
@@ -216,17 +215,6 @@
 | --- | --- | --- |
 | `long_term` | object | 长期记忆 |
 | `runtime_defaults` | object | 运行期记忆默认值 |
-
-### reveal
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `items` | object | 可揭示信息表 |
-
-`items.<info_key>` 常见子字段：
-
-- `text`
-- `min_trust`
 
 ### soft_state
 
@@ -259,7 +247,6 @@
 | `behavior` | object | 行为配置 |
 | `current_state` | string | 当前状态 |
 | `memory` | null | 一般威胁实体不使用普通记忆系统 |
-| `reveal` | null | 一般威胁实体不使用普通 reveal |
 | `soft_state` | null | 通常不走普通软状态 |
 | `companion` | object\|null | 如果需要特殊移动控制可配置 |
 | `is_primary_pursuer` | bool | 是否作为主追逐实体 |

@@ -16,7 +16,6 @@ DEFAULT_RUNTIME_MEMORY_TEMPLATE: Dict[str, Any] = {
     "overheard_remote_dialogue": [],
     "emergency_context": {},
     "interaction_history": [],
-    "revealed_info": [],
     "triggered_events": [],
 }
 
@@ -114,19 +113,6 @@ def get_entity_trust_threshold(entity_data: dict = None, default: float = 0.5) -
         return float(raw_value or default)
     except (TypeError, ValueError):
         return float(default)
-
-
-def get_entity_reveal_text_map(entity_data: dict = None) -> Dict[str, str]:
-    entity_data = entity_data if isinstance(entity_data, dict) else {}
-    reveal_cfg = entity_data.get("reveal", {})
-    reveal_items = reveal_cfg.get("items", {}) if isinstance(reveal_cfg, dict) else {}
-    if isinstance(reveal_items, dict):
-        return {
-            key: str(item.get("text") or "").strip()
-            for key, item in reveal_items.items()
-            if isinstance(item, dict) and str(item.get("text") or "").strip()
-        }
-    return {}
 
 
 def get_entity_profile_text(entity_data: dict = None, key: str = "") -> str:
@@ -304,20 +290,6 @@ def _normalize_memory_module(entity_data: dict, is_threat: bool, can_speak: bool
     }
 
 
-def _normalize_reveal_module(entity_data: dict, trust_module: dict | None, can_speak: bool) -> dict | None:
-    explicit = _normalize_nullish_module(entity_data.get("reveal", "__missing__"))
-    if explicit != "__missing__":
-        if explicit is None:
-            return None
-        if isinstance(explicit, dict):
-            normalized = copy.deepcopy(explicit)
-            normalized["items"] = copy.deepcopy(explicit.get("items", {})) if isinstance(explicit.get("items"), dict) else {}
-            return normalized
-        return None
-
-    return None
-
-
 def _normalize_soft_state_module(entity_data: dict, can_speak: bool) -> dict | None:
     explicit = _normalize_nullish_module(entity_data.get("soft_state", "__missing__"))
     if explicit != "__missing__":
@@ -379,13 +351,10 @@ def _normalize_entity_record(entity_name: str, entity_data: dict, is_threat: boo
         "dialogue": normalized.get("dialogue", "__missing__"),
     })
     trust_module = _normalize_trust_module(normalized, can_speak)
-    reveal_module = _normalize_reveal_module(normalized, trust_module, can_speak)
-
     normalized["position"] = _normalize_position_module(normalized)
     normalized["dialogue"] = _normalize_dialogue_module(entity_name, normalized, is_threat)
     normalized["trust"] = trust_module
     normalized["memory"] = _normalize_memory_module(normalized, is_threat, can_speak)
-    normalized["reveal"] = reveal_module
     normalized["soft_state"] = _normalize_soft_state_module(normalized, can_speak)
     normalized["companion"] = _normalize_companion_module(normalized, trust_module, is_threat)
 

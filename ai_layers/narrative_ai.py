@@ -341,15 +341,13 @@ class NarrativeAI:
             "- Respond to the player's current words, not only to the room description.\n"
             "- Treat the recent dialogue transcript as the authoritative short-term memory for what was just asked and answered.\n"
             "- Treat dialogue_memory as already established facts for this conversation unless the player explicitly changes their statement.\n"
-            "- When npc_dialogue_contract exists, it is the highest-priority authority for what the NPC knows, how the NPC speaks, and what the NPC may reveal this turn.\n"
-            "- Treat npc_action_guide and npc_dialogue_contract as stronger than recent_dialogue if they conflict on reveal limits or NPC intent.\n"
+            "- When npc_dialogue_contract exists, it is the highest-priority authority for what the NPC knows and how the NPC speaks this turn.\n"
+            "- Treat npc_action_guide and npc_dialogue_contract as stronger than recent_dialogue if they conflict on NPC intent or tone.\n"
             "- If the player already answered a question in the recent dialogue transcript, continue from that answer instead of asking the exact same question again.\n"
             "- If the latest player_input is an answer to the NPC's previous question, acknowledge that answer and ask a different follow-up or provide a new reaction.\n"
             "- If npc_action_guide exists, use it to decide how the NPC replies this turn.\n"
             "- Directly react to npc_dialogue_contract.dialogue_plan.must_acknowledge before changing topic.\n"
             "- Shape the reply according to npc_dialogue_contract.dialogue_plan.dialogue_act.\n"
-            "- If npc_dialogue_contract.allowed_reveals is non-empty, only those approved texts may be stated directly as NPC knowledge this turn.\n"
-            "- Never reveal items listed in npc_dialogue_contract.forbidden_reveals, even if they appear elsewhere in npc_context.\n"
             "- Do not invent new NPC secrets, plans, deductions, or certainty beyond npc_dialogue_contract.knowledge_boundary.\n"
             "- When the player is clearly talking to an NPC, move the dialogue forward instead of restating the same atmosphere.\n"
             "- Only mention a cross-wall NPC when npc_context explicitly contains that NPC for this turn.\n"
@@ -474,12 +472,10 @@ class NarrativeAI:
             "Keep the response concise and directly answer the player's latest words.\n"
             "Treat recent_dialogue as the authoritative short-term memory.\n"
             "Treat dialogue_memory as already established facts.\n"
-            "When npc_dialogue_contract exists, it is the highest-priority authority for NPC intent, tone, and reveal limits.\n"
+            "When npc_dialogue_contract exists, it is the highest-priority authority for NPC intent and tone.\n"
             "Do not ask the exact same question again if the player already answered it in recent_dialogue.\n"
             "React to npc_dialogue_contract.dialogue_plan.must_acknowledge before changing topic.\n"
             "Follow npc_dialogue_contract.dialogue_plan.dialogue_act.\n"
-            "If npc_dialogue_contract.allowed_reveals is non-empty, only those approved texts may be stated directly.\n"
-            "Never reveal npc_dialogue_contract.forbidden_reveals.\n"
             "Do not invent NPC secrets or certainty beyond npc_dialogue_contract.knowledge_boundary.\n"
             "If creative_additions is present, naturally weave the non-null entries into the narrative.\n"
             "If continuity_flag is present, treat it as the canonical explanation for the improvised details.\n\n"
@@ -740,7 +736,6 @@ class NarrativeAI:
                 "trust_level": runtime_state.get("trust_level"),
                 "soft_state": runtime_state.get("soft_state", {}),
                 "enabled_systems": list(data.get("enabled_systems", []) or []) if isinstance(data, dict) else [],
-                "reveal_state": data.get("reveal_state", {}) if isinstance(data, dict) else {},
                 "memory": self._compact_npc_memory(npc_memory),
             }
         return compact
@@ -775,7 +770,6 @@ class NarrativeAI:
                 "cross_wall_heard_only": bool(npc_action_guide.get("cross_wall_heard_only")),
             },
             "enabled_systems": list(npc_data.get("enabled_systems", []) or []),
-            "reveal_state": npc_data.get("reveal_state", {}) if isinstance(npc_data.get("reveal_state"), dict) else {},
             "memory": self._compact_npc_memory(npc_memory),
             "dialogue_plan": {
                 "dialogue_act": str(npc_action_guide.get("dialogue_act") or "").strip(),
@@ -784,8 +778,6 @@ class NarrativeAI:
                 "must_acknowledge": self._sanitize_string_list(npc_action_guide.get("must_acknowledge"), limit=3),
                 "should_open_door": bool(npc_action_guide.get("should_open_door")),
             },
-            "allowed_reveals": self._sanitize_allowed_reveals(npc_action_guide.get("allowed_reveals"), limit=3),
-            "forbidden_reveals": self._sanitize_string_list(npc_action_guide.get("forbidden_reveals"), limit=6),
             "knowledge_boundary": self._trim_text(npc_action_guide.get("knowledge_boundary", ""), 180),
         }
 
@@ -944,29 +936,6 @@ class NarrativeAI:
             if len(compact) >= limit:
                 break
         return compact
-
-    def _sanitize_allowed_reveals(self, items, limit: int = 3) -> list:
-        if not isinstance(items, list):
-            return []
-
-        sanitized = []
-        seen = set()
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            key = str(item.get("key") or "").strip()
-            text = str(item.get("text") or "").strip()
-            marker = (key, text)
-            if not key or not text or marker in seen:
-                continue
-            sanitized.append({
-                "key": key,
-                "text": self._trim_text(text, 140),
-            })
-            seen.add(marker)
-            if len(sanitized) >= limit:
-                break
-        return sanitized
 
     def _sanitize_string_list(self, values, limit: int) -> list:
         if not isinstance(values, list):

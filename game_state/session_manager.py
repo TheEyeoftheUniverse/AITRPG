@@ -3245,50 +3245,6 @@ class SessionManager:
         module_data = self.get_module_data(session_id)
         return build_runtime_location_context(state, module_data, location_key)
 
-    def record_npc_revealed_info(self, session_id: str, npc_name: str, reveals: List[Dict[str, Any]], round_no: int = None):
-        state = self.sessions.get(session_id)
-        if not state or not npc_name:
-            return
-
-        npc_states = state.get("world_state", {}).get("npcs", {})
-        npc_state = npc_states.get(npc_name)
-        if not isinstance(npc_state, dict):
-            return
-
-        module_entities = get_module_all_entities(self.get_module_data(session_id))
-        npc_state.setdefault("memory", self._build_initial_npc_memory((module_entities.get(npc_name) or {}).get("memory")))
-        memory = npc_state.get("memory", {})
-        if not isinstance(memory, dict):
-            return
-
-        revealed_info = memory.setdefault("revealed_info", [])
-        if not isinstance(revealed_info, list):
-            revealed_info = []
-            memory["revealed_info"] = revealed_info
-
-        existing_keys = set()
-        for item in revealed_info:
-            if isinstance(item, dict):
-                key = str(item.get("key") or "").strip()
-            else:
-                key = str(item or "").strip()
-            if key:
-                existing_keys.add(key)
-
-        source_round = int(round_no if round_no is not None else state.get("round_count", 0) or 0)
-        for item in reveals or []:
-            if not isinstance(item, dict):
-                continue
-            key = str(item.get("key") or "").strip()
-            text = str(item.get("text") or "").strip()
-            if not key or key in existing_keys:
-                continue
-            entry = {"key": key, "round": source_round}
-            if text:
-                entry["text"] = text
-            revealed_info.append(entry)
-            existing_keys.add(key)
-
     def _serialize_value(self, value):
         """递归序列化会话状态中的 deque 等对象"""
         if isinstance(value, deque):

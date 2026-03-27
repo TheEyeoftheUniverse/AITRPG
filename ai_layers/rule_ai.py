@@ -1057,7 +1057,7 @@ class RuleAI:
             merged_npc.setdefault("name", npc_name)
             merged_npc["enabled_systems"] = [
                 system_name
-                for system_name in ("position", "dialogue", "trust", "memory", "reveal", "soft_state", "companion")
+                for system_name in ("position", "dialogue", "trust", "memory", "soft_state", "companion")
                 if merged_npc.get(system_name) is not None
             ]
             merged_npc["runtime_state"] = {
@@ -1089,7 +1089,7 @@ class RuleAI:
             merged_npc.setdefault("name", npc_name)
             merged_npc["enabled_systems"] = [
                 system_name
-                for system_name in ("position", "dialogue", "trust", "memory", "reveal", "soft_state", "companion")
+                for system_name in ("position", "dialogue", "trust", "memory", "soft_state", "companion")
                 if merged_npc.get(system_name) is not None
             ]
             merged_npc["runtime_state"] = {
@@ -1135,7 +1135,7 @@ class RuleAI:
             merged_entity.setdefault("name", entity_name)
             merged_entity["enabled_systems"] = [
                 system_name
-                for system_name in ("position", "dialogue", "trust", "memory", "reveal", "soft_state", "companion")
+                for system_name in ("position", "dialogue", "trust", "memory", "soft_state", "companion")
                 if merged_entity.get(system_name) is not None
             ]
             merged_entity["runtime_state"] = {
@@ -1161,7 +1161,6 @@ class RuleAI:
             runtime_state = npc_data.get("runtime_state", {}) if isinstance(npc_data.get("runtime_state"), dict) else {}
             companion_task = runtime_state.get("companion_task", {}) if isinstance(runtime_state.get("companion_task"), dict) else {}
             memory = runtime_state.get("memory", {}) if isinstance(runtime_state.get("memory"), dict) else {}
-            reveal_state = npc_data.get("reveal_state", {}) if isinstance(npc_data.get("reveal_state"), dict) else {}
             compact[npc_name] = {
                 "name": npc_data.get("name", npc_name),
                 "enabled_systems": list(npc_data.get("enabled_systems", []) or []),
@@ -1174,7 +1173,6 @@ class RuleAI:
                 "first_appearance": self._trim_text(get_entity_first_appearance(npc_data), 100),
                 "trust_threshold": get_entity_trust_threshold(npc_data),
                 "available_trust_reasons": list(npc_data.get("available_trust_reasons", []) or [])[:20],
-                "reveal_state": reveal_state,
                 "runtime_state": {
                     "location": runtime_state.get("location"),
                     "attitude": runtime_state.get("attitude"),
