@@ -756,8 +756,6 @@ async function fetchAndRenderActionProgress() {
         applyPartialWorkflowResults(data.partial_results);
         if (progress.status === "error") {
             setRetryState(data.retry_from_hint, data.can_retry);
-        } else if (progress.status === "running" || progress.status === "completed") {
-            clearRetryState();
         }
         updateRetryButtonVisibility();
         if (progress && Object.keys(progress).length) {
