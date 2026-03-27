@@ -84,7 +84,6 @@ class RhythmAI:
 
     async def process(
         self,
-        intent: dict,
         player_input: str,
         rule_plan: dict,
         rule_result: dict,
@@ -113,7 +112,6 @@ class RhythmAI:
 
         prompt = self._build_prompt(
             prompt_template=prompt_template,
-            intent=intent,
             player_input=player_input,
             rule_plan=rule_plan,
             rule_result=rule_result,
@@ -158,7 +156,6 @@ class RhythmAI:
     def _build_prompt(
         self,
         prompt_template: str,
-        intent: dict,
         player_input: str,
         rule_plan: dict,
         rule_result: dict,
@@ -178,7 +175,6 @@ class RhythmAI:
         prompt = prompt.replace("{stages}", stages)
         prompt = prompt.replace("{history_summaries}", history_summaries)
         prompt = prompt.replace("{player_input}", player_input)
-        prompt = prompt.replace("{intent}", json.dumps(intent or {}, ensure_ascii=False))
         prompt = prompt.replace("{rule_plan}", json.dumps(rule_plan or {}, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{rule_result}", json.dumps(rule_result or {}, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{scene_context}", scene_context)

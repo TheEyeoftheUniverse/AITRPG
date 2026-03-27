@@ -26,7 +26,7 @@ class AITRPGPlugin(Star):
     NARRATIVE_FULL_TURNS = 10
     PROGRESS_STEPS = [
         ("rule_intent", "规则AI · 意图解析", True),
-        ("rule_adjudication", "规则AI · 动作裁定", True),
+        ("rule_adjudication", "规则AI · 裁定行为", True),
         ("rule_check", "规则层 · 执行判定", False),
         ("rhythm", "节奏AI · 节奏评估", True),
         ("narrative", "文案AI · 生成叙述", True),
@@ -500,13 +500,10 @@ class AITRPGPlugin(Star):
                 message="场景移动完成",
             ), None
 
-        # === 输入分类：对话 vs 行动 ===
-        is_dialogue = self.rule_ai.is_dialogue_input(player_input)
-
+        # 输入分类由规则AI负责，precheck 不再需要硬编码对话检测
         return None, {
             "move_check_result": move_check_result,
             "move_movement_note": move_movement_note,
-            "is_dialogue": is_dialogue,
             "state": state,
         }
 
@@ -573,7 +570,7 @@ class AITRPGPlugin(Star):
 
         if cache.get("rhythm_result") is not None:
             return "narrative"
-        if cache.get("rule_result") is not None or cache.get("rule_plan") is not None or cache.get("intent") is not None:
+        if cache.get("rule_result") is not None or cache.get("rule_plan") is not None:
             return "rhythm"
         if cache:
             return "rule"
@@ -652,13 +649,11 @@ class AITRPGPlugin(Star):
             # ===== 预检查阶段（重试时跳过） =====
             move_check_result = None
             move_movement_note = None
-            is_dialogue = False
             pending_npc_report = {}
 
             if retry_from:
                 move_check_result = cache.get("move_check_result")
                 move_movement_note = cache.get("move_movement_note")
-                is_dialogue = cache.get("is_dialogue", False)
                 pending_npc_report = cache.get("pending_npc_report", {})
             else:
                 early_result, precheck_ctx = await self._precheck_action(
@@ -667,7 +662,6 @@ class AITRPGPlugin(Star):
                     return early_result
                 move_check_result = precheck_ctx["move_check_result"]
                 move_movement_note = precheck_ctx.get("move_movement_note")
-                is_dialogue = precheck_ctx["is_dialogue"]
                 state = precheck_ctx["state"]
 
                 # 初始化重试缓存
@@ -677,7 +671,6 @@ class AITRPGPlugin(Star):
                     "history": history,
                     "move_check_result": move_check_result,
                     "move_movement_note": move_movement_note,
-                    "is_dialogue": is_dialogue,
                     "pending_npc_report": {},
                     "retry_from_hint": "rule",
                 }
@@ -686,40 +679,28 @@ class AITRPGPlugin(Star):
             # ===== 规则AI阶段 =====
             if retry_from in ("rhythm", "narrative"):
                 # 从缓存加载规则AI结果
-                intent = cache["intent"]
                 rule_plan = cache["rule_plan"]
                 rule_result = cache["rule_result"]
                 sancheck_result = cache.get("sancheck_result")
                 hard_changes = cache["hard_changes"]
                 self._replay_cached_steps(session_id, cache, ["rule_intent", "rule_adjudication", "rule_check"])
             else:
-                # === 第一步：规则AI - 意图解析 ===
-                if is_dialogue:
-                    # 硬编码：带引号 → 对话意图，跳过LLM意图解析
-                    logger.info("[AITRPG] 检测到引号，硬编码为对话意图")
-                    self._skip_progress_step(session_id, "rule_intent", "引号输入 → 对话（硬编码）")
-                    intent = {"intent": "talk", "target": None, "category": "对话"}
-                else:
-                    logger.info("[AITRPG] 调用规则AI进行意图解析...")
-                    self._start_progress_step(session_id, "rule_intent", "规则AI 正在解析意图")
-                    intent_trace_id = f"{session_id}:rule_intent"
-                    intent = await self.rule_ai.parse_intent(player_input, trace_id=intent_trace_id)
-                    self._finish_progress_step(session_id, "rule_intent", self.rule_ai.pop_call_metric(intent_trace_id), "意图解析完成")
-                logger.info(f"[AITRPG] 意图解析结果: {intent}")
-
-                # === 第二步：规则AI - 动作裁定与硬变化规划 ===
-                logger.info("[AITRPG] 调用规则AI进行动作裁定...")
-                self._start_progress_step(session_id, "rule_adjudication", "规则AI 正在裁定动作")
+                # === 规则AI - 裁定行为 ===
+                self._skip_progress_step(session_id, "rule_intent", "已合并到裁定步骤")
+                logger.info("[AITRPG] 调用规则AI进行行为裁定...")
+                self._start_progress_step(session_id, "rule_adjudication", "规则AI 正在裁定行为")
                 adjudication_trace_id = f"{session_id}:rule_adjudication"
                 rule_plan = await self.rule_ai.adjudicate_action(
                     player_input=player_input,
-                    intent=intent,
                     game_state=state,
                     module_data=module_data,
                     trace_id=adjudication_trace_id,
                 )
-                self._finish_progress_step(session_id, "rule_adjudication", self.rule_ai.pop_call_metric(adjudication_trace_id), "动作裁定完成")
-                rule_plan["input_classification"] = "dialogue" if is_dialogue else "action"
+                self._finish_progress_step(session_id, "rule_adjudication", self.rule_ai.pop_call_metric(adjudication_trace_id), "行为裁定完成")
+                # 如果规则AI没有输出 input_classification，根据 verb 补充
+                if not rule_plan.get("input_classification"):
+                    verb = str((rule_plan.get("normalized_action") or {}).get("verb") or "").lower()
+                    rule_plan["input_classification"] = "dialogue" if verb == "talk" else "action"
                 if move_to:
                     rule_plan["movement_context"] = {
                         "moved_this_turn": True,
@@ -830,14 +811,14 @@ class AITRPGPlugin(Star):
                 target_npc_for_dialogue = ""
                 if isinstance(normalized_action, dict) and normalized_action.get("target_kind") == "npc":
                     target_npc_for_dialogue = str(normalized_action.get("target_key") or "").strip()
-                if is_dialogue and target_npc_for_dialogue:
+                verb = str((normalized_action or {}).get("verb") or "").lower()
+                if (verb == "talk" or self.rule_ai.is_dialogue_input(player_input)) and target_npc_for_dialogue:
                     pending_npc_report = self.session_manager.deliver_pending_npc_reports(session_id, target_npc_for_dialogue)
                     if isinstance(pending_npc_report, dict) and pending_npc_report.get("delivered"):
                         logger.info(f"[AITRPG] 已交付NPC调查报告: {pending_npc_report}")
                         rule_plan["pending_npc_report"] = copy.deepcopy(pending_npc_report)
 
                 # 缓存规则AI结果（用于重试）
-                cache["intent"] = intent
                 cache["rule_plan"] = rule_plan
                 cache["rule_result"] = rule_result
                 cache["sancheck_result"] = sancheck_result
@@ -860,7 +841,6 @@ class AITRPGPlugin(Star):
                 preview_state = self._preview_state_with_world_changes(state, hard_changes)
                 rhythm_trace_id = f"{session_id}:rhythm"
                 rhythm_result = await self.rhythm_ai.process(
-                    intent=intent,
                     player_input=player_input,
                     rule_plan=rule_plan,
                     rule_result=rule_result,
@@ -1315,11 +1295,6 @@ class AITRPGPlugin(Star):
             rhythm_trace_id = f"{session_id}:rhythm"
             preview_state = self._preview_state_with_world_changes(state, activation_changes)
             rhythm_result = await self.rhythm_ai.process(
-                intent={
-                    "intent": "move",
-                    "target_kind": "location",
-                    "target_key": move_to,
-                },
                 player_input="",
                 rule_plan=rule_plan,
                 rule_result=rule_result,
@@ -1721,7 +1696,7 @@ class AITRPGPlugin(Star):
     ) -> dict:
         if not isinstance(rule_plan, dict) or not isinstance(game_state, dict):
             return {}
-        if str(rule_plan.get("input_classification") or "").strip().lower() != "dialogue":
+        if str((rule_plan.get("normalized_action") or {}).get("verb") or rule_plan.get("input_classification") or "").strip().lower() not in ("talk", "dialogue"):
             return {}
 
         current_location = str(game_state.get("current_location") or "").strip()

@@ -102,52 +102,9 @@ class RuleAI:
             text = text[:-3]
         return text.strip()
 
-    async def parse_intent(self, player_input: str, trace_id: str = None) -> dict:
-        provider_candidates = self._get_provider_candidates()
-        if not provider_candidates:
-            logger.error("[RuleAI] No provider available for parse_intent")
-            raise RuntimeError("规则AI意图解析失败：未找到可用 LLM provider，请使用重试按钮。")
-
-        prompt_template = self.config.get("rule_ai_intent_prompt", "").strip()
-        if not prompt_template:
-            prompt_template = self.prompts.get("rule_ai_intent_prompt", "")
-
-        if not prompt_template:
-            logger.error("[RuleAI] rule_ai_intent_prompt not found")
-            raise RuntimeError("规则AI意图解析失败：未找到可用提示词，请使用重试按钮。")
-
-        prompt = prompt_template.replace("{player_input}", player_input)
-
-        try:
-            outcome = await text_chat_with_fallback(
-                context=self.context,
-                primary_provider_id=self.provider_name,
-                fallback_provider_ids=self.fallback_provider_names,
-                prompt=prompt,
-                contexts=[],
-                trace_label="RuleAI.parse_intent",
-            )
-            llm_response = outcome.response
-            response_text = llm_response.completion_text if hasattr(llm_response, "completion_text") else str(llm_response)
-            if trace_id:
-                self._call_metrics[trace_id] = outcome.metrics
-            return json.loads(self._strip_json_fence(response_text))
-        except ProviderFailoverError as e:
-            if trace_id:
-                self._call_metrics[trace_id] = e.metrics
-            logger.error("[RuleAI] parse_intent provider chain failed: %s", e)
-            raise RuntimeError("规则AI意图解析失败：所有候选模型都不可用，请检查主模型与备用模型配置。") from e
-        except json.JSONDecodeError as e:
-            logger.warning(f"[RuleAI] parse_intent JSON decode failed: {player_input}")
-            raise RuntimeError("规则AI意图解析失败：返回结果不是合法 JSON，请使用重试按钮。") from e
-        except Exception as e:
-            logger.error(f"[RuleAI] parse_intent error: {e}")
-            raise RuntimeError("规则AI意图解析失败，请使用重试按钮。") from e
-
     async def adjudicate_action(
         self,
         player_input: str,
-        intent: dict,
         game_state: dict,
         module_data: dict,
         trace_id: str = None,
@@ -165,7 +122,7 @@ class RuleAI:
             logger.error("[RuleAI] rule_ai_action_prompt not found")
             raise RuntimeError("规则AI动作裁定失败：未找到可用提示词，请使用重试按钮。")
 
-        prompt = self._build_action_prompt(prompt_template, player_input, intent, game_state, module_data)
+        prompt = self._build_action_prompt(prompt_template, player_input, game_state, module_data)
 
         try:
             outcome = await text_chat_with_fallback(
@@ -181,7 +138,7 @@ class RuleAI:
             if trace_id:
                 self._call_metrics[trace_id] = outcome.metrics
             result = json.loads(self._strip_json_fence(response_text))
-            normalized = self._normalize_action_plan(result, player_input, intent, game_state, module_data)
+            normalized = self._normalize_action_plan(result, player_input, game_state, module_data)
             logger.info(f"[RuleAI] adjudicate_action result: {normalized}")
             return normalized
         except ProviderFailoverError as e:
@@ -391,7 +348,6 @@ class RuleAI:
         self,
         prompt_template: str,
         player_input: str,
-        intent: dict,
         game_state: dict,
         module_data: dict
     ) -> str:
@@ -407,7 +363,6 @@ class RuleAI:
         reachable = sorted(self._get_reachable_locations(game_state, module_data))
 
         prompt = prompt_template.replace("{player_input}", player_input)
-        prompt = prompt.replace("{intent}", json.dumps(intent or {}, ensure_ascii=False))
         prompt = prompt.replace("{current_location}", current_location)
         prompt = prompt.replace("{location_context}", json.dumps(location_context, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{scene_objects}", json.dumps(scene_objects, ensure_ascii=False, indent=2))
@@ -469,7 +424,6 @@ class RuleAI:
         self,
         result: dict,
         player_input: str,
-        intent: dict,
         game_state: dict,
         module_data: dict
     ) -> dict:
@@ -480,17 +434,17 @@ class RuleAI:
         scene_threat_entities = self._get_scene_threat_entities(game_state, module_data)
         all_objects = module_data.get("objects", {})
 
-        normalized = self._get_fallback_action_plan(player_input, intent, game_state, module_data)
+        normalized = self._get_fallback_action_plan(player_input, game_state, module_data)
         if isinstance(result, dict):
             normalized.update(result)
 
         normalized_action = normalized.get("normalized_action")
         if not isinstance(normalized_action, dict):
             normalized_action = {}
-        normalized_action.setdefault("verb", self._infer_verb(player_input, intent))
+        normalized_action.setdefault("verb", self._infer_verb(player_input))
         normalized_action.setdefault("target_kind", "unknown")
         normalized_action.setdefault("target_key", None)
-        normalized_action.setdefault("raw_target_text", str((intent or {}).get("target") or "").strip())
+        normalized_action.setdefault("raw_target_text", "")
         if self._should_default_to_scene_npc(player_input, normalized_action, scene_npcs):
             only_npc = next(iter(scene_npcs))
             normalized_action["target_kind"] = "npc"
@@ -641,7 +595,6 @@ class RuleAI:
     def _get_fallback_action_plan(
         self,
         player_input: str,
-        intent: dict,
         game_state: dict,
         module_data: dict
     ) -> dict:
@@ -652,14 +605,13 @@ class RuleAI:
         scene_threat_entities = self._get_scene_threat_entities(game_state, module_data)
         all_objects = module_data.get("objects", {})
 
-        raw_target = str((intent or {}).get("target") or "").strip()
-        verb = self._infer_verb(player_input, intent)
+        verb = self._infer_verb(player_input)
         plan = {
             "normalized_action": {
                 "verb": verb,
                 "target_kind": "unknown",
                 "target_key": None,
-                "raw_target_text": raw_target,
+                "raw_target_text": "",
             },
             "feasibility": {
                 "ok": True,
@@ -1272,15 +1224,11 @@ class RuleAI:
                 return key
         return None
 
-    def _infer_verb(self, player_input: str, intent: dict) -> str:
+    def _infer_verb(self, player_input: str) -> str:
         text = str(player_input or "")
         lowered = text.lower()
-        intent_name = str((intent or {}).get("intent") or "").lower()
 
-        # 硬编码：带引号 → 对话
-        if self.is_dialogue_input(text):
-            return "talk"
-
+        # 带引号的输入仍可能包含行动，不再强制返回 talk
         if any(keyword in text for keyword in ["拿", "捡", "拾取", "带走"]) or any(keyword in lowered for keyword in ["take", "pick", "grab", "loot"]):
             return "take"
         if any(keyword in text for keyword in ["烧", "点燃", "焚毁"]) or "burn" in lowered:
@@ -1289,14 +1237,14 @@ class RuleAI:
             return "destroy"
         if self._is_close_door_action(text):
             return "close"
-        if any(keyword in text for keyword in ["说", "问", "交谈", "对话"]) or intent_name == "talk":
+        if any(keyword in text for keyword in ["说", "问", "交谈", "对话"]):
             return "talk"
-        if any(keyword in text for keyword in ["用", "使用"]) or intent_name == "use":
+        if any(keyword in text for keyword in ["用", "使用"]):
             return "use"
-        if any(keyword in text for keyword in ["看", "调查", "检查", "观察", "搜", "翻"]) or intent_name == "search":
+        if any(keyword in text for keyword in ["看", "调查", "检查", "观察", "搜", "翻"]):
             return "inspect"
-        if intent_name:
-            return intent_name
+        if self.is_dialogue_input(text):
+            return "talk"
         return "interact"
 
     def _is_close_door_action(self, player_input: str) -> bool:
