@@ -1,4 +1,5 @@
 import asyncio
+import time
 import uuid
 import json
 import socket
@@ -154,9 +155,33 @@ def create_trpg_app(plugin):
     _web_sessions = {}
     # 每个会话的并发锁
     _session_locks = {}
+    # 每个会话的最后活跃时间（用于 TTL 清理）
+    _session_last_active: dict[str, float] = {}
     save_store = JsonSaveStore(
         os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "web_sessions")
     )
+
+    _SESSION_TTL = 86400      # 24小时不活跃后清理
+    _CLEANUP_INTERVAL = 1800  # 每30分钟检查一次
+
+    async def _cleanup_stale_sessions():
+        """后台任务：定期清理长时间不活跃的会话，防止内存泄漏。"""
+        while True:
+            await asyncio.sleep(_CLEANUP_INTERVAL)
+            try:
+                now = time.time()
+                expired = [
+                    cid for cid, ts in list(_session_last_active.items())
+                    if now - ts > _SESSION_TTL
+                ]
+                for cid in expired:
+                    _web_sessions.pop(cid, None)
+                    _session_locks.pop(cid, None)
+                    _session_last_active.pop(cid, None)
+                if expired:
+                    logger.info(f"[AITRPG] 已清理 {len(expired)} 个过期 Web 会话")
+            except Exception as e:
+                logger.warning(f"[AITRPG] 会话清理任务出错: {e}")
 
     def _build_empty_web_session(cookie_id: str) -> dict:
         """创建空白 Web 会话结构"""
@@ -176,6 +201,7 @@ def create_trpg_app(plugin):
             _web_sessions[cookie_id] = _build_empty_web_session(cookie_id)
         if cookie_id not in _session_locks:
             _session_locks[cookie_id] = asyncio.Lock()
+        _session_last_active[cookie_id] = time.time()
         return _web_sessions[cookie_id]
 
     def _get_cookie_id() -> str:
@@ -861,6 +887,9 @@ def create_trpg_app(plugin):
                 del plugin._action_progress[session_id]
 
         return jsonify({"success": True})
+
+    # 启动后台会话清理任务
+    asyncio.ensure_future(_cleanup_stale_sessions())
 
     return app
 
