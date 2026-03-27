@@ -655,10 +655,10 @@ class RuleAI:
             },
         }
 
-        object_key = self._match_target(raw_target or player_input, scene_objects)
-        global_object_key = self._match_target(raw_target or player_input, all_objects)
-        npc_key = self._match_target(raw_target or player_input, scene_npcs)
-        threat_key = self._match_target(raw_target or player_input, scene_threat_entities)
+        object_key = self._match_target(player_input, scene_objects)
+        global_object_key = self._match_target(player_input, all_objects)
+        npc_key = self._match_target(player_input, scene_npcs)
+        threat_key = self._match_target(player_input, scene_threat_entities)
         if not npc_key and self._should_default_to_scene_npc(player_input, plan["normalized_action"], scene_npcs):
             npc_key = next(iter(scene_npcs))
 
