@@ -1626,7 +1626,10 @@ function renderMap(mapData) {
         const padY = 12;
         const ns = "http://www.w3.org/2000/svg";
 
-        // 每层内布局：找hub居中，其他左右排列
+        // 每层内布局：
+        // 1. 常规房间先按既有拓扑粗排
+        // 2. 带可见微场景的父节点整体推到本层右侧
+        // 3. 微场景节点固定挂在父节点右边，避免挤乱原始地图结构
         const nodePositions = {};
         let yOffset = padY;
 
@@ -1634,11 +1637,27 @@ function renderMap(mapData) {
             const group = floorGroups[floor];
             if (!group || group.length === 0) continue;
 
+            const primaryNodes = group.filter((key) => !locations[key]?.is_micro_scene);
+            const microNodes = group.filter((key) => Boolean(locations[key]?.is_micro_scene));
+            if (primaryNodes.length === 0) continue;
+
+            const microChildrenByParent = new Map();
+            for (const microKey of microNodes) {
+                const parentKey = String(locations[microKey]?.parent_location || "").trim();
+                if (!parentKey || !primaryNodes.includes(parentKey)) continue;
+                if (!microChildrenByParent.has(parentKey)) {
+                    microChildrenByParent.set(parentKey, []);
+                }
+                microChildrenByParent.get(parentKey).push(microKey);
+            }
+
+            const parentsWithMicroScenes = new Set(microChildrenByParent.keys());
+
             // 找连接数最多的节点作为hub
-            let hubKey = group[0];
+            let hubKey = primaryNodes[0];
             let maxConn = 0;
-            for (const key of group) {
-                const conn = (adj[key] || []).length;
+            for (const key of primaryNodes) {
+                const conn = (adj[key] || []).filter((neighbor) => !locations[neighbor]?.is_micro_scene).length;
                 if (conn > maxConn) {
                     maxConn = conn;
                     hubKey = key;
@@ -1647,7 +1666,7 @@ function renderMap(mapData) {
 
             // 排列：hub居中，其他按连接关系左右交替
             const ordered = [hubKey];
-            const remaining = group.filter(k => k !== hubKey);
+            const remaining = primaryNodes.filter(k => k !== hubKey);
             const connected = remaining.filter(k => (adj[hubKey] || []).includes(k));
             const unconnected = remaining.filter(k => !(adj[hubKey] || []).includes(k));
 
@@ -1661,12 +1680,27 @@ function renderMap(mapData) {
                 left = !left;
             }
 
-            const startX = labelW + padX;
-            for (let i = 0; i < ordered.length; i++) {
-                nodePositions[ordered[i]] = {
-                    x: startX + i * (nodeW + gapX),
+            // 带微场景的父节点在本层优先排到右边，给右侧扩展留槽位。
+            const regularNodes = ordered.filter((key) => !parentsWithMicroScenes.has(key));
+            const expandableParents = ordered.filter((key) => parentsWithMicroScenes.has(key));
+            const orderedPrimary = [...regularNodes, ...expandableParents];
+
+            let cursorX = labelW + padX;
+            for (const key of orderedPrimary) {
+                nodePositions[key] = {
+                    x: cursorX,
                     y: yOffset
                 };
+                cursorX += nodeW + gapX;
+
+                const childNodes = microChildrenByParent.get(key) || [];
+                for (const childKey of childNodes) {
+                    nodePositions[childKey] = {
+                        x: cursorX,
+                        y: yOffset
+                    };
+                    cursorX += nodeW + gapX;
+                }
             }
 
             yOffset += nodeH + gapY;
@@ -1689,7 +1723,7 @@ function renderMap(mapData) {
         // 绘制楼层标签
         for (const floor of floors) {
             const group = floorGroups[floor];
-            const firstKey = group[0];
+            const firstKey = group.find((key) => nodePositions[key]) || group[0];
             const pos = nodePositions[firstKey];
             if (!pos) continue;
 
