@@ -355,13 +355,6 @@ class RhythmAI:
         if isinstance(dialogue_cfg.get("guide"), dict):
             dialogue_guide = dialogue_cfg.get("guide", {})
         lower_input = str(player_input or "").lower()
-        companion_cmd = (rule_plan or {}).get("companion_command", {}) if isinstance(rule_plan, dict) else {}
-        explicit_exit_requested = bool(companion_cmd.get("explicit_exit")) if isinstance(companion_cmd, dict) else False
-        if not explicit_exit_requested:
-            explicit_exit_requested = any(
-                keyword in str(player_input or "")
-                for keyword in ["开门", "打开门", "把门打开", "出来", "出门", "出来吧"]
-            )
         module_data = (game_state or {}).get("module_data", {}) if isinstance(game_state, dict) else {}
         primary_threat_name = get_primary_pursuer_name(module_data)
 
@@ -382,7 +375,7 @@ class RhythmAI:
                 or get_entity_profile_text(npc_data, "current_state")
                 or "Stay alert but cooperate."
             )
-            should_open_door = explicit_exit_requested or "open" in lower_input or "cooperate" in lower_input
+            should_open_door = False
         elif trust_level >= emergency_threshold and is_requesting_help:
             # 紧急协助：信任达到紧急阈值且玩家在求助
             response_strategy = (

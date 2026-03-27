@@ -655,10 +655,10 @@ class RuleAI:
             },
         }
 
-        object_key = self._match_target(player_input, scene_objects)
-        global_object_key = self._match_target(player_input, all_objects)
-        npc_key = self._match_target(player_input, scene_npcs)
-        threat_key = self._match_target(player_input, scene_threat_entities)
+        object_key = self._match_target(raw_target or player_input, scene_objects)
+        global_object_key = self._match_target(raw_target or player_input, all_objects)
+        npc_key = self._match_target(raw_target or player_input, scene_npcs)
+        threat_key = self._match_target(raw_target or player_input, scene_threat_entities)
         if not npc_key and self._should_default_to_scene_npc(player_input, plan["normalized_action"], scene_npcs):
             npc_key = next(iter(scene_npcs))
 
@@ -827,7 +827,6 @@ class RuleAI:
             "lag": 0,
             "target_entity": None,
             "destination": None,
-            "explicit_exit": False,
         }
         source = command_data if isinstance(command_data, dict) else {}
         if normalized_action.get("target_kind") == "npc" and normalized_action.get("target_key") in scene_npcs:
@@ -850,10 +849,6 @@ class RuleAI:
 
         text = str(player_input or "").strip()
         lowered = text.lower()
-        if isinstance(source.get("explicit_exit"), bool):
-            normalized["explicit_exit"] = bool(source.get("explicit_exit"))
-        elif str(source.get("explicit_exit") or "").strip().lower() in {"true", "1", "yes"}:
-            normalized["explicit_exit"] = True
 
         if not normalized["command"]:
             if any(keyword in text for keyword in ["跟我走", "跟着我", "跟上", "一起行动"]) or any(keyword in lowered for keyword in ["follow me", "come with me"]):
@@ -862,9 +857,6 @@ class RuleAI:
                 normalized["command"] = "wait"
             elif any(keyword in text for keyword in ["引开", "诱饵", "带到", "引到", "拖到"]) or any(keyword in lowered for keyword in ["bait", "distract", "draw away", "lead to"]):
                 normalized["command"] = "bait"
-
-        if self._requests_explicit_exit(text):
-            normalized["explicit_exit"] = True
 
         if normalized["command"] == "follow":
             normalized["follow_target"] = normalized["follow_target"] or "player"
@@ -889,15 +881,6 @@ class RuleAI:
             normalized["target_npc"] = next(iter(scene_npcs))
 
         return normalized
-
-    def _requests_explicit_exit(self, player_input: str) -> bool:
-        text = str(player_input or "").strip()
-        lowered = text.lower()
-        if not text:
-            return False
-        zh_keywords = ["开门", "把门打开", "出来", "出门", "出来吧", "出来跟我", "跟我出来"]
-        en_keywords = ["open the door", "come out", "step out", "open up"]
-        return any(keyword in text for keyword in zh_keywords) or any(keyword in lowered for keyword in en_keywords)
 
     def _match_location_target(self, target_text: str, module_data: dict) -> str:
         text = str(target_text or "").strip()
