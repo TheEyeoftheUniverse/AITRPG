@@ -1,76 +1,132 @@
 # AI驱动TRPG跑团系统
 
-基于三层 AI 架构的 TRPG 网页插件，面向 COC 风格的探索、追逐、NPC 协作、结局分支和恐怖演出。
+基于三层 AI 架构的 TRPG 网页插件，面向 COC 风格的开放探索、NPC 协作与动态剧情生成。
 
 当前版本：`v2.2.0`
 
-## 项目概览
+## 三层 AI 架构
 
-这个项目把一次跑团拆成了三层：
+每一轮玩家行动依次经过三层 AI 处理，各层职责严格分离：
 
-- 规则层负责动作裁定、检定、移动、同伴指令和硬状态变化
-- 节奏层负责阶段评估、压力变化、NPC 互动连续性和结局请求
-- 文案层负责把已经确定的状态组织成最终叙述
+```
+玩家输入
+   │
+   ▼
+┌──────────────────────────────────────┐
+│  规则层 (Rule AI)                    │
+│  · 解析动作意图（verb / target）     │
+│  · 裁定行动可行性                   │
+│  · 技能检定（掷骰、SAN 检定）        │
+│  · 输出硬变化（Hard Changes）        │
+└──────────────────────────────────────┘
+   │  hard_changes（确定性状态变更）
+   ▼
+┌──────────────────────────────────────┐
+│  节奏层 (Rhythm AI)                  │
+│  · 评估当前场景阶段与张力            │
+│  · 决定 NPC 行为、位置、反应方向    │
+│  · 输出软变化（Soft Changes）        │
+│  · 评估结局请求合法性               │
+└──────────────────────────────────────┘
+   │  soft_changes（叙事驱动的状态变更）
+   ▼
+  合并（Hard + Soft → merged_changes）
+   │
+   ▼
+┌──────────────────────────────────────┐
+│  文案层 (Narrative AI)               │
+│  · 接收已确定的规则结果与节奏评估   │
+│  · 生成最终叙述文本                 │
+│  · 不再做任何状态决策               │
+└──────────────────────────────────────┘
+   │
+   ▼
+ 叙述输出 + 状态更新
+```
 
-代码层仍然保留关键硬规则，不把所有决定交给模型。当前项目已经覆盖了地图可达性、隐藏节点显现、威胁实体追逐、门阻隔、微场景、NPC 预设任务、Web 存档恢复和分层重试。
+### 软硬分离设计
+
+系统将世界状态变更分为两类：
+
+**硬变化（Hard Changes）** — 由规则层产出，逻辑确定，不可被叙事覆盖：
+- 物品栏增减（`inventory_add` / `inventory_remove`）
+- 线索发现（`clues`）
+- SAN / HP 数值变化（`san_delta`）
+- Flag 置位（`flags`）
+- 预设任务启动与分支结算
+- 代码层直接派生的变化（如销毁特定对象触发的 flag）
+
+**软变化（Soft Changes）** — 由节奏层产出，叙事驱动，允许 AI 根据场景动态判断：
+- NPC 位置移动（`npc_locations`）
+- NPC 状态更新（`npc_updates`）
+- 场景 flag 推进（`flags`）
+- 威胁实体状态（`threat_entity_updates`）
+
+两类变化通过 `_merge_world_changes` 合并，硬变化优先级高于软变化。文案层仅读取最终合并结果，不参与任何状态决策。这确保了：规则可审计、叙事有弹性、状态更新可追溯。
+
+### 节奏层 preview 机制
+
+节奏层调用前，系统会将 `hard_changes` 预应用到游戏状态（`_preview_state_with_world_changes`），让节奏层看到规则层已确定的变化后再做场景评估，避免节奏层基于过时状态判断。
 
 ## 核心能力
 
-- 三层 AI 流程：规则 AI、节奏 AI、文案 AI 分工明确
-- 地图系统：BFS 可达性、战争迷雾、隐藏地点、条件显现、SVG 地图
-- NPC 系统：记忆、信任、Reveal、Soft State、Companion、预设任务
-- 威胁实体系统：追逐、堵门、接触判定、逐格移动限制
-- 微场景系统：用于硬导向警告或坏结局入口，不参与普通地图寻路
-- 结局系统：地点触发、硬条件校验、AI 请求后端复核
-- WebUI：AI 工作流面板、聊天区、玩家状态区、地图交互
-- 存档系统：Web 会话持久化、显式继续存档入口、断层重试
+- **分层重试**：任意层失败均可从该层起点重试，前序层结果从缓存恢复，不重复消耗 token
+- **地图系统**：BFS 可达性、战争迷雾、隐藏地点条件显现、SVG 地图交互
+- **NPC 系统**：记忆、信任等级、Reveal 机制、同伴模式（跟随 / 等待 / 诱敌）、预设任务
+- **预设任务**：`solo_search`（NPC 独立行动）、`cooperative_escape`（协作逃离）、`decoy`（诱敌），各阶段可配置 movement_note 注入节奏层
+- **威胁实体系统**：逐格追逐、堵门判定、接触检测、警戒状态机
+- **微场景系统**：硬导向场景，不参与普通地图寻路，用于关键分支入口
+- **SAN 系统**：技能检定掷骰、SAN 值变化、崩溃结局触发
+- **结局系统**：地点触发、硬条件校验、AI 请求后端复核
+- **存档系统**：Web 会话持久化、显式继续存档、断连后重试状态恢复
+- **WebUI**：AI 工作流进度面板、聊天区、玩家状态区、地图点击交互、戏剧演出效果
 
 ## 配置项
 
-插件本身主要依赖以下配置项：
+主要配置字段：
 
-- `module_name`
-- `rule_ai_provider`
-- `rule_ai_provider_fallbacks`
-- `rhythm_ai_provider`
-- `rhythm_ai_provider_fallbacks`
-- `narrative_ai_provider`
-- `narrative_ai_provider_fallbacks`
-- `webui_port`
+| 字段 | 说明 |
+|------|------|
+| `module_name` | 模组文件名（不含 .json） |
+| `rule_ai_provider` | 规则层 AI 提供商 |
+| `rule_ai_provider_fallbacks` | 规则层 fallback 提供商列表 |
+| `rhythm_ai_provider` | 节奏层 AI 提供商 |
+| `rhythm_ai_provider_fallbacks` | 节奏层 fallback 提供商列表 |
+| `narrative_ai_provider` | 文案层 AI 提供商 |
+| `narrative_ai_provider_fallbacks` | 文案层 fallback 提供商列表 |
+| `webui_port` | WebUI 监听端口 |
 
-详细字段可以直接查看 [metadata.yaml](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/metadata.yaml) 和 [_conf_schema.json](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/_conf_schema.json)。
+完整字段定义见 [_conf_schema.json](./_conf_schema.json)。
 
 ## 仓库结构
 
 ```text
 aitrpg/
-├── main.py
+├── main.py                # 插件入口、三层 AI 调度、重试机制
 ├── metadata.yaml
 ├── _conf_schema.json
-├── ai_prompts.json
-├── theatrical_parser.py
+├── ai_prompts.json        # 各层 AI 的 prompt 模板
+├── theatrical_parser.py   # 戏剧标记解析（演出效果）
 ├── ai_layers/
+│   ├── rule_ai.py         # 规则层实现
+│   ├── rhythm_ai.py       # 节奏层实现
+│   ├── narrative_ai.py    # 文案层实现
+│   ├── provider_failover.py
+│   └── usage_metrics.py
 ├── game_state/
+│   ├── session_manager.py # 游戏状态、NPC、预设任务、存档
+│   └── location_context.py
 ├── webui/
-├── modules/
-└── LICENSE
+│   ├── server.py          # Quart API 接口
+│   └── static/
+├── modules/               # 模组 JSON 文件
+│   └── README.md          # 模组字段说明文档
+└── rules/                 # 规则文件
 ```
 
-主要目录职责：
+## 文档
 
-- [main.py](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/main.py)：插件入口、三层 AI 调度、Web 行动主流程
-- [ai_layers](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/ai_layers)：规则、节奏、文案三层实现
-- [game_state](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/game_state)：地图、状态、NPC、威胁实体、结局、存档
-- [webui](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/webui)：Quart 接口、前端模板、样式、脚本
-- [modules](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/modules)：模组 JSON 和模组字段文档
-
-## 文档导航
-
-- 模组字段说明请看 [modules/README.md](/C:/Users/26459/Desktop/AI驱动跑团项目/aitrpg/modules/README.md)
-
-## 作者
-
-TheEyeoftheUniverse
+- 模组字段说明：[modules/README.md](./modules/README.md)
 
 ## 许可证
 
