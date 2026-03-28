@@ -669,6 +669,7 @@ class RuleAI:
             },
         }
 
+        raw_target = str(plan["normalized_action"].get("raw_target_text") or "").strip()
         object_key = self._match_target(raw_target or player_input, scene_objects)
         global_object_key = self._match_target(raw_target or player_input, all_objects)
         npc_key = self._match_target(raw_target or player_input, scene_npcs)
