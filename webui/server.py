@@ -209,11 +209,13 @@ def create_trpg_app(plugin):
         return request.cookies.get("trpg_session", "")
 
     def _serialize_state(state: dict) -> dict:
-        """序列化游戏状态（处理 deque 等不可序列化类型）"""
+        """序列化游戏状态（处理 deque 等不可序列化类型，剔除前端不需要的大字段）"""
         if state is None:
             return None
         result = {}
         for key, value in state.items():
+            if key == "module_data":
+                continue
             if isinstance(value, deque):
                 result[key] = list(value)
             elif isinstance(value, dict):
