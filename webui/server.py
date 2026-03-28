@@ -918,6 +918,7 @@ async def start_webui_server(app, port: int, shutdown_event: asyncio.Event = Non
     config.bind = [f"0.0.0.0:{port}"]
     config.use_reloader = False
     config.accesslog = None
+    config.keep_alive_timeout = 120
 
     try:
         logger.info(f"[AITRPG] WebUI starting on http://0.0.0.0:{port}/trpg/")

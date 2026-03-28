@@ -754,7 +754,7 @@ async function fetchAndRenderActionProgress() {
         const data = await resp.json();
         const progress = data.progress || {};
         applyPartialWorkflowResults(data.partial_results);
-        if (progress.status === "error") {
+        if (progress.status === "error" || progress.status === "running") {
             setRetryState(data.retry_from_hint, data.can_retry);
         }
         updateRetryButtonVisibility();

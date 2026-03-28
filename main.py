@@ -581,7 +581,7 @@ class AITRPGPlugin(Star):
     def get_action_progress_payload(self, session_id: str) -> dict:
         progress = self.get_action_progress(session_id)
         cache = self._last_action_cache.get(session_id) or {}
-        can_retry = bool(cache) and progress.get("status") == "error"
+        can_retry = bool(cache) and progress.get("status") in ("error", "running")
         retry_from_hint = self._get_retry_from_hint(session_id, cache=cache, progress=progress)
         return {
             "progress": progress,
