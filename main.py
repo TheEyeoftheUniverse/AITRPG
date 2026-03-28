@@ -465,6 +465,16 @@ class AITRPGPlugin(Star):
                 self._skip_progress_step(session_id, "rule_adjudication", "纯移动，不做动作裁定")
                 self._skip_progress_step(session_id, "rule_check", "纯移动，不触发判定")
                 self._skip_progress_step(session_id, "rhythm", "使用到场默认节奏")
+                # 初始化 cache，使文案AI失败时可从该步重试
+                self._last_action_cache[session_id] = {
+                    "player_input": player_input,
+                    "move_to": move_to,
+                    "history": history,
+                    "move_check_result": move_check_result,
+                    "move_movement_note": move_movement_note,
+                    "pending_npc_report": {},
+                    "retry_from_hint": "rhythm",
+                }
                 result = await self._build_move_arrival_result(
                     session_id=session_id,
                     move_to=move_to,
@@ -476,6 +486,13 @@ class AITRPGPlugin(Star):
                     non_follow_npc_present=non_follow_npc_present,
                     follow_arrival_reaction_context=follow_arrival_reaction_context,
                 )
+                # 写入节奏层结果供重试使用，改提示为可从文案层重试
+                cache = self._last_action_cache[session_id]
+                cache["rule_plan"] = result.get("rule_plan", {})
+                cache["rule_result"] = result.get("rule_result", {})
+                cache["hard_changes"] = result.get("hard_changes", {})
+                cache["rhythm_result"] = result.get("rhythm_result", {})
+                cache["retry_from_hint"] = "narrative"
                 result["move_check_result"] = move_check_result
                 return self._finalize_action_result(session_id, result, message="到场叙述完成"), None
 
@@ -1032,6 +1049,8 @@ class AITRPGPlugin(Star):
                 message="三层 AI 处理完成",
             )
         except Exception as e:
+            # 重新获取 cache（_precheck_action 可能已在 early_result 路径中写入）
+            cache = self._last_action_cache.get(session_id) or cache
             # 标记当前正在运行的步骤为错误
             progress = self._action_progress.get(session_id)
             if progress:
@@ -1365,15 +1384,20 @@ class AITRPGPlugin(Star):
 
         self._start_progress_step(session_id, "narrative", "文案AI 正在生成到场叙述")
         narrative_trace_id = f"{session_id}:narrative"
-        narrative_result = await self.narrative_ai.generate(
-            player_input="",
-            rule_plan=rule_plan,
-            rule_result=rule_result,
-            rhythm_result=rhythm_result,
-            narrative_history=state.get("narrative_history", []),
-            history=history,
-            trace_id=narrative_trace_id,
-        )
+        try:
+            narrative_result = await self.narrative_ai.generate(
+                player_input="",
+                rule_plan=rule_plan,
+                rule_result=rule_result,
+                rhythm_result=rhythm_result,
+                narrative_history=state.get("narrative_history", []),
+                history=history,
+                trace_id=narrative_trace_id,
+            )
+        except Exception:
+            self._fail_progress_step(session_id, "narrative", "文案AI 生成到场叙述失败",
+                                     self.narrative_ai.pop_call_metric(narrative_trace_id))
+            raise
         self._finish_progress_step(session_id, "narrative", self.narrative_ai.pop_call_metric(narrative_trace_id), "到场叙述生成完成")
         if not narrative_result.get("summary"):
             narrative_result["summary"] = f"移动到{loc_name}"
