@@ -1147,6 +1147,9 @@ class SessionManager:
         started_round = int(state.get("round_count", 0) or 0)
         preset_task: Dict[str, Any]
         if kind == "solo_search":
+            staging_location = str(task_cfg.get("staging_location") or "").strip()
+            if staging_location:
+                npc_state["location"] = staging_location
             preset_task = {
                 "task_id": task_id,
                 "kind": kind,
@@ -1248,6 +1251,7 @@ class SessionManager:
             "changes": {
                 "npc_updates": {
                     npc_name: {
+                        "location": npc_state.get("location", ""),
                         "preset_task": copy.deepcopy(preset_task),
                     }
                 }

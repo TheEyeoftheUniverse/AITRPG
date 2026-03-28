@@ -422,15 +422,21 @@ class RuleAI:
         preset_tasks = module_data.get("preset_tasks", {}) if isinstance(module_data, dict) else {}
         if isinstance(preset_tasks, dict) and preset_tasks:
             available_tasks = {
-                tid: str(tcfg.get("trigger_description") or "")
+                tid: (str(tcfg.get("trigger_description") or ""), str(tcfg.get("task_note") or ""))
                 for tid, tcfg in preset_tasks.items()
                 if isinstance(tcfg, dict) and str(tcfg.get("trigger_description") or "").strip()
             }
             if available_tasks:
+                task_lines = []
+                for tid, (desc, note) in available_tasks.items():
+                    line = f"- {tid}：{desc}"
+                    if note:
+                        line += f"（备注：{note}）"
+                    task_lines.append(line)
                 prompt += (
                     "\n# 可用预设任务\n"
                     "以下预设任务可由玩家发起（preset_task_request），括号内为触发条件描述：\n"
-                    + "".join(f"- {tid}：{desc}\n" for tid, desc in available_tasks.items())
+                    + "\n".join(task_lines) + "\n"
                 )
         return prompt
 

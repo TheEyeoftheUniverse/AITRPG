@@ -729,14 +729,15 @@
                                                     "actor":  "艾米莉",
                                                     "kind":  "solo_search",
                                                     "duration_rounds":  8,
+                                                    "staging_location":  "guest_bedroom",
                                                     "return_to":  "guest_bedroom",
                                                     "trigger_description":  "玩家明确表示由自己引开管家、让艾米莉独自去搜查全屋",
-                                                    "on_start_note":  "艾米莉悄悄离开次卧，独自去搜查全屋；玩家留在主卧，管家的注意力暂时还停留在玩家身上。",
+                                                    "task_note":  "触发此任务时艾米莉会先移动到次卧等待；只有玩家在主卧、艾米莉在次卧时，双方才能隔墙交流，因此玩家需要先把管家引到主卧附近",
+                                                    "on_start_note":  "艾米莉悄悄离开主卧前往次卧，独自去搜查全屋；玩家留在主卧，管家的注意力暂时还停留在玩家身上。",
                                                     "in_progress_note":  "艾米莉正在独自搜查全屋，本轮她不在玩家身边，也无法参与对话。",
                                                     "on_complete_note":  "艾米莉完成了全屋调查，悄悄返回次卧，准备隔墙向玩家汇报调查结果。",
                                                     "requirements":  {
-                                                                         "min_trust":  0.5,
-                                                                         "actor_location":  "guest_bedroom"
+                                                                         "min_trust":  0.5
                                                                      },
                                                     "on_complete":  {
                                                                         "set_flags":  {
