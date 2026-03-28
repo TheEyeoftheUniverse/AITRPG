@@ -775,6 +775,31 @@ async function fetchAndRenderActionProgress() {
     return null;
 }
 
+async function pollActionResult(loadingEl) {
+    const POLL_INTERVAL = 1500;
+    const TIMEOUT_MS = 300000; // 5 minutes
+    const started = Date.now();
+
+    while (Date.now() - started < TIMEOUT_MS) {
+        await new Promise(r => setTimeout(r, POLL_INTERVAL));
+        try {
+            const resp = await fetch("/trpg/api/action/result", { cache: "no-store" });
+            if (resp.status === 202) continue;  // still pending
+            const data = await resp.json();
+            loadingEl.remove();
+            return data;
+        } catch (err) {
+            console.debug("pollActionResult error:", err);
+        }
+    }
+
+    // Timeout
+    loadingEl.remove();
+    await fetchAndRenderActionProgress().catch(() => clearRetryState());
+    addMessage("assistant", "等待超时，请检查网络后重试。");
+    return null;
+}
+
 function startProgressPolling() {
     stopProgressPolling();
     fetchAndRenderActionProgress();
@@ -827,19 +852,23 @@ async function retryCurrentTurnFromStage(retryFrom) {
     const loadingEl = addLoadingIndicator();
     renderProcessingStatus(buildInitialProcessingState(), { forceExpanded: true });
     startProgressPolling();
-    currentAbortController = new AbortController();
 
     try {
         const resp = await fetch("/trpg/api/retry", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ retry_from: retryFrom }),
-            signal: currentAbortController.signal,
         });
-        const data = await resp.json();
 
-        loadingEl.remove();
-        currentAbortController = null;
+        if (!resp.ok && resp.status !== 202) {
+            const data = await resp.json();
+            loadingEl.remove();
+            handleActionErrorResponse(data);
+            return;
+        }
+
+        const data = await pollActionResult(loadingEl);
+        if (data === null) return;
 
         if (data.error) {
             handleActionErrorResponse(data);
@@ -848,11 +877,6 @@ async function retryCurrentTurnFromStage(retryFrom) {
         }
     } catch (err) {
         loadingEl.remove();
-        currentAbortController = null;
-
-        if (err.name === "AbortError") {
-            return;
-        }
 
         await fetchAndRenderActionProgress().catch(() => clearRetryState());
         renderProcessingStatus({
@@ -979,7 +1003,7 @@ async function sendAction() {
     renderProcessingStatus(buildInitialProcessingState(), { forceExpanded: true });
     startProgressPolling();
 
-    // 创建 AbortController 以支持中断
+    // 创建 AbortController 以支持中断（用于取消初始 POST，后台任务不可中断）
     currentAbortController = new AbortController();
 
     try {
@@ -998,11 +1022,19 @@ async function sendAction() {
             body: JSON.stringify(body),
             signal: currentAbortController.signal,
         });
-        const data = await resp.json();
 
-        // 移除 loading
-        loadingEl.remove();
+        if (!resp.ok && resp.status !== 202) {
+            const data = await resp.json();
+            loadingEl.remove();
+            currentAbortController = null;
+            handleActionErrorResponse(data);
+            return;
+        }
+
+        // 202: 后台异步执行，轮询结果
         currentAbortController = null;
+        const data = await pollActionResult(loadingEl);
+        if (data === null) return;  // aborted or timeout handled inside pollActionResult
 
         if (data.error) {
             handleActionErrorResponse(data);
@@ -1011,12 +1043,6 @@ async function sendAction() {
         }
     } catch (err) {
         loadingEl.remove();
-        currentAbortController = null;
-
-        // 被abort中断时不显示错误消息（abortAndRetry已处理）
-        if (err.name === "AbortError") {
-            return;
-        }
 
         // 查询后端实际进度：若后端已执行到某步（如文案AI），则保留重试状态
         await fetchAndRenderActionProgress().catch(() => clearRetryState());
