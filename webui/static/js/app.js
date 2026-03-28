@@ -854,7 +854,7 @@ async function retryCurrentTurnFromStage(retryFrom) {
             return;
         }
 
-        clearRetryState();
+        await fetchAndRenderActionProgress().catch(() => clearRetryState());
         renderProcessingStatus({
             status: "error",
             message: "网络错误",
@@ -1018,7 +1018,8 @@ async function sendAction() {
             return;
         }
 
-        clearRetryState();
+        // 查询后端实际进度：若后端已执行到某步（如文案AI），则保留重试状态
+        await fetchAndRenderActionProgress().catch(() => clearRetryState());
         renderProcessingStatus({
             status: "error",
             message: "网络错误",
