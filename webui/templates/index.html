@@ -36,6 +36,7 @@
                 </button>
             </div>
             <div class="top-bar-right">
+                <button id="btn-custom-api" class="btn-icon" title="配置自定义API" onclick="openApiConfigModal()">😓你这什么模型？太磨叽了，换我的！</button>
                 <button id="btn-reset" class="btn-icon" title="重置游戏">
                     <span class="mdi mdi-restart"></span>
                 </button>
@@ -243,6 +244,51 @@
                     <button class="ending-overlay-btn" onclick="resetGame()">
                         <span class="mdi mdi-restart"></span> 重新开始
                     </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 自定义API配置弹窗 -->
+    <div id="api-config-modal" class="hidden">
+            <div class="api-config-dialog">
+                <div class="api-config-header">
+                    <h3><span class="mdi mdi-api"></span> 自定义 LLM API</h3>
+                    <button class="api-config-close" onclick="closeApiConfigModal()">&#x2715;</button>
+                </div>
+                <div class="api-config-body">
+                    <div class="api-config-unified-row">
+                        <span class="api-config-unified-label">三层AI共用同一套配置</span>
+                        <label class="api-toggle">
+                            <input type="checkbox" id="api-unified-toggle" onchange="onApiUnifiedToggle()">
+                            <span class="api-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <!-- 分层标签页（非统一模式） -->
+                    <div id="api-tabs-row" class="api-config-tabs">
+                        <button class="api-config-tab active" data-layer="rule" onclick="switchApiTab('rule')">规则AI</button>
+                        <button class="api-config-tab" data-layer="rhythm" onclick="switchApiTab('rhythm')">节奏AI</button>
+                        <button class="api-config-tab" data-layer="narrative" onclick="switchApiTab('narrative')">文案AI</button>
+                    </div>
+                    <!-- 表单 -->
+                    <div class="api-config-form-group">
+                        <label>Base URL（如 https://api.openai.com/v1）</label>
+                        <input class="api-config-input" id="api-input-base-url" type="text" placeholder="https://api.openai.com/v1" autocomplete="off" spellcheck="false">
+                    </div>
+                    <div class="api-config-form-group">
+                        <label>API Key</label>
+                        <input class="api-config-input" id="api-input-api-key" type="password" placeholder="sk-..." autocomplete="off">
+                    </div>
+                    <div class="api-config-form-group">
+                        <label>Model</label>
+                        <input class="api-config-input" id="api-input-model" type="text" placeholder="gpt-4o" autocomplete="off" spellcheck="false">
+                    </div>
+                </div>
+                <div class="api-config-footer">
+                    <button class="api-config-btn api-config-btn--danger" onclick="clearCurrentApiLayer()">清除当前</button>
+                    <button class="api-config-btn api-config-btn--secondary" onclick="closeApiConfigModal()">取消</button>
+                    <button class="api-config-btn api-config-btn--primary" onclick="saveApiConfig()">保存</button>
                 </div>
             </div>
         </div>

@@ -308,6 +308,12 @@ html, body {
     font-size: 20px;
 }
 
+.top-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .btn-icon {
     background: none;
     border: none;
@@ -1220,4 +1226,203 @@ html, body {
     0%   { filter: none; }
     40%  { filter: brightness(1.8) hue-rotate(180deg); }
     100% { filter: none; }
+}
+
+/* ═══════════════════════════════════════
+   自定义 API 配置弹窗
+   ═══════════════════════════════════════ */
+#api-config-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+}
+#api-config-modal.hidden { display: none; }
+
+.api-config-dialog {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: min(520px, 95vw);
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.api-config-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+}
+.api-config-header h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.api-config-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    font-size: 18px;
+    line-height: 1;
+    transition: color var(--transition-fast);
+}
+.api-config-close:hover { color: var(--text-primary); }
+
+.api-config-body {
+    padding: 16px 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.api-config-unified-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+.api-config-unified-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    flex: 1;
+}
+
+/* Toggle switch */
+.api-toggle {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
+}
+.api-toggle input { opacity: 0; width: 0; height: 0; }
+.api-toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-tertiary);
+    border-radius: 20px;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    border: 1px solid var(--border-color);
+}
+.api-toggle-slider::before {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    top: 2px;
+    left: 2px;
+    transition: transform var(--transition-fast), background var(--transition-fast);
+}
+.api-toggle input:checked + .api-toggle-slider { background: var(--accent-bg); border-color: var(--accent); }
+.api-toggle input:checked + .api-toggle-slider::before { transform: translateX(16px); background: var(--accent); }
+
+/* 标签页 */
+.api-config-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 14px;
+}
+.api-config-tab {
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background: none;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+.api-config-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+.api-config-tab.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+.api-config-tab.configured::after { content: " ✓"; font-size: 10px; }
+
+/* 表单 */
+.api-config-form-group {
+    margin-bottom: 12px;
+}
+.api-config-form-group label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 5px;
+}
+.api-config-input {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 13px;
+    outline: none;
+    transition: border-color var(--transition-fast);
+    box-sizing: border-box;
+}
+.api-config-input:focus { border-color: var(--accent); }
+.api-config-input::placeholder { color: var(--text-muted); }
+
+.api-config-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 20px 16px;
+    border-top: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+}
+.api-config-btn {
+    padding: 7px 18px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+.api-config-btn--secondary {
+    background: none;
+    color: var(--text-secondary);
+}
+.api-config-btn--secondary:hover { background: var(--bg-hover); color: var(--text-primary); }
+.api-config-btn--danger {
+    background: none;
+    color: var(--danger);
+    border-color: var(--danger);
+}
+.api-config-btn--danger:hover { background: rgba(224, 92, 108, 0.12); }
+.api-config-btn--primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+.api-config-btn--primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+/* 顶栏按钮激活态 */
+#btn-custom-api {
+    width: auto;
+    padding: 0 10px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+#btn-custom-api.api-active {
+    color: var(--accent);
+    background: var(--accent-bg);
 }

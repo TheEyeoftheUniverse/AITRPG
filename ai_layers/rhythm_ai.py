@@ -91,6 +91,7 @@ class RhythmAI:
         module_data: dict,
         history: list = None,
         trace_id: str = None,
+        custom_api: dict | None = None,
     ) -> dict:
         if history is None:
             history = []
@@ -128,6 +129,7 @@ class RhythmAI:
                 prompt=prompt,
                 contexts=[],
                 trace_label="RhythmAI.process",
+                custom_api=custom_api,
             )
             llm_response = outcome.response
             response_text = (

@@ -641,7 +641,7 @@ class AITRPGPlugin(Star):
             else:
                 self._finish_progress_step(session_id, sk, step_cache.get("metrics", {}), "已缓存")
 
-    async def _process_action_core(self, session_id: str, player_input: str, history: list, move_to: str = None, retry_from: str = None) -> dict:
+    async def _process_action_core(self, session_id: str, player_input: str, history: list, move_to: str = None, retry_from: str = None, custom_api: dict | None = None) -> dict:
         """核心三层AI处理，返回结构化结果。可被 AstrBot 消息处理和 WebUI API 共同调用。
 
         retry_from: 重试起点。None=正常执行, "rule"=从规则AI重试, "rhythm"=从节奏AI重试, "narrative"=从文案AI重试
@@ -712,6 +712,7 @@ class AITRPGPlugin(Star):
                     game_state=state,
                     module_data=module_data,
                     trace_id=adjudication_trace_id,
+                    custom_api=(custom_api or {}).get("rule"),
                 )
                 self._finish_progress_step(session_id, "rule_adjudication", self.rule_ai.pop_call_metric(adjudication_trace_id), "行为裁定完成")
                 # 如果规则AI没有输出 input_classification，根据 verb 补充
@@ -865,6 +866,7 @@ class AITRPGPlugin(Star):
                     module_data=module_data,
                     history=history,
                     trace_id=rhythm_trace_id,
+                    custom_api=(custom_api or {}).get("rhythm"),
                 )
                 self._finish_progress_step(session_id, "rhythm", self.rhythm_ai.pop_call_metric(rhythm_trace_id), "节奏评估完成")
                 logger.info(f"[AITRPG] 节奏AI结果: {rhythm_result}")
@@ -1028,6 +1030,7 @@ class AITRPGPlugin(Star):
                 narrative_history=state.get("narrative_history", []),
                 history=history,
                 trace_id=narrative_trace_id,
+                custom_api=(custom_api or {}).get("narrative"),
             )
             self._finish_progress_step(session_id, "narrative", self.narrative_ai.pop_call_metric(narrative_trace_id), "叙述生成完成")
             logger.info(f"[AITRPG] 文案生成完成")

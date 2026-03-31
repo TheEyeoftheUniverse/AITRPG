@@ -50,6 +50,7 @@ const PROCESSING_STEP_FALLBACK_MESSAGES = {
 document.addEventListener("DOMContentLoaded", () => {
     setupInputHandlers();
     initializeModuleSelection();
+    _updateApiButtonState();
 });
 
 function setupInputHandlers() {
@@ -854,10 +855,13 @@ async function retryCurrentTurnFromStage(retryFrom) {
     startProgressPolling();
 
     try {
+        const retryBody = { retry_from: retryFrom };
+        const customApi = getCustomApiPayload();
+        if (customApi) retryBody.custom_api = customApi;
         const resp = await fetch("/trpg/api/retry", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ retry_from: retryFrom }),
+            body: JSON.stringify(retryBody),
         });
 
         if (!resp.ok && resp.status !== 202) {
@@ -1015,6 +1019,8 @@ async function sendAction() {
             if (text) body.input = text;
             if (moveTo) body.move_to = moveTo;
         }
+        const customApi = getCustomApiPayload();
+        if (customApi) body.custom_api = customApi;
 
         const resp = await fetch("/trpg/api/action", {
             method: "POST",
@@ -1959,4 +1965,126 @@ function showEndingOverlay(endingId) {
 
 function dismissEndingOverlay() {
     document.getElementById("ending-overlay").classList.add("hidden");
+}
+
+// ─── 自定义API配置弹窗 ───
+
+const API_CONFIG_LS_KEY = "aitrpg_custom_api";
+const API_LAYERS = ["rule", "rhythm", "narrative"];
+
+// 当前编辑中的草稿（未保存），结构: { unified: bool, rule:{...}, rhythm:{...}, narrative:{...} }
+let _apiConfigDraft = null;
+let _apiCurrentTab = "rule";
+
+function _loadApiConfigFromStorage() {
+    try {
+        const raw = localStorage.getItem(API_CONFIG_LS_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+}
+
+function _saveApiConfigToStorage(cfg) {
+    localStorage.setItem(API_CONFIG_LS_KEY, JSON.stringify(cfg));
+}
+
+function getCustomApiPayload() {
+    const cfg = _loadApiConfigFromStorage();
+    if (!cfg) return null;
+    const isValid = (o) => o && o.base_url && o.api_key && o.model;
+    if (cfg.unified) {
+        const src = cfg.unified_data;
+        if (!isValid(src)) return null;
+        return { rule: src, rhythm: src, narrative: src };
+    }
+    const out = {};
+    for (const layer of API_LAYERS) {
+        if (isValid(cfg[layer])) out[layer] = cfg[layer];
+    }
+    return Object.keys(out).length ? out : null;
+}
+
+function _updateApiButtonState() {
+    const btn = document.getElementById("btn-custom-api");
+    if (!btn) return;
+    const payload = getCustomApiPayload();
+    btn.classList.toggle("api-active", !!payload);
+}
+
+function openApiConfigModal() {
+    const stored = _loadApiConfigFromStorage() || { unified: false };
+    _apiConfigDraft = JSON.parse(JSON.stringify(stored));
+    if (!_apiConfigDraft.unified_data) _apiConfigDraft.unified_data = { base_url: "", api_key: "", model: "" };
+    for (const layer of API_LAYERS) {
+        if (!_apiConfigDraft[layer]) _apiConfigDraft[layer] = { base_url: "", api_key: "", model: "" };
+    }
+    _apiCurrentTab = "rule";
+    _renderApiModal();
+    document.getElementById("api-config-modal").classList.remove("hidden");
+}
+
+function closeApiConfigModal() {
+    document.getElementById("api-config-modal").classList.add("hidden");
+    _apiConfigDraft = null;
+}
+
+function _renderApiModal() {
+    const unified = !!_apiConfigDraft.unified;
+    document.getElementById("api-unified-toggle").checked = unified;
+    document.getElementById("api-tabs-row").style.display = unified ? "none" : "";
+
+    const src = unified ? _apiConfigDraft.unified_data : _apiConfigDraft[_apiCurrentTab];
+    document.getElementById("api-input-base-url").value = src.base_url || "";
+    document.getElementById("api-input-api-key").value = src.api_key || "";
+    document.getElementById("api-input-model").value = src.model || "";
+
+    // 更新标签页高亮和已配置标记
+    document.querySelectorAll(".api-config-tab").forEach(btn => {
+        const layer = btn.dataset.layer;
+        btn.classList.toggle("active", layer === _apiCurrentTab);
+        const d = _apiConfigDraft[layer];
+        btn.classList.toggle("configured", !!(d && d.base_url && d.api_key && d.model));
+    });
+}
+
+function _flushCurrentLayerTosDraft() {
+    if (!_apiConfigDraft) return;
+    const target = _apiConfigDraft.unified ? _apiConfigDraft.unified_data : _apiConfigDraft[_apiCurrentTab];
+    target.base_url = document.getElementById("api-input-base-url").value.trim();
+    target.api_key = document.getElementById("api-input-api-key").value.trim();
+    target.model = document.getElementById("api-input-model").value.trim();
+}
+
+function switchApiTab(layer) {
+    _flushCurrentLayerTosDraft();
+    _apiCurrentTab = layer;
+    _renderApiModal();
+}
+
+function onApiUnifiedToggle() {
+    _flushCurrentLayerTosDraft();
+    _apiConfigDraft.unified = document.getElementById("api-unified-toggle").checked;
+    if (_apiConfigDraft.unified) {
+        // 统一模式：把当前层数据复制为unified_data起点
+        const cur = _apiConfigDraft[_apiCurrentTab];
+        if (cur.base_url || cur.api_key || cur.model) {
+            _apiConfigDraft.unified_data = { ...cur };
+        }
+    }
+    _renderApiModal();
+}
+
+function clearCurrentApiLayer() {
+    if (!_apiConfigDraft) return;
+    const target = _apiConfigDraft.unified ? _apiConfigDraft.unified_data : _apiConfigDraft[_apiCurrentTab];
+    target.base_url = "";
+    target.api_key = "";
+    target.model = "";
+    _renderApiModal();
+}
+
+function saveApiConfig() {
+    _flushCurrentLayerTosDraft();
+    _saveApiConfigToStorage(_apiConfigDraft);
+    _updateApiButtonState();
+    closeApiConfigModal();
 }

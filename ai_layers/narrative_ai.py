@@ -71,6 +71,7 @@ class NarrativeAI:
         narrative_history: list,
         history: list = None,
         trace_id: str = None,
+        custom_api: dict | None = None,
     ) -> dict:
         if history is None:
             history = []
@@ -110,6 +111,7 @@ class NarrativeAI:
                 prompt=prompt,
                 contexts=[],
                 trace_label="NarrativeAI.generate",
+                custom_api=custom_api,
             )
             llm_response = outcome.response
             response_text = (

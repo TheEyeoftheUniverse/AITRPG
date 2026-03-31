@@ -514,6 +514,12 @@ def create_trpg_app(plugin):
         data = await request.get_json()
         player_input = data.get("input", "").strip()
         move_to = data.get("move_to", "").strip() or None
+        custom_api = data.get("custom_api") or None
+        if isinstance(custom_api, dict) and not any(
+            isinstance(v, dict) and v.get("base_url") and v.get("api_key") and v.get("model")
+            for v in custom_api.values()
+        ):
+            custom_api = None
 
         if not player_input and not move_to:
             return jsonify({"error": "输入不能为空"}), 400
@@ -528,7 +534,8 @@ def create_trpg_app(plugin):
                         session_id=session_id,
                         player_input=player_input,
                         history=web_session["history"],
-                        move_to=move_to
+                        move_to=move_to,
+                        custom_api=custom_api,
                     )
 
                     narrative = result["narrative_result"]["narrative"]
@@ -721,6 +728,8 @@ def create_trpg_app(plugin):
         if retry_from not in ("rule", "rhythm", "narrative"):
             return jsonify({"error": f"无效的重试起点: {retry_from}"}), 400
 
+        custom_api = data.get("custom_api") or None
+
         session_id = web_session["session_id"]
         _action_results.pop(cookie_id, None)
 
@@ -734,6 +743,7 @@ def create_trpg_app(plugin):
                         history=[],       # Will be overridden from cache
                         move_to=None,
                         retry_from=retry_from,
+                        custom_api=custom_api,
                     )
 
                     narrative = result["narrative_result"]["narrative"]
