@@ -785,12 +785,14 @@ class AITRPGPlugin(Star):
                     hard_changes,
                     self._derive_runtime_hard_changes(rule_plan, rule_result),
                 )
-                if self.session_manager.should_activate_butler_for_action(session_id, player_input):
+                _butler_activated_by_action = self.session_manager.should_activate_butler_for_action(session_id, player_input)
+                _butler_activated_by_move = move_to and self.session_manager.should_activate_butler_on_entry(session_id, move_to)
+                if _butler_activated_by_action or _butler_activated_by_move:
                     hard_changes = self._merge_world_changes(
                         hard_changes,
                         self.session_manager.build_butler_activation_changes(
                             session_id,
-                            "player_approached_butler_in_living_room",
+                            "player_entered_living_room" if _butler_activated_by_move else "player_approached_butler_in_living_room",
                         ),
                     )
                 logger.info(f"[AITRPG] 规则层硬变化: {hard_changes}")
