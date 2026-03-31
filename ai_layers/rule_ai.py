@@ -24,6 +24,7 @@ from .provider_failover import (
 import json
 import os
 import random
+from collections import deque
 from typing import Any, Dict
 
 
@@ -108,6 +109,7 @@ class RuleAI:
         game_state: dict,
         module_data: dict,
         trace_id: str = None,
+        custom_api: dict | None = None,
     ) -> dict:
         provider_candidates = self._get_provider_candidates()
         if not provider_candidates:
@@ -132,6 +134,7 @@ class RuleAI:
                 prompt=prompt,
                 contexts=[],
                 trace_label="RuleAI.adjudicate_action",
+                custom_api=custom_api,
             )
             llm_response = outcome.response
             response_text = llm_response.completion_text if hasattr(llm_response, "completion_text") else str(llm_response)
@@ -361,9 +364,11 @@ class RuleAI:
         inventory = game_state.get("player", {}).get("inventory", [])
         clues_found = game_state.get("world_state", {}).get("clues_found", [])
         reachable = sorted(self._get_reachable_locations(game_state, module_data))
+        history_summaries = self._build_history_summaries(game_state)
 
         prompt = prompt_template.replace("{player_input}", player_input)
         prompt = prompt.replace("{current_location}", current_location)
+        prompt = prompt.replace("{history_summaries}", history_summaries)
         prompt = prompt.replace("{location_context}", json.dumps(location_context, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{scene_objects}", json.dumps(scene_objects, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{scene_npcs}", json.dumps(prompt_scene_npcs, ensure_ascii=False, indent=2))
@@ -437,8 +442,34 @@ class RuleAI:
                     "\n# 可用预设任务\n"
                     "以下预设任务可由玩家发起（preset_task_request），括号内为触发条件描述：\n"
                     + "\n".join(task_lines) + "\n"
+                    "- 选择 preset_task_request 前，先判断玩家要求的是“谁去引开威胁”以及“谁去调查/谁获得行动窗口”。\n"
+                    "- 如果玩家表达的是“玩家引开威胁、NPC去调查”，只能选择语义与此分工一致的任务。\n"
+                    "- 如果玩家表达的是“NPC去引开威胁、玩家独自调查”，只能选择语义与此分工一致的任务。\n"
+                    "- 如果分工语义不清楚或当前输入不足以区分任务，不要猜，preset_task_request.task_id 设为 null。\n"
                 )
         return prompt
+
+    def _build_history_summaries(self, game_state: dict) -> str:
+        narrative_history = game_state.get("narrative_history", [])
+        if isinstance(narrative_history, deque):
+            narrative_history = list(narrative_history)
+        elif not isinstance(narrative_history, list):
+            narrative_history = []
+
+        if not narrative_history:
+            return "No prior turns."
+
+        parts = []
+        for entry in narrative_history:
+            if isinstance(entry, dict):
+                round_num = entry.get("round", "?")
+                summary = str(entry.get("summary", "") or "").strip()
+                if summary:
+                    parts.append(f"[Round {round_num}] {summary}")
+            elif entry:
+                parts.append(str(entry))
+
+        return "\n".join(parts) if parts else "No prior turns."
 
     def _normalize_action_plan(
         self,
