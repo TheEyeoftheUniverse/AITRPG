@@ -2916,9 +2916,14 @@ class SessionManager:
         for obj_name, obj_data in objects.items():
             leads_to = obj_data.get("leads_to")
             requires = obj_data.get("requires")
-            if leads_to and requires:
-                # 检查requires中的所有物品是否都已获得
-                if not all(req in all_items for req in requires):
+            requires_any = obj_data.get("requires_any")
+            if leads_to and (requires or requires_any):
+                satisfied = True
+                if requires and not all(req in all_items for req in requires):
+                    satisfied = False
+                if requires_any and not any(req in all_items for req in requires_any):
+                    satisfied = False
+                if not satisfied:
                     from_loc = obj_data.get("location", "")
                     locked.add((from_loc, leads_to))
 
