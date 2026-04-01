@@ -1135,15 +1135,18 @@ class SessionManager:
 
         actor_location = str(requirements.get("actor_location") or "").strip()
         current_location = str(npc_state.get("location") or "").strip()
+        kind = str(task_cfg.get("kind") or "").strip()
+        staging_location = str(task_cfg.get("staging_location") or "").strip()
+        # decoy 类型有 staging_location 时跳过 actor_location 检查（启动时会自动瞬移）
         if actor_location and current_location != actor_location:
-            return {"success": False, "message": f"{npc_name} 当前不在可执行该任务的位置"}
+            if not (kind == "decoy" and staging_location):
+                return {"success": False, "message": f"{npc_name} 当前不在可执行该任务的位置"}
 
         player_location_req = str(requirements.get("player_location") or "").strip()
         player_current = str(state.get("current_location") or "").strip()
         if player_location_req and player_current != player_location_req:
             return {"success": False, "message": f"玩家当前不在可执行该任务的位置（需要在 {player_location_req}）"}
 
-        kind = str(task_cfg.get("kind") or "").strip()
         started_round = int(state.get("round_count", 0) or 0)
         preset_task: Dict[str, Any]
         if kind == "solo_search":
