@@ -1574,10 +1574,12 @@ class SessionManager:
             if not pending_flag or not flags.get(pending_flag):
                 continue
 
-            clue = str(report_cfg.get("clue") or "").strip()
+            clue_raw = report_cfg.get("clue") or ""
+            clues = clue_raw if isinstance(clue_raw, list) else [str(clue_raw).strip()] if clue_raw else []
             text = str(report_cfg.get("text") or "").strip()
-            if clue and clue not in clues_found:
-                clues_found.append(clue)
+            for clue in clues:
+                if clue and clue not in clues_found:
+                    clues_found.append(clue)
             flags[pending_flag] = False
             if delivered_flag:
                 flags[delivered_flag] = True
