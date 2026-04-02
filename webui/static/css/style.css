@@ -308,6 +308,18 @@ html, body {
     font-size: 20px;
 }
 
+.top-bar-source-link {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: color var(--transition-fast);
+}
+.top-bar-source-link:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
 .top-bar-right {
     display: flex;
     align-items: center;
