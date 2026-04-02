@@ -358,6 +358,7 @@ def create_trpg_app(plugin):
             "map_data": map_data,
             "ending_phase": plugin.session_manager.get_ending_phase(session_id),
             "ending_id": plugin.session_manager.get_ending_id(session_id),
+            "ending_display": plugin.session_manager.get_ending_display(session_id),
             "game_over": plugin.session_manager.is_game_over(session_id),
         }
 
@@ -663,6 +664,7 @@ def create_trpg_app(plugin):
                         "map_data": map_data,
                         "ending_phase": plugin.session_manager.get_ending_phase(session_id),
                         "ending_id": plugin.session_manager.get_ending_id(session_id),
+                        "ending_display": plugin.session_manager.get_ending_display(session_id),
                         "game_over": plugin.session_manager.is_game_over(session_id),
                     }
 
@@ -855,6 +857,7 @@ def create_trpg_app(plugin):
                         "map_data": map_data,
                         "ending_phase": plugin.session_manager.get_ending_phase(session_id),
                         "ending_id": plugin.session_manager.get_ending_id(session_id),
+                        "ending_display": plugin.session_manager.get_ending_display(session_id),
                         "game_over": plugin.session_manager.is_game_over(session_id),
                     }
 

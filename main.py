@@ -1175,10 +1175,21 @@ class AITRPGPlugin(Star):
         influence_summary = ", ".join(
             f"{key}={value}" for key, value in influence.items() if value
         )
+        emily_info = ending_context.get("emily_info", {})
+        emily_summary = ""
+        if ending_id in ("emily_escaped", "escaped"):
+            emily_together = emily_info.get("together", False)
+            emily_trust = emily_info.get("trust_level", 0)
+            emily_summary = (
+                f"\n艾米莉信息: 信任值={emily_trust:.2f}, 是否同行={'是' if emily_together else '否'}。"
+                f"重要设定: 艾米莉与玩家不是同一个时代的人——她来自约50年前，被困在中间带至今。"
+                f"若一同逃脱回到现实，玩家再联系到她时会发现她已是一位老人。"
+                f"她找了主角很久却从未找到，直到主角如今找上了她。"
+            )
         ending_hint = (
             f"这是游戏的结局阶段。结局类型: {ending_id}。{ending_desc}\n"
             f"前情提要（硬编码文本已展示给玩家）: {hardcoded_text}\n"
-            f"影响维度: {influence_summary}\n"
+            f"影响维度: {influence_summary}{emily_summary}\n"
             f"请基于以上信息，生成一段完整的、有感染力的结局叙述。"
             f"这是后日谈式的收尾，字数200-400字。描写玩家最终的命运和这段经历的尾声。"
         )

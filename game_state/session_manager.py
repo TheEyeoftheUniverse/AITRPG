@@ -2177,6 +2177,21 @@ class SessionManager:
         flags = state.get("world_state", {}).get("flags", {})
         return flags.get("ending_id") or None
 
+    def get_ending_display(self, session_id: str) -> dict:
+        """Get display_name and overlay_text for the current ending from module config."""
+        state = self.sessions.get(session_id)
+        if not state:
+            return {}
+        ending_id = (state.get("world_state", {}).get("flags", {}) or {}).get("ending_id", "")
+        if not ending_id:
+            return {}
+        module_data = state.get("module_data", {})
+        ending_data = module_data.get("endings", {}).get("ending_conditions", {}).get(ending_id, {})
+        return {
+            "display_name": ending_data.get("display_name", "结局"),
+            "overlay_text": ending_data.get("overlay_text", "你的冒险到此结束了。"),
+        }
+
     def get_ending_context(self, session_id: str) -> Dict[str, Any]:
         """Build context for NarrativeAI ending generation."""
         state = self.sessions.get(session_id)
@@ -2190,6 +2205,19 @@ class SessionManager:
         ending_data = ending_conditions.get(ending_id, {})
         influence_dims = endings.get("influence_dimensions", {}).get("dimensions", {})
 
+        # 艾米莉同行信息（供逃脱结局后日谈使用）
+        npc_states = state.get("world_state", {}).get("npcs", {})
+        emily_state = npc_states.get("艾米莉", {}) if isinstance(npc_states, dict) else {}
+        emily_info = {
+            "trust_level": float(emily_state.get("trust_level", 0) or 0),
+            "companion_mode": str(emily_state.get("companion_mode") or ""),
+            "location": str(emily_state.get("location") or ""),
+            "together": (
+                str(emily_state.get("location") or "") == str(state.get("current_location") or "")
+                and str(emily_state.get("companion_mode") or "") == "follow"
+            ),
+        }
+
         return {
             "ending_id": ending_id,
             "ending_description": ending_data.get("description", ""),
@@ -2201,6 +2229,7 @@ class SessionManager:
                 "hp": state.get("player", {}).get("hp", 0),
                 "inventory": state.get("player", {}).get("inventory", []),
             },
+            "emily_info": emily_info,
             "clues_found": state.get("world_state", {}).get("clues_found", []),
             "round_count": state.get("round_count", 0),
         }

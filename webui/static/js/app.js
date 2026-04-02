@@ -331,7 +331,7 @@ async function resumeGame() {
             }
         });
 
-        handleEndingPhase(data.ending_phase, data.game_over, data.ending_id);
+        handleEndingPhase(data.ending_phase, data.game_over, data.ending_id, data.ending_display);
     } catch (uiErr) {
         console.error("Failed to initialize resumed game UI:", uiErr, data);
     }
@@ -1904,8 +1904,11 @@ function getEndingDisplayName(endingId) {
     return ENDING_NAMES[endingId] || "结局";
 }
 
-function handleEndingPhase(phase, gameOver, endingId) {
+let _lastEndingDisplay = {};
+
+function handleEndingPhase(phase, gameOver, endingId, endingDisplay) {
     endingPhase = phase || null;
+    if (endingDisplay) _lastEndingDisplay = endingDisplay;
 
     if (phase === "triggered") {
         showEndingIndicator(endingId);
@@ -1920,7 +1923,7 @@ function handleEndingPhase(phase, gameOver, endingId) {
 function showEndingIndicator(endingId) {
     const indicator = document.getElementById("ending-indicator");
     const indicatorText = document.getElementById("ending-indicator-text");
-    const endingName = getEndingDisplayName(endingId);
+    const endingName = (_lastEndingDisplay && _lastEndingDisplay.display_name) || ENDING_NAMES[endingId] || "结局";
     indicatorText.textContent = `即将进入：${endingName}`;
     indicator.classList.remove("hidden");
 
@@ -1956,10 +1959,11 @@ function showEndingOverlay(endingId) {
     const overlay = document.getElementById("ending-overlay");
     const title = document.getElementById("ending-overlay-title");
     const desc = document.getElementById("ending-overlay-desc");
-    const endingName = getEndingDisplayName(endingId);
+    const endingName = (_lastEndingDisplay && _lastEndingDisplay.display_name) || ENDING_NAMES[endingId] || "结局";
+    const overlayText = (_lastEndingDisplay && _lastEndingDisplay.overlay_text) || "你的冒险到此结束了。";
 
     title.textContent = endingName;
-    desc.textContent = "你的冒险到此结束了。";
+    desc.textContent = overlayText;
     overlay.classList.remove("hidden");
 }
 
