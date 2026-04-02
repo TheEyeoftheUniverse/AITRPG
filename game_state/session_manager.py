@@ -685,37 +685,62 @@ class SessionManager:
         if not isinstance(state, dict):
             return
 
-        _mod = state.get("module_data")
+        _mod = state.get("module_data") or {}
         influence = state.setdefault("influence_dimensions", self._build_default_influence_dimensions(_mod))
         for key, value in self._build_default_influence_dimensions(_mod).items():
             influence.setdefault(key, value)
 
+        dim_configs = _mod.get("endings", {}).get("influence_dimensions", {}).get("dimensions", {})
+        if not isinstance(dim_configs, dict):
+            return
+
         player = state.setdefault("player", {})
         world_state = state.setdefault("world_state", {})
         flags = world_state.setdefault("flags", {})
-        inventory = player.get("inventory", []) if isinstance(player.get("inventory"), list) else []
-        clues_found = world_state.get("clues_found", []) if isinstance(world_state.get("clues_found"), list) else []
-        current_location = str(state.get("current_location") or "").strip()
-        module_npcs = get_module_npcs(state.get("module_data", {}))
         npc_states = world_state.get("npcs", {}) if isinstance(world_state.get("npcs"), dict) else {}
+        current_location = str(state.get("current_location") or "").strip()
 
-        influence["escape_success"] = self._resolve_bool_influence_dim(state, "escape_success")
-        npc_together = False
-        emily_trust = 0.0
-        for npc_name, npc_cfg in module_npcs.items():
-            if not isinstance(npc_cfg, dict) or not isinstance(npc_cfg.get("companion"), dict):
+        for dim_name, dim_cfg in dim_configs.items():
+            if not isinstance(dim_cfg, dict):
                 continue
-            runtime = npc_states.get(npc_name, {})
-            npc_location = str((runtime or {}).get("location") or npc_cfg.get("location") or "").strip()
-            if current_location and npc_location == current_location:
-                npc_together = True
-                emily_trust = float((runtime or {}).get("trust_level", 0) or 0)
-                break
+            default = dim_cfg.get("default")
+            source = str(dim_cfg.get("source") or "").strip()
 
-        influence["npc_together"] = bool(flags.get("npc_together", npc_together))
-        influence["emily_trust"] = emily_trust
-        influence["san_remaining"] = int(player.get("san", 0) or 0)
-        influence["rounds_used"] = int(state.get("round_count", 0) or 0)
+            if source == "player.san":
+                influence[dim_name] = int(player.get("san", 0) or 0)
+            elif source == "round_count":
+                influence[dim_name] = int(state.get("round_count", 0) or 0)
+            elif source == "npc_same_location":
+                # 检查是否有同伴NPC在同一位置
+                module_npcs = get_module_npcs(_mod)
+                together = False
+                for npc_name, npc_cfg in module_npcs.items():
+                    if not isinstance(npc_cfg, dict) or not isinstance(npc_cfg.get("companion"), dict):
+                        continue
+                    runtime = npc_states.get(npc_name, {})
+                    npc_location = str((runtime or {}).get("location") or npc_cfg.get("location") or "").strip()
+                    if current_location and npc_location == current_location:
+                        together = True
+                        break
+                influence[dim_name] = bool(flags.get(dim_name, together))
+            elif source.startswith("npc_runtime."):
+                # 通用NPC运行时字段读取: npc_runtime.NPC名.字段名
+                parts = source.split(".", 2)
+                if len(parts) == 3:
+                    npc_name, field = parts[1], parts[2]
+                    runtime = npc_states.get(npc_name, {})
+                    raw = (runtime or {}).get(field, default)
+                    try:
+                        influence[dim_name] = float(raw) if isinstance(default, (int, float)) else raw
+                    except (ValueError, TypeError):
+                        influence[dim_name] = default
+            elif source.startswith("flags."):
+                flag_name = source[6:]
+                influence[dim_name] = bool(flags.get(flag_name, default))
+            elif isinstance(default, bool):
+                # bool 类型：走 equivalent_flags/clues/inventory 解析
+                influence[dim_name] = self._resolve_bool_influence_dim(state, dim_name)
+            # 无 source 且非 bool：保持 default 或已有值
 
     def _get_butler_runtime_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
         self._ensure_runtime_defaults(state)
