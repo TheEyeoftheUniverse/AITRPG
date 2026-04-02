@@ -309,6 +309,7 @@ class NarrativeAI:
             compact_chase = {
                 "active": butler_chase.get("active"),
                 "status": butler_chase.get("status"),
+                "target": butler_chase.get("target"),
                 "entity_name": butler_chase.get("entity_name"),
                 "entity_location": butler_chase.get("entity_location") or butler_chase.get("butler_location"),
                 "player_location": butler_chase.get("player_location"),
@@ -321,6 +322,8 @@ class NarrativeAI:
 
         if not feasible and hint:
             rhythm_block += f"\n- blocked_reason: {hint}"
+        elif hint:
+            rhythm_block += f"\n- hint: {hint}"
 
         prompt_template = self.config.get("narrative_ai_prompt", "").strip()
         if not prompt_template:
@@ -378,8 +381,13 @@ class NarrativeAI:
         if butler_chase.get("active") and butler_chase.get("status") != "blocked":
             relation = butler_chase.get("player_relation", "separate_rooms")
             threat_label = str(butler_chase.get("entity_name") or "the primary threat entity").strip()
+            chase_target = butler_chase.get("target")
+            if chase_target and chase_target != "player":
+                target_desc = f"is pursuing {chase_target} (NOT the player)"
+            else:
+                target_desc = "is pursuing the player"
             prompt += (
-                f"- PRIMARY THREAT CHASE IS ACTIVE. {threat_label} is pursuing the player. This turn MUST convey ongoing chase tension.\n"
+                f"- PRIMARY THREAT CHASE IS ACTIVE. {threat_label} {target_desc}. This turn MUST convey ongoing chase tension.\n"
                 "- Do NOT write this as a calm room introduction. The threat has not ended.\n"
             )
             if relation == "same_room":
@@ -452,6 +460,7 @@ class NarrativeAI:
             compact_payload["threat_chase"] = {
                 "active": butler_chase.get("active"),
                 "status": butler_chase.get("status"),
+                "target": butler_chase.get("target"),
                 "entity_name": butler_chase.get("entity_name"),
                 "entity_location": butler_chase.get("entity_location") or butler_chase.get("butler_location"),
                 "player_location": butler_chase.get("player_location"),
@@ -506,8 +515,13 @@ class NarrativeAI:
         if compact_payload.get("threat_chase", {}).get("active") and compact_payload.get("threat_chase", {}).get("status") != "blocked":
             relation = compact_payload.get("threat_chase", {}).get("player_relation", "separate_rooms")
             threat_label = str(compact_payload.get("threat_chase", {}).get("entity_name") or "the primary threat entity").strip()
+            chase_target = compact_payload.get("threat_chase", {}).get("target")
+            if chase_target and chase_target != "player":
+                target_desc = f"is pursuing {chase_target} (NOT the player)"
+            else:
+                target_desc = "is pursuing the player"
             prompt += (
-                f"\n\nPRIMARY THREAT CHASE IS ACTIVE. {threat_label} is pursuing the player.\n"
+                f"\n\nPRIMARY THREAT CHASE IS ACTIVE. {threat_label} {target_desc}.\n"
                 "This turn MUST convey ongoing chase tension. Do NOT write a calm room introduction.\n"
             )
             if relation == "same_room":

@@ -746,7 +746,7 @@ async function handleActionSuccessResponse(data) {
     }
 
     renderProcessingStatus(data.telemetry || null, { forceCollapsed: true });
-    handleEndingPhase(data.ending_phase, data.game_over, data.ending_id);
+    handleEndingPhase(data.ending_phase, data.game_over, data.ending_id, data.ending_display);
 }
 
 async function fetchAndRenderActionProgress() {
