@@ -231,7 +231,8 @@
             ],
             "exits": [
                 "厨房",
-                "仪式现场"
+                "仪式现场",
+                "艾米莉标出的出口"
             ],
             "floor": -1,
             "has_door": false,
@@ -314,9 +315,9 @@
             "description": "艾米莉在独立调查后为你标出的出口。它吞没所有光线，像另一处通往外界的纯黑地洞。",
             "objects": [],
             "exits": [
-                "次卧"
+                "地下室"
             ],
-            "floor": 2,
+            "floor": -1,
             "atmosphere": 1,
             "is_ending_location": true,
             "ending_id": "emily_escaped",
