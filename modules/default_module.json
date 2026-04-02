@@ -953,14 +953,6 @@
                 "trigger": "escape_success===true AND amnesia===false",
                 "priority": 3,
                 "description": "逃脱结局：仪式焚毁后，进入纯黑地洞，脱离中间带。",
-                "validation": {
-                    "required_flags": [
-                        "ritual_destroyed"
-                    ],
-                    "required_current_locations": [
-                        "black_pit"
-                    ]
-                },
                 "hardcoded_text": "你扑向那道在仪式残骸中央张开的纯黑地洞。下坠的瞬间，身后的震动、热浪和那栋房子的压迫感一下子被拉远，像整片中间带都在你身后塌陷。黑暗彻底吞没了你的视野。",
                 "display_name": "逃脱结局",
                 "overlay_text": "恭喜你成功逃离了中间带。"
