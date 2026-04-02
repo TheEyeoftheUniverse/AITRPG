@@ -963,7 +963,8 @@
                 "description": "逃脱结局：仪式焚毁后，进入纯黑地洞，脱离中间带。",
                 "hardcoded_text": "你扑向那道在仪式残骸中央张开的纯黑地洞。下坠的瞬间，身后的震动、热浪和那栋房子的压迫感一下子被拉远，像整片中间带都在你身后塌陷。黑暗彻底吞没了你的视野。",
                 "display_name": "逃脱结局",
-                "overlay_text": "恭喜你成功逃离了中间带。"
+                "overlay_text": "恭喜你成功逃离了中间带。",
+                "allow_epilogue": true
             },
             "emily_escaped": {
                 "trigger": "",
@@ -971,7 +972,8 @@
                 "description": "艾米莉找到出口结局：跟随艾米莉独立调查后确认出的出口，脱离中间带。",
                 "hardcoded_text": "你跟着艾米莉冲向她标出的那道纯黑地洞，下坠的瞬间，你最后一次听见这栋房子深处传来的沉闷回响，随后整个人被那片不透光的黑暗彻底吞没。",
                 "display_name": "逃脱结局",
-                "overlay_text": "恭喜你成功逃离了中间带。"
+                "overlay_text": "恭喜你成功逃离了中间带。",
+                "allow_epilogue": true
             },
             "getlost": {
                 "trigger": "",

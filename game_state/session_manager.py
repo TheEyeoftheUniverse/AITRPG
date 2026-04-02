@@ -2180,6 +2180,19 @@ class SessionManager:
         world_flags["ending_phase"] = "concluded"
         world_flags["game_over"] = True
 
+    def allows_epilogue(self, session_id: str) -> bool:
+        """Check if current ending allows post-ending free chat (epilogue)."""
+        state = self.sessions.get(session_id)
+        if not state:
+            return False
+        flags = state.get("world_state", {}).get("flags", {})
+        ending_id = flags.get("ending_id", "")
+        if not ending_id or flags.get("ending_phase") != "concluded":
+            return False
+        module_data = state.get("module_data", {})
+        ending_data = module_data.get("endings", {}).get("ending_conditions", {}).get(ending_id, {})
+        return bool(ending_data.get("allow_epilogue"))
+
     def is_ending_triggered(self, session_id: str) -> bool:
         """Check if an ending has been triggered but not yet concluded."""
         state = self.sessions.get(session_id)
@@ -2217,6 +2230,7 @@ class SessionManager:
         return {
             "display_name": ending_data.get("display_name", "结局"),
             "overlay_text": ending_data.get("overlay_text", "你的冒险到此结束了。"),
+            "allow_epilogue": bool(ending_data.get("allow_epilogue")),
         }
 
     def get_ending_context(self, session_id: str) -> Dict[str, Any]:

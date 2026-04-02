@@ -321,6 +321,10 @@ class AITRPGPlugin(Star):
 
         # === 结局已完全结束 ===
         if self.session_manager.is_game_over(session_id):
+            # 允许后日谈的结局：玩家可继续发消息，只调文案AI
+            if player_input and self.session_manager.allows_epilogue(session_id):
+                result = await self._process_epilogue(session_id, player_input, history)
+                return result, None
             ending_text = self.session_manager.get_game_over_message(session_id)
             for step_key, _, _ in self.PROGRESS_STEPS:
                 self._skip_progress_step(session_id, step_key, "结局已触发")
@@ -1134,6 +1138,78 @@ class AITRPGPlugin(Star):
 
         return output
 
+    async def _process_epilogue(self, session_id: str, player_input: str, history: list) -> dict:
+        """Post-ending free chat: skip Rule/RhythmAI, only call NarrativeAI for epilogue continuation."""
+        logger.info(f"[AITRPG] 后日谈阶段，玩家输入: {player_input}")
+
+        self._skip_progress_step(session_id, "rule_intent", "后日谈，跳过规则AI")
+        self._skip_progress_step(session_id, "rule_adjudication", "后日谈，跳过规则AI")
+        self._skip_progress_step(session_id, "rule_check", "后日谈，跳过规则AI")
+        self._skip_progress_step(session_id, "rhythm", "后日谈，跳过节奏AI")
+
+        state = self.session_manager.get_session(session_id)
+        ending_context = self.session_manager.get_ending_context(session_id)
+        ending_id = ending_context.get("ending_id", "unknown")
+
+        rule_plan = {
+            "normalized_action": {
+                "verb": "epilogue",
+                "target_kind": "epilogue",
+                "target_key": ending_id,
+                "raw_target_text": player_input,
+            },
+            "feasibility": {"ok": True, "reason": None},
+            "location_context": {},
+            "object_context": None,
+            "npc_context": {},
+            "check": {"required": False},
+            "on_success": {},
+            "on_failure": {},
+        }
+        rule_result = {"check_type": None, "success": True, "result_description": "后日谈"}
+
+        rhythm_result = {
+            "feasible": True,
+            "hint": f"这是结局后的后日谈阶段。玩家正在回味逃脱后的生活。请根据玩家的输入和对话历史，以温和的叙事口吻继续描写后日谈。不需要游戏机制，只需要文学性的叙事回应。",
+            "stage_assessment": f"后日谈 - {ending_id}",
+            "world_changes": {},
+            "soft_world_changes": {},
+            "location_context": {},
+            "object_context": None,
+            "threat_entity_context": {},
+            "npc_context": {},
+        }
+
+        self._start_progress_step(session_id, "narrative", "文案AI 正在生成后日谈")
+        narrative_trace_id = f"{session_id}:narrative"
+        narrative_result = await self.narrative_ai.generate(
+            player_input=player_input,
+            rule_plan=rule_plan,
+            rule_result=rule_result,
+            rhythm_result=rhythm_result,
+            narrative_history=state.get("narrative_history", []),
+            history=history,
+            trace_id=narrative_trace_id,
+        )
+        self._finish_progress_step(
+            session_id, "narrative",
+            self.narrative_ai.pop_call_metric(narrative_trace_id),
+            "后日谈生成完成",
+        )
+
+        return self._finalize_action_result(
+            session_id,
+            {
+                "rule_plan": rule_plan,
+                "rule_result": rule_result,
+                "hard_changes": {},
+                "rhythm_result": rhythm_result,
+                "narrative_result": narrative_result,
+                "game_state": state,
+            },
+            message="后日谈",
+        )
+
     async def _process_ending_narrative(self, session_id: str, player_input: str, history: list) -> dict:
         """Phase 2 of ending: skip RuleAI, call NarrativeAI to generate ending narrative, then conclude."""
         logger.info(f"[AITRPG] 进入结局叙述生成阶段，ending_id={self.session_manager.get_ending_id(session_id)}")
@@ -1175,21 +1251,19 @@ class AITRPGPlugin(Star):
         influence_summary = ", ".join(
             f"{key}={value}" for key, value in influence.items() if value
         )
-        emily_info = ending_context.get("emily_info", {})
-        emily_summary = ""
-        if ending_id in ("emily_escaped", "escaped"):
-            emily_together = emily_info.get("together", False)
-            emily_trust = emily_info.get("trust_level", 0)
-            emily_summary = (
-                f"\n艾米莉信息: 信任值={emily_trust:.2f}, 是否同行={'是' if emily_together else '否'}。"
-                f"重要设定: 艾米莉与玩家不是同一个时代的人——她来自约50年前，被困在中间带至今。"
-                f"若一同逃脱回到现实，玩家再联系到她时会发现她已是一位老人。"
-                f"她找了主角很久却从未找到，直到主角如今找上了她。"
-            )
+        # 从模组维度配置自动拼接上下文描述
+        dim_context_parts = []
+        for dim_name, dim_cfg in influence_descs.items():
+            if isinstance(dim_cfg, dict) and dim_cfg.get("affects"):
+                dim_value = influence.get(dim_name, dim_cfg.get("default"))
+                dim_context_parts.append(f"{dim_cfg.get('description', dim_name)}({dim_name}={dim_value}): {dim_cfg['affects']}")
+        dim_context = "\n".join(dim_context_parts)
+
         ending_hint = (
             f"这是游戏的结局阶段。结局类型: {ending_id}。{ending_desc}\n"
             f"前情提要（硬编码文本已展示给玩家）: {hardcoded_text}\n"
-            f"影响维度: {influence_summary}{emily_summary}\n"
+            f"影响维度: {influence_summary}\n"
+            f"维度说明:\n{dim_context}\n"
             f"请基于以上信息，生成一段完整的、有感染力的结局叙述。"
             f"这是后日谈式的收尾，字数200-400字。描写玩家最终的命运和这段经历的尾声。"
         )

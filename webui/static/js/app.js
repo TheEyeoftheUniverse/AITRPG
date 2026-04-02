@@ -901,7 +901,7 @@ async function retryCurrentTurnFromStage(retryFrom) {
         stopProgressPolling();
         isProcessing = false;
         updateRetryButtonVisibility();
-        if (endingPhase !== "concluded") {
+        if (endingPhase !== "concluded" || (_lastEndingDisplay && _lastEndingDisplay.allow_epilogue)) {
             setInputEnabled(true);
             document.getElementById("chat-input").focus();
         }
@@ -1070,8 +1070,9 @@ async function sendAction() {
         stopProgressPolling();
         isProcessing = false;
         updateRetryButtonVisibility();
-        // Don't re-enable input if game is concluded
-        if (endingPhase === "concluded") {
+        // Don't re-enable input if game is concluded (unless epilogue allowed)
+        const _epilogueAllowed = _lastEndingDisplay && _lastEndingDisplay.allow_epilogue;
+        if (endingPhase === "concluded" && !_epilogueAllowed) {
             // Everything stays disabled
         } else {
             setInputEnabled(true);
@@ -1915,7 +1916,16 @@ function handleEndingPhase(phase, gameOver, endingId, endingDisplay) {
         disableMapInteraction();
     } else if (phase === "concluded" || gameOver) {
         hideEndingIndicator();
-        disableAllGameInput();
+        const allowEpilogue = endingDisplay && endingDisplay.allow_epilogue;
+        if (allowEpilogue) {
+            // 允许后日谈：禁用地图但保留聊天输入
+            disableMapInteraction();
+            cancelMoveSelection();
+            const input = document.getElementById("chat-input");
+            input.placeholder = "后日谈：继续输入，回味这段旅程...";
+        } else {
+            disableAllGameInput();
+        }
         showEndingOverlay(endingId);
     }
 }
