@@ -165,9 +165,12 @@ def create_trpg_app(plugin):
 
     _SESSION_TTL = 86400      # 24小时不活跃后清理
     _CLEANUP_INTERVAL = 1800  # 每30分钟检查一次
+    _SAVE_CLEANUP_COUNTER = 0
+    _SAVE_CLEANUP_EVERY = 336  # 每336次内存清理时执行一次存档清理（336 * 30min ≈ 7天）
 
     async def _cleanup_stale_sessions():
         """后台任务：定期清理长时间不活跃的会话，防止内存泄漏。"""
+        nonlocal _SAVE_CLEANUP_COUNTER
         while True:
             await asyncio.sleep(_CLEANUP_INTERVAL)
             try:
@@ -183,18 +186,14 @@ def create_trpg_app(plugin):
                     _action_results.pop(cid, None)
                 if expired:
                     logger.info(f"[AITRPG] 已清理 {len(expired)} 个过期 Web 会话")
+                # 每约7天清理一次磁盘存档
+                _SAVE_CLEANUP_COUNTER += 1
+                if _SAVE_CLEANUP_COUNTER >= _SAVE_CLEANUP_EVERY:
+                    _SAVE_CLEANUP_COUNTER = 0
+                    active_keys = set(_web_sessions.keys())
+                    save_store.cleanup_stale(max_age_seconds=86400 * 7, active_keys=active_keys)
             except Exception as e:
                 logger.warning(f"[AITRPG] 会话清理任务出错: {e}")
-
-    async def _cleanup_stale_saves():
-        """后台任务：每周清理磁盘上7天未修改的孤儿存档。"""
-        while True:
-            await asyncio.sleep(86400 * 7)
-            try:
-                active_keys = set(_web_sessions.keys())
-                save_store.cleanup_stale(max_age_seconds=86400 * 7, active_keys=active_keys)
-            except Exception as e:
-                logger.warning(f"[AITRPG] 存档清理任务出错: {e}")
 
     def _build_empty_web_session(cookie_id: str) -> dict:
         """创建空白 Web 会话结构"""
@@ -942,7 +941,6 @@ def create_trpg_app(plugin):
 
     # 启动后台会话清理任务
     asyncio.ensure_future(_cleanup_stale_sessions())
-    asyncio.ensure_future(_cleanup_stale_saves())
 
     return app
 
