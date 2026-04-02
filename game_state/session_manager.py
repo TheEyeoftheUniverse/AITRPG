@@ -699,8 +699,9 @@ class SessionManager:
         module_npcs = get_module_npcs(state.get("module_data", {}))
         npc_states = world_state.get("npcs", {}) if isinstance(world_state.get("npcs"), dict) else {}
 
-        influence["ritual_destroyed"] = self._resolve_bool_influence_dim(state, "ritual_destroyed")
+        influence["escape_success"] = self._resolve_bool_influence_dim(state, "escape_success")
         npc_together = False
+        emily_trust = 0.0
         for npc_name, npc_cfg in module_npcs.items():
             if not isinstance(npc_cfg, dict) or not isinstance(npc_cfg.get("companion"), dict):
                 continue
@@ -708,10 +709,11 @@ class SessionManager:
             npc_location = str((runtime or {}).get("location") or npc_cfg.get("location") or "").strip()
             if current_location and npc_location == current_location:
                 npc_together = True
+                emily_trust = float((runtime or {}).get("trust_level", 0) or 0)
                 break
 
         influence["npc_together"] = bool(flags.get("npc_together", npc_together))
-        influence["truth_revealed"] = bool(flags.get("truth_revealed", influence.get("truth_revealed", False)))
+        influence["emily_trust"] = emily_trust
         influence["san_remaining"] = int(player.get("san", 0) or 0)
         influence["rounds_used"] = int(state.get("round_count", 0) or 0)
 
