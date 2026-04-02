@@ -156,7 +156,8 @@
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `can_take` | bool | 是否允许拾取 |
-| `requires` | string[] | 交互或显现所需条件 |
+| `requires` | string[] | 交互或显现所需条件（AND 逻辑，全部满足才解锁） |
+| `requires_any` | string[] | 交互或显现所需条件（OR 逻辑，任一满足即解锁） |
 | `leads_to` | string | 该物品是否通向某地点 key |
 | `location` | string | 该物品所属地点 key |
 
@@ -260,7 +261,7 @@
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `actor` | string | 执行任务的 NPC 名称 |
-| `kind` | string | 当前支持如 `solo_search_escape`、`cooperative_escape` |
+| `kind` | string | 当前支持 `solo_search`、`cooperative_escape`、`decoy` |
 | `requirements` | object | 触发前提 |
 
 ### 独立调查类字段
@@ -286,12 +287,20 @@
 - `required_player_locations`
 - `required_npc_locations`
 
+### on_complete 常见子字段
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `set_flags` | object | 任务完成时写入的 flags |
+| `npc_clues` | string[] | 任务完成时写入 NPC `known_clues`（代码层确定性线索） |
+
 ### report 常见子字段
 
 - `pending_flag`
 - `delivered_flag`
-- `clue`
+- `clue` — 字符串或字符串数组，交付时加入玩家 `clues_found`
 - `text`
+- `npc_clues_on_deliver` — 字符串数组，交付报告后写入 NPC `known_clues`
 
 ## micro_scenes
 
@@ -340,7 +349,10 @@
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `description` | string | 结局描述 |
+| `description` | string | 结局描述（传递给 AI） |
+| `display_name` | string | 前端显示的结局标题 |
+| `overlay_text` | string | 前端结局遮罩层描述文本 |
+| `allow_epilogue` | bool | 结局后是否允许后日谈自由对话 |
 | `hardcoded_text` | string | 结局硬编码文本 |
 | `hardcoded_text_<subtype>` | string | 细分子条件结局文本 |
 | `validation` | object | AI 请求结局时的后端校验 |
@@ -355,10 +367,30 @@
 
 ### influence_dimensions
 
-用于结局维度统计和描述。常见结构：
+用于结局维度统计，数据驱动。每个维度通过 `source` 字段指定数据来源，代码自动解析。
 
-- `dimensions`
-- `descriptions`
+#### dimensions.<dim_name> 字段
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `default` | any | 默认值（也决定类型：bool / number） |
+| `description` | string | 维度描述（传递给 AI） |
+| `affects` | string | 影响说明（传递给 AI） |
+| `source` | string | 数据来源（见下表） |
+| `equivalent_flags` | string[] | bool 类型可选，从 flags 中匹配 |
+| `equivalent_clues` | string[] | bool 类型可选，从线索中匹配 |
+| `equivalent_inventory` | string[] | bool 类型可选，从物品栏中匹配 |
+
+#### source 支持的值
+
+| source | 说明 | 示例 |
+| --- | --- | --- |
+| `player.san` | 读取玩家属性 | `san_remaining` |
+| `round_count` | 当前轮次 | `rounds_used` |
+| `npc_same_location` | 是否有同伴 NPC 在同一位置 | `npc_together` |
+| `npc_runtime.NPC名.字段` | NPC 运行时数据 | `npc_runtime.艾米莉.trust_level` |
+| `flags.标志名` | 游戏 flags | `flags.ritual_destroyed` |
+| （不填，bool 类型） | 自动走 equivalent_flags 解析 | `escape_success` |
 
 ## 编写建议
 
