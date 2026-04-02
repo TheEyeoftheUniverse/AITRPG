@@ -183,6 +183,9 @@ def create_trpg_app(plugin):
                     _action_results.pop(cid, None)
                 if expired:
                     logger.info(f"[AITRPG] 已清理 {len(expired)} 个过期 Web 会话")
+                # 清理磁盘上的过期存档（7天未修改且不在活跃会话中）
+                active_keys = set(_web_sessions.keys())
+                save_store.cleanup_stale(max_age_seconds=86400 * 7, active_keys=active_keys)
             except Exception as e:
                 logger.warning(f"[AITRPG] 会话清理任务出错: {e}")
 

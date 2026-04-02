@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from typing import Any, Dict, Optional
 
 from astrbot.api import logger
@@ -58,3 +59,28 @@ class JsonSaveStore:
     def _get_save_path(self, key: str) -> str:
         safe_key = re.sub(r"[^a-zA-Z0-9_.-]", "_", key)
         return os.path.join(self.base_dir, f"{safe_key}.json")
+
+    def cleanup_stale(self, max_age_seconds: int = 86400 * 7, active_keys: set = None):
+        """删除超过 max_age_seconds 未修改的存档文件，跳过 active_keys 中的。"""
+        active_keys = active_keys or set()
+        now = time.time()
+        removed = 0
+        try:
+            for fname in os.listdir(self.base_dir):
+                if not fname.endswith(".json"):
+                    continue
+                key = fname[:-5]
+                if key in active_keys:
+                    continue
+                fpath = os.path.join(self.base_dir, fname)
+                try:
+                    mtime = os.path.getmtime(fpath)
+                    if now - mtime > max_age_seconds:
+                        os.remove(fpath)
+                        removed += 1
+                except OSError:
+                    pass
+        except OSError:
+            pass
+        if removed:
+            logger.info(f"[AITRPG] 清理了 {removed} 个过期存档（>{max_age_seconds // 86400}天）")
