@@ -17,6 +17,7 @@ DEFAULT_RUNTIME_MEMORY_TEMPLATE: Dict[str, Any] = {
     "emergency_context": {},
     "interaction_history": [],
     "triggered_events": [],
+    "known_clues": [],
 }
 
 DEFAULT_CROSS_WALL_TRIGGER_KEYWORDS = (

@@ -1350,6 +1350,12 @@ class SessionManager:
                 on_complete = task_cfg.get("on_complete", {}) if isinstance(task_cfg.get("on_complete"), dict) else {}
                 set_flags = on_complete.get("set_flags", {}) if isinstance(on_complete.get("set_flags"), dict) else {}
                 flags.update(copy.deepcopy(set_flags))
+                npc_clues = on_complete.get("npc_clues", [])
+                if isinstance(npc_clues, list) and npc_clues:
+                    existing = npc_runtime.setdefault("memory", {}).setdefault("known_clues", [])
+                    for clue in npc_clues:
+                        if clue and clue not in existing:
+                            existing.append(clue)
                 _note = str(task_cfg.get("on_complete_note") or "").strip()
                 if _note:
                     changes["movement_note"] = _note
@@ -1613,6 +1619,13 @@ class SessionManager:
             flags[pending_flag] = False
             if delivered_flag:
                 flags[delivered_flag] = True
+            npc_clues = report_cfg.get("npc_clues_on_deliver", [])
+            if isinstance(npc_clues, list) and npc_clues:
+                npc_rt = npc_states.get(npc_name, {})
+                existing = npc_rt.setdefault("memory", {}).setdefault("known_clues", [])
+                for c in npc_clues:
+                    if c and c not in existing:
+                        existing.append(c)
             return {
                 "delivered": True,
                 "task_id": task_id,

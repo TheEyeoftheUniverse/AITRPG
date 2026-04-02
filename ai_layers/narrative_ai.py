@@ -865,6 +865,7 @@ class NarrativeAI:
         topics_discussed = npc_memory.get("topics_discussed", []) if isinstance(npc_memory.get("topics_discussed"), list) else []
         evidence_seen = self._compact_memory_items(npc_memory.get("evidence_seen"), item_key="key", limit=2)
         promises = self._compact_memory_items(npc_memory.get("promises"), item_key="content", limit=2)
+        known_clues = npc_memory.get("known_clues", []) if isinstance(npc_memory.get("known_clues"), list) else []
         last_impression = npc_memory.get("last_impression", {}) if isinstance(npc_memory.get("last_impression"), dict) else {}
 
         compact = {
@@ -874,6 +875,7 @@ class NarrativeAI:
             "answered_questions": answered_questions[:3],
             "topics_discussed": topics_discussed[:5],
             "evidence_seen": evidence_seen,
+            "known_clues": known_clues,
             "promises": promises,
             "last_impression": {
                 key: self._trim_text(value, 60)
