@@ -48,10 +48,39 @@ const PROCESSING_STEP_FALLBACK_MESSAGES = {
 // ─── 初始化 ───
 
 document.addEventListener("DOMContentLoaded", () => {
+    applyStoredTheme();
     setupInputHandlers();
     initializeModuleSelection();
     _updateApiButtonState();
 });
+
+// ─── 主题切换 ───
+
+function applyStoredTheme() {
+    const stored = localStorage.getItem("aitrpg_theme");
+    if (stored) {
+        document.documentElement.setAttribute("data-theme", stored);
+    }
+    _updateThemeIcon();
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute("data-theme");
+    const next = current === "light" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("aitrpg_theme", next);
+    _updateThemeIcon();
+}
+
+function _updateThemeIcon() {
+    const btn = document.getElementById("btn-theme");
+    if (!btn) return;
+    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+    btn.innerHTML = isDark
+        ? '<span class="mdi mdi-weather-night"></span>'
+        : '<span class="mdi mdi-white-balance-sunny"></span>';
+    btn.title = isDark ? "切换到亮色主题" : "切换到暗色主题";
+}
 
 function setupInputHandlers() {
     const input = document.getElementById("chat-input");

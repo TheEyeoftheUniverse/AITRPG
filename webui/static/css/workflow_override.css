@@ -95,11 +95,11 @@
     margin: 14px 18px 6px;
     padding: 12px 14px;
     border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(139, 111, 78, 0.12);
     background:
-        radial-gradient(circle at top right, rgba(89, 156, 255, 0.16), transparent 36%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(0, 0, 0, 0.12));
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+        radial-gradient(circle at top right, rgba(139, 111, 78, 0.10), transparent 36%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.12));
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
 }
 
 .processing-status.hidden {
@@ -140,9 +140,9 @@
 }
 
 .processing-status-badge.running {
-    color: #9fd0ff;
-    border-color: rgba(89, 156, 255, 0.28);
-    background: rgba(89, 156, 255, 0.12);
+    color: #c9a96e;
+    border-color: rgba(139, 111, 78, 0.35);
+    background: rgba(139, 111, 78, 0.12);
 }
 
 .processing-status-badge.completed {
@@ -216,8 +216,8 @@
 }
 
 .processing-step.running {
-    border-color: rgba(89, 156, 255, 0.28);
-    background: rgba(89, 156, 255, 0.08);
+    border-color: rgba(139, 111, 78, 0.30);
+    background: rgba(139, 111, 78, 0.06);
 }
 
 .processing-step.completed {
@@ -271,7 +271,7 @@
 }
 
 .processing-chip.active {
-    color: #9fd0ff;
+    color: #c9a96e;
 }
 
 .processing-chip.success {
