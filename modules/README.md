@@ -380,6 +380,7 @@
 | `equivalent_flags` | string[] | bool 类型可选，从 flags 中匹配 |
 | `equivalent_clues` | string[] | bool 类型可选，从线索中匹配 |
 | `equivalent_inventory` | string[] | bool 类型可选，从物品栏中匹配 |
+| `applicable_endings` | string[] | 可选，该维度仅对指定结局生效；未填则对所有结局生效 |
 
 #### source 支持的值
 

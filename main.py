@@ -1248,14 +1248,26 @@ class AITRPGPlugin(Star):
         rule_result = {"check_type": None, "success": True, "result_description": "结局叙述"}
 
         # Build a rhythm_result with ending hints
+        # 按 applicable_endings 过滤：只传递与当前结局相关的维度
+        filtered_influence = {}
+        filtered_descs = {}
+        for dim_name, dim_cfg in influence_descs.items():
+            if not isinstance(dim_cfg, dict):
+                continue
+            applicable = dim_cfg.get("applicable_endings")
+            if applicable and isinstance(applicable, list) and ending_id not in applicable:
+                continue
+            filtered_influence[dim_name] = influence.get(dim_name, dim_cfg.get("default"))
+            filtered_descs[dim_name] = dim_cfg
+
         influence_summary = ", ".join(
-            f"{key}={value}" for key, value in influence.items() if value
+            f"{key}={value}" for key, value in filtered_influence.items() if value
         )
         # 从模组维度配置自动拼接上下文描述
         dim_context_parts = []
-        for dim_name, dim_cfg in influence_descs.items():
-            if isinstance(dim_cfg, dict) and dim_cfg.get("affects"):
-                dim_value = influence.get(dim_name, dim_cfg.get("default"))
+        for dim_name, dim_cfg in filtered_descs.items():
+            if dim_cfg.get("affects"):
+                dim_value = filtered_influence.get(dim_name, dim_cfg.get("default"))
                 dim_context_parts.append(f"{dim_cfg.get('description', dim_name)}({dim_name}={dim_value}): {dim_cfg['affects']}")
         dim_context = "\n".join(dim_context_parts)
 

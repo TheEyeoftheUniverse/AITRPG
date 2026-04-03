@@ -905,25 +905,29 @@
                 "escape_success": {
                     "default": false,
                     "description": "是否成功逃离中间带",
-                    "affects": "是否回到现实世界"
+                    "affects": "是否回到现实世界",
+                    "applicable_endings": ["escaped", "emily_escaped"]
                 },
                 "npc_together": {
                     "default": false,
                     "description": "艾米莉是否与玩家一同逃脱（companion_mode为follow且在同一地点）",
                     "affects": "艾米莉的命运与后日谈。艾米莉与玩家并非同一时代的人——她来自约50年前，被困在中间带至今。若一同逃脱回到现实，玩家会发现她已是一位老人；她找了主角很久却从未找到，直到主角如今找上她。AI应根据艾米莉的信任值（trust_level）决定后日谈中她对玩家的态度和两人重逢的氛围。",
-                    "source": "npc_same_location"
+                    "source": "npc_same_location",
+                    "applicable_endings": ["escaped", "emily_escaped"]
                 },
                 "san_remaining": {
                     "default": 65,
                     "description": "逃离时的理智值(0-65)",
                     "affects": "玩家的心理创伤程度",
-                    "source": "player.san"
+                    "source": "player.san",
+                    "applicable_endings": ["escaped", "emily_escaped"]
                 },
                 "rounds_used": {
                     "default": 0,
                     "description": "使用了多少轮次",
                     "affects": "在中间带停留的时间对心理的影响",
-                    "source": "round_count"
+                    "source": "round_count",
+                    "applicable_endings": ["escaped", "emily_escaped"]
                 },
                 "butler_gaze": {
                     "default": false,
@@ -931,13 +935,15 @@
                     "affects": "疯狂结局子类型",
                     "equivalent_flags": [
                         "butler_gaze"
-                    ]
+                    ],
+                    "applicable_endings": ["insane", "door_peek_gaze"]
                 },
                 "emily_trust": {
                     "default": 0,
                     "description": "艾米莉的信任值",
                     "affects": "后日谈中艾米莉对玩家的态度和重逢氛围",
-                    "source": "npc_runtime.艾米莉.trust_level"
+                    "source": "npc_runtime.艾米莉.trust_level",
+                    "applicable_endings": ["escaped", "emily_escaped"]
                 }
             }
         },
