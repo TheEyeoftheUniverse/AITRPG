@@ -25,6 +25,7 @@
     --hp-color: #9b3a3a;
 
     --bubble-user: #2a2520;
+    --bubble-user-text: var(--text-primary);
     --bubble-ai: #13141a;
 
     --radius-sm: 6px;
@@ -62,6 +63,7 @@
         --accent-bg: rgba(122, 92, 56, 0.08);
 
         --bubble-user: #7a5c38;
+        --bubble-user-text: #f0ebe3;
         --bubble-ai: #ede8e0;
 
         --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
@@ -87,6 +89,7 @@
     --accent-bg: rgba(122, 92, 56, 0.08);
 
     --bubble-user: #7a5c38;
+    --bubble-user-text: #f0ebe3;
     --bubble-ai: #ede8e0;
 
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
@@ -700,7 +703,7 @@ html, body {
 }
 .message.user .message-bubble {
     background: var(--bubble-user);
-    color: var(--text-primary);
+    color: var(--bubble-user-text, var(--text-primary));
     border: 1px solid rgba(139, 111, 78, 0.15);
     border-radius: var(--radius-lg) var(--radius-lg) 4px var(--radius-lg);
 }
