@@ -1598,6 +1598,7 @@ class SessionManager:
         world_state = state.setdefault("world_state", {})
         flags = world_state.setdefault("flags", {})
         clues_found = world_state.setdefault("clues_found", [])
+        npc_states = world_state.setdefault("npcs", {})
 
         for task_id, task_cfg in preset_tasks.items():
             if not isinstance(task_cfg, dict):
@@ -1630,7 +1631,8 @@ class SessionManager:
                 "delivered": True,
                 "task_id": task_id,
                 "npc_name": npc_name,
-                "clue": clue,
+                "clue": clues[0] if len(clues) == 1 else None,
+                "clues": copy.deepcopy(clues),
                 "text": text,
             }
 

@@ -15,6 +15,8 @@ let availableModules = [];         // 可选模组列表缓存
 let currentSaveSummary = null;     // 当前浏览器的显式恢复摘要
 let latestRetryFrom = null;        // 后端建议的断点重试层
 let canRetryCurrentTurn = false;   // 当前轮是否允许直接调用服务端重试
+const MOBILE_LAYOUT_BREAKPOINT = 820;
+let lastViewportMobile = null;
 
 const PROCESSING_STAGE_GROUPS = [
     {
@@ -50,6 +52,8 @@ const PROCESSING_STEP_FALLBACK_MESSAGES = {
 document.addEventListener("DOMContentLoaded", () => {
     applyStoredTheme();
     setupInputHandlers();
+    syncMobileLayoutPanels(true);
+    window.addEventListener("resize", () => syncMobileLayoutPanels());
     initializeModuleSelection();
     _updateApiButtonState();
 });
@@ -97,6 +101,68 @@ function setupInputHandlers() {
     });
 
     document.getElementById("btn-reset").addEventListener("click", resetGame);
+}
+
+function isMobileLayout() {
+    return window.matchMedia(`(max-width: ${MOBILE_LAYOUT_BREAKPOINT}px)`).matches;
+}
+
+function updateMobilePanelBackdrop() {
+    const backdrop = document.getElementById("mobile-panel-backdrop");
+    if (!backdrop) return;
+
+    if (!isMobileLayout()) {
+        backdrop.classList.add("hidden");
+        backdrop.classList.remove("active");
+        return;
+    }
+
+    const leftPanel = document.getElementById("left-panel");
+    const rightPanel = document.getElementById("right-panel");
+    const hasOpenPanel = Boolean(
+        (leftPanel && !leftPanel.classList.contains("collapsed")) ||
+        (rightPanel && !rightPanel.classList.contains("collapsed"))
+    );
+    backdrop.classList.toggle("hidden", !hasOpenPanel);
+    backdrop.classList.toggle("active", hasOpenPanel);
+}
+
+function closeMobilePanels() {
+    if (!isMobileLayout()) return;
+
+    const leftPanel = document.getElementById("left-panel");
+    const rightPanel = document.getElementById("right-panel");
+    const leftExpand = document.getElementById("left-expand");
+    const rightExpand = document.getElementById("right-expand");
+
+    if (leftPanel) leftPanel.classList.add("collapsed");
+    if (rightPanel) rightPanel.classList.add("collapsed");
+    if (leftExpand) leftExpand.classList.remove("hidden");
+    if (rightExpand) rightExpand.classList.remove("hidden");
+    updateMobilePanelBackdrop();
+}
+
+function syncMobileLayoutPanels(forceCollapse = false) {
+    const mobile = isMobileLayout();
+    const leftPanel = document.getElementById("left-panel");
+    const rightPanel = document.getElementById("right-panel");
+    const leftExpand = document.getElementById("left-expand");
+    const rightExpand = document.getElementById("right-expand");
+
+    if (!leftPanel || !rightPanel || !leftExpand || !rightExpand) {
+        lastViewportMobile = mobile;
+        return;
+    }
+
+    if (mobile && (forceCollapse || lastViewportMobile !== true)) {
+        leftPanel.classList.add("collapsed");
+        rightPanel.classList.add("collapsed");
+        leftExpand.classList.remove("hidden");
+        rightExpand.classList.remove("hidden");
+    }
+
+    updateMobilePanelBackdrop();
+    lastViewportMobile = mobile;
 }
 
 // ─── 模组加载 ───
@@ -377,6 +443,7 @@ function showGameUI(onShown) {
         if (gameContainer) {
             gameContainer.classList.remove("hidden");
         }
+        syncMobileLayoutPanels(true);
         if (typeof onShown === "function") {
             requestAnimationFrame(() => onShown());
         }
@@ -1357,14 +1424,24 @@ function updatePlayerStatus(state) {
 function togglePanel(side) {
     const panel = document.getElementById(side + "-panel");
     const expandBtn = document.getElementById(side + "-expand");
+    const otherSide = side === "left" ? "right" : "left";
+    const otherPanel = document.getElementById(otherSide + "-panel");
+    const otherExpandBtn = document.getElementById(otherSide + "-expand");
 
     if (panel.classList.contains("collapsed")) {
         panel.classList.remove("collapsed");
         expandBtn.classList.add("hidden");
+        if (isMobileLayout() && otherPanel && !otherPanel.classList.contains("collapsed")) {
+            otherPanel.classList.add("collapsed");
+            if (otherExpandBtn) {
+                otherExpandBtn.classList.remove("hidden");
+            }
+        }
     } else {
         panel.classList.add("collapsed");
         expandBtn.classList.remove("hidden");
     }
+    updateMobilePanelBackdrop();
 }
 
 function toggleStatusSection(sectionId) {
@@ -1425,6 +1502,7 @@ async function resetGame() {
         overlay.style.display = "";
         overlay.classList.remove("fade-out");
         currentSaveSummary = null;
+        closeMobilePanels();
         clearProcessingStatus();
         updateRetryButtonVisibility();
         initializeModuleSelection();
