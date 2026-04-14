@@ -407,7 +407,6 @@ class AITRPGPlugin(Star):
                     # Butler capture now uses two-phase ending
                     flags = state.get("world_state", {}).get("flags", {})
                     move_narrative = flags.get("ending_hardcoded_text", move_narrative)
-                    ending_id = self.session_manager.get_ending_id(session_id) or "insane"
                     move_summary = "结局触发"
                     rhythm_hint = "结局触发"
                 return self._finalize_action_result(

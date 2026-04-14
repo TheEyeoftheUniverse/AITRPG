@@ -194,35 +194,3 @@ def extract_usage_metrics(
         "selected_attempt_index": None,
     })
     return metrics
-
-
-def merge_usage_metrics(base: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
-    base = dict(base or {})
-    incoming = dict(incoming or {})
-
-    if not base:
-        merged = incoming
-    else:
-        merged = {
-            "prompt_tokens": int(base.get("prompt_tokens", 0) or 0) + int(incoming.get("prompt_tokens", 0) or 0),
-            "completion_tokens": int(base.get("completion_tokens", 0) or 0) + int(incoming.get("completion_tokens", 0) or 0),
-            "total_tokens": int(base.get("total_tokens", 0) or 0) + int(incoming.get("total_tokens", 0) or 0),
-            "prompt_chars": int(base.get("prompt_chars", 0) or 0) + int(incoming.get("prompt_chars", 0) or 0),
-            "completion_chars": int(base.get("completion_chars", 0) or 0) + int(incoming.get("completion_chars", 0) or 0),
-            "token_source": "actual"
-            if base.get("token_source") == "actual" and incoming.get("token_source") == "actual"
-            else "mixed",
-            "provider_id": base.get("provider_id") or incoming.get("provider_id"),
-            "configured_model": base.get("configured_model") or incoming.get("configured_model"),
-            "actual_model": base.get("actual_model") or incoming.get("actual_model"),
-            "model_source": base.get("model_source") or incoming.get("model_source"),
-            "model_display": base.get("model_display") or incoming.get("model_display"),
-            "attempts": base.get("attempts") or incoming.get("attempts") or [],
-            "attempt_count": int(base.get("attempt_count", 0) or 0) or int(incoming.get("attempt_count", 0) or 0),
-            "candidate_count": int(base.get("candidate_count", 0) or 0) or int(incoming.get("candidate_count", 0) or 0),
-            "fallback_used": bool(base.get("fallback_used") or incoming.get("fallback_used")),
-            "selected_attempt_index": base.get("selected_attempt_index") or incoming.get("selected_attempt_index"),
-        }
-
-    merged["call_count"] = int(base.get("call_count", 0) or 0) + int(incoming.get("call_count", 1) or 1)
-    return merged

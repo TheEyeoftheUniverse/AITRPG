@@ -70,22 +70,6 @@ class SessionManager:
                     pass
         return modules
 
-    def load_module_for_session(self, session_id: str, module_filename: str):
-        """为会话加载指定模组"""
-        if session_id not in self.sessions:
-            return
-
-        module_data = self._load_module(module_filename)
-        initial_location = self._get_initial_location(module_data)
-        self.sessions[session_id]["module_filename"] = module_filename
-        self.sessions[session_id]["module_data"] = module_data
-        self.sessions[session_id]["current_location"] = initial_location
-        self.sessions[session_id]["visited_locations"] = [initial_location]
-        self.sessions[session_id]["player"] = self._build_default_player_state()
-        self.sessions[session_id]["world_state"]["npcs"] = self._build_initial_npc_state(module_data)
-        self.sessions[session_id]["influence_dimensions"] = self._build_default_influence_dimensions()
-        self._ensure_runtime_defaults(self.sessions[session_id], module_data)
-
     def _load_module(self, module_name: str = "default_module"):
         """加载模组数据"""
         # 从JSON文件加载模组
