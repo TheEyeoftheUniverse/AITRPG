@@ -143,6 +143,10 @@ aitrpg/
 
 - 模组字段说明：[modules/README.md](./modules/README.md)
 
+## 友情链接
+
+- [Linux.do](https://linux.do/)
+
 ## 许可证
 
 AGPL-3.0
