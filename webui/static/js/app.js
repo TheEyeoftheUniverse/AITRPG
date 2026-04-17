@@ -39,12 +39,39 @@ const PROCESSING_STAGE_GROUPS = [
     },
 ];
 
+const PROCESSING_STAGE_GROUPS_MERGED = [
+    {
+        key: "rule",
+        order: 1,
+        label: "规则AI",
+        stepKeys: ["rule_intent", "rule_adjudication", "rule_check"],
+    },
+    {
+        key: "story",
+        order: 2,
+        label: "剧情AI",
+        stepKeys: ["story"],
+    },
+];
+
+function pickProcessingStageGroups(progress) {
+    const steps = (progress && progress.steps) || [];
+    if (steps.some((step) => step && step.key === "story")) {
+        return PROCESSING_STAGE_GROUPS_MERGED;
+    }
+    if (steps.length === 0 && isMergeMode()) {
+        return PROCESSING_STAGE_GROUPS_MERGED;
+    }
+    return PROCESSING_STAGE_GROUPS;
+}
+
 const PROCESSING_STEP_FALLBACK_MESSAGES = {
     rule_intent: "规则AI 解析意图中……",
     rule_adjudication: "规则AI 裁定动作中……",
     rule_check: "规则层 执行判定中……",
     rhythm: "节奏AI 掌控情况中……",
     narrative: "文案AI 生成描述中……",
+    story: "剧情AI 生成节奏+叙述中……",
 };
 
 // ─── 初始化 ───
@@ -56,6 +83,7 @@ document.addEventListener("DOMContentLoaded", () => {
     window.addEventListener("resize", () => syncMobileLayoutPanels());
     initializeModuleSelection();
     _updateApiButtonState();
+    _updateMergeModeButton();
 });
 
 // ─── 主题切换 ───
@@ -84,6 +112,33 @@ function _updateThemeIcon() {
         ? '<span class="mdi mdi-weather-night"></span>'
         : '<span class="mdi mdi-white-balance-sunny"></span>';
     btn.title = isDark ? "切换到亮色主题" : "切换到暗色主题";
+}
+
+// ─── AI模式切换（三层 ↔ 合并双层） ───
+
+const MERGE_MODE_LS_KEY = "aitrpg_merge_mode";
+
+function isMergeMode() {
+    return localStorage.getItem(MERGE_MODE_LS_KEY) === "true";
+}
+
+function toggleMergeMode() {
+    const next = !isMergeMode();
+    localStorage.setItem(MERGE_MODE_LS_KEY, String(next));
+    _updateMergeModeButton();
+}
+
+function _updateMergeModeButton() {
+    const btn = document.getElementById("btn-merge-mode");
+    if (!btn) return;
+    const on = isMergeMode();
+    btn.innerHTML = on
+        ? '<span class="mdi mdi-layers-outline"></span>'
+        : '<span class="mdi mdi-layers-triple"></span>';
+    btn.title = on
+        ? "当前：双层模式（节奏+文案合并，响应更快）。点击切回三层模式"
+        : "当前：三层模式（节奏和文案分开）。点击切换到双层模式";
+    btn.classList.toggle("merge-mode-on", on);
 }
 
 function setupInputHandlers() {
@@ -590,7 +645,7 @@ function buildProcessingSummary(progress, groups) {
 
     if (safeProgress.status === "running") {
         const runningGroup = groups.find((group) => group.status === "running") || groups.find((group) => group.status === "pending") || groups[0];
-        return `${runningGroup.message}（${runningGroup.order}/3） 已用时：${formatDurationMs(runningGroup.durationMs)}${totalTokenText}`;
+        return `${runningGroup.message}（${runningGroup.order}/${groups.length}） 已用时：${formatDurationMs(runningGroup.durationMs)}${totalTokenText}`;
     }
     if (safeProgress.status === "error") {
         return `本轮处理失败。总用时：${totalDuration}${totalTokenText}`;
@@ -617,16 +672,12 @@ function renderProcessingGroup(group) {
         : group.status === "error"
         ? "danger"
         : "";
-    const tokenSourceLabel = group.tokenSource === "estimated"
-        ? "估算"
-        : group.tokenSource === "mixed"
-        ? "混合"
-        : "";
+    const tokenSourceLabel = group.tokenSource === "mixed" ? "混合" : "";
 
     return `
         <div class="processing-step ${group.status}">
             <div class="processing-step-main">
-                <div class="processing-step-title">${group.order}/3 ${escapeHtml(group.label)}</div>
+                <div class="processing-step-title">${group.order}/${group.total} ${escapeHtml(group.label)}</div>
                 <div class="processing-step-message">${escapeHtml(group.message)}</div>
             </div>
             <div class="processing-step-meta">
@@ -662,7 +713,12 @@ function renderProcessingStatus(progress, options = {}) {
         return;
     }
 
-    const groups = PROCESSING_STAGE_GROUPS.map((groupDef) => summarizeProcessingGroup(groupDef, progress));
+    const stageGroups = pickProcessingStageGroups(progress);
+    const groups = stageGroups.map((groupDef) => {
+        const summary = summarizeProcessingGroup(groupDef, progress);
+        summary.total = stageGroups.length;
+        return summary;
+    });
     const status = progress.status || "running";
 
     if (options.forceExpanded) {
@@ -698,6 +754,15 @@ function renderProcessingStatus(progress, options = {}) {
 }
 
 function buildInitialProcessingState() {
+    const merged = isMergeMode();
+    const tailSteps = merged
+        ? [
+            { key: "story", status: "pending", duration_ms: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_source: null },
+        ]
+        : [
+            { key: "rhythm", status: "pending", duration_ms: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_source: null },
+            { key: "narrative", status: "pending", duration_ms: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_source: null },
+        ];
     return {
         status: "running",
         message: "已提交本轮行动，等待 AI 开始处理",
@@ -721,8 +786,7 @@ function buildInitialProcessingState() {
             },
             { key: "rule_adjudication", status: "pending", duration_ms: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_source: null },
             { key: "rule_check", status: "pending", duration_ms: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_source: null },
-            { key: "rhythm", status: "pending", duration_ms: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_source: null },
-            { key: "narrative", status: "pending", duration_ms: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, token_source: null },
+            ...tailSteps,
         ],
     };
 }
@@ -954,6 +1018,7 @@ async function retryCurrentTurnFromStage(retryFrom) {
         const retryBody = { retry_from: retryFrom };
         const customApi = getCustomApiPayload();
         if (customApi) retryBody.custom_api = customApi;
+        retryBody.merge_mode = isMergeMode();
         const resp = await fetch("/trpg/api/retry", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1117,6 +1182,7 @@ async function sendAction() {
         }
         const customApi = getCustomApiPayload();
         if (customApi) body.custom_api = customApi;
+        body.merge_mode = isMergeMode();
 
         const resp = await fetch("/trpg/api/action", {
             method: "POST",

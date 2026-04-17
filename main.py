@@ -10,6 +10,7 @@ from .game_state.session_manager import SessionManager
 from .ai_layers.rule_ai import RuleAI
 from .ai_layers.rhythm_ai import RhythmAI
 from .ai_layers.narrative_ai import NarrativeAI
+from .ai_layers.story_ai import StoryAI
 from .webui.server import create_trpg_app, start_webui_server
 
 import json
@@ -31,6 +32,12 @@ class AITRPGPlugin(Star):
         ("rhythm", "节奏AI · 节奏评估", True),
         ("narrative", "文案AI · 生成叙述", True),
     ]
+    PROGRESS_STEPS_MERGED = [
+        ("rule_intent", "规则AI · 意图解析", True),
+        ("rule_adjudication", "规则AI · 裁定行为", True),
+        ("rule_check", "规则层 · 执行判定", False),
+        ("story", "剧情AI · 节奏+叙述", True),
+    ]
 
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -39,6 +46,7 @@ class AITRPGPlugin(Star):
         self.rule_ai = None
         self.rhythm_ai = None
         self.narrative_ai = None
+        self.story_ai = None
         self._webui_task = None
         self._webui_shutdown_event = None
         self._action_progress = {}
@@ -96,6 +104,16 @@ class AITRPGPlugin(Star):
         )
 
         logger.info("[AITRPG] 插件初始化完成！")
+
+        # 初始化合并模式AI（始终初始化，因为模式可运行时切换）
+        self.story_ai = StoryAI(
+            self.context,
+            narrative_ai_provider,
+            config,
+            rhythm_ai=self.rhythm_ai,
+            narrative_ai=self.narrative_ai,
+            fallback_provider_names=narrative_ai_provider_fallbacks,
+        )
 
         # 启动 WebUI
         webui_port = config.get("webui_port", 9999)
@@ -561,6 +579,8 @@ class AITRPGPlugin(Star):
             return "rhythm"
         if step_key == "narrative":
             return "narrative"
+        if step_key == "story":
+            return "story"
         return None
 
     def _build_cached_partial_results(self, session_id: str, cache: dict | None = None) -> dict:
@@ -582,7 +602,7 @@ class AITRPGPlugin(Star):
     ) -> str | None:
         cache = cache if isinstance(cache, dict) else (self._last_action_cache.get(session_id) or {})
         explicit_hint = str(cache.get("retry_from_hint") or "").strip().lower()
-        if explicit_hint in ("rule", "rhythm", "narrative"):
+        if explicit_hint in ("rule", "rhythm", "narrative", "story"):
             return explicit_hint
 
         progress_snapshot = progress if isinstance(progress, dict) else self.get_action_progress(session_id)
@@ -644,7 +664,7 @@ class AITRPGPlugin(Star):
             else:
                 self._finish_progress_step(session_id, sk, step_cache.get("metrics", {}), "已缓存")
 
-    async def _process_action_core(self, session_id: str, player_input: str, history: list, move_to: str = None, retry_from: str = None, custom_api: dict | None = None) -> dict:
+    async def _process_action_core(self, session_id: str, player_input: str, history: list, move_to: str = None, retry_from: str = None, custom_api: dict | None = None, merge_mode: bool = False) -> dict:
         """核心三层AI处理，返回结构化结果。可被 AstrBot 消息处理和 WebUI API 共同调用。
 
         retry_from: 重试起点。None=正常执行, "rule"=从规则AI重试, "rhythm"=从节奏AI重试, "narrative"=从文案AI重试
@@ -658,8 +678,12 @@ class AITRPGPlugin(Star):
             move_to = cache.get("move_to")
             history = cache["history"]
 
-        logger.info(f"[AITRPG] 开始处理玩家行动: {player_input}, move_to: {move_to}, retry_from: {retry_from}")
-        self._begin_action_progress(session_id, player_input, move_to)
+        # 合并模式下，将 rhythm/narrative 的 retry 统一为 story
+        if merge_mode and retry_from in ("rhythm", "narrative"):
+            retry_from = "story"
+
+        logger.info(f"[AITRPG] 开始处理玩家行动: {player_input}, move_to: {move_to}, retry_from: {retry_from}, merge_mode: {merge_mode}")
+        self._begin_action_progress(session_id, player_input, move_to, merge_mode=merge_mode)
 
         try:
             # 获取当前游戏状态
@@ -697,7 +721,7 @@ class AITRPGPlugin(Star):
                 cache = self._last_action_cache[session_id]
 
             # ===== 规则AI阶段 =====
-            if retry_from in ("rhythm", "narrative"):
+            if retry_from in ("rhythm", "narrative", "story"):
                 # 从缓存加载规则AI结果
                 rule_plan = cache["rule_plan"]
                 rule_result = cache["rule_result"]
@@ -847,34 +871,55 @@ class AITRPGPlugin(Star):
                 cache["sancheck_result"] = sancheck_result
                 cache["hard_changes"] = hard_changes
                 cache["pending_npc_report"] = copy.deepcopy(pending_npc_report) if isinstance(pending_npc_report, dict) else {}
-                cache["retry_from_hint"] = "rhythm"
+                cache["retry_from_hint"] = "story" if merge_mode else "rhythm"
                 self._cache_step_progress(session_id, cache, ["rule_intent", "rule_adjudication", "rule_check"])
 
-            # ===== 节奏AI阶段 =====
+            # ===== 节奏AI阶段（合并模式下用 StoryAI 一次性完成节奏+文案） =====
+            merged_narrative_result = None  # 合并模式下由 story_ai 一次性产出
             if retry_from == "narrative":
-                # 从缓存加载节奏AI结果
+                # 从缓存加载节奏AI结果（仅三层模式路径）
                 rhythm_result = cache["rhythm_result"]
                 if isinstance(pending_npc_report, dict) and pending_npc_report.get("delivered"):
                     rhythm_result = self._inject_pending_npc_report_into_rhythm_result(rhythm_result, pending_npc_report)
                 self._replay_cached_steps(session_id, cache, ["rhythm"])
             else:
-                # === 第四步：节奏AI - 节奏评估与软变化补充 ===
-                logger.info("[AITRPG] 调用节奏AI进行节奏评估...")
-                self._start_progress_step(session_id, "rhythm", "节奏AI 正在评估剧情节奏")
                 preview_state = self._preview_state_with_world_changes(state, hard_changes)
-                rhythm_trace_id = f"{session_id}:rhythm"
-                rhythm_result = await self.rhythm_ai.process(
-                    player_input=player_input,
-                    rule_plan=rule_plan,
-                    rule_result=rule_result,
-                    game_state=preview_state,
-                    module_data=module_data,
-                    history=history,
-                    trace_id=rhythm_trace_id,
-                    custom_api=(custom_api or {}).get("rhythm"),
-                )
-                self._finish_progress_step(session_id, "rhythm", self.rhythm_ai.pop_call_metric(rhythm_trace_id), "节奏评估完成")
-                logger.info(f"[AITRPG] 节奏AI结果: {rhythm_result}")
+                if merge_mode or retry_from == "story":
+                    # === 合并模式：StoryAI 单次调用 ===
+                    logger.info("[AITRPG] 调用剧情AI（合并模式）...")
+                    self._start_progress_step(session_id, "story", "剧情AI 正在生成")
+                    story_trace_id = f"{session_id}:story"
+                    story_result = await self.story_ai.process(
+                        player_input=player_input,
+                        rule_plan=rule_plan,
+                        rule_result=rule_result,
+                        game_state=preview_state,
+                        module_data=module_data,
+                        history=history,
+                        trace_id=story_trace_id,
+                        custom_api=(custom_api or {}).get("story") or (custom_api or {}).get("narrative"),
+                    )
+                    rhythm_result = story_result["rhythm_result"]
+                    merged_narrative_result = story_result["narrative_result"]
+                    self._finish_progress_step(session_id, "story", self.story_ai.pop_call_metric(story_trace_id), "剧情生成完成")
+                    logger.info(f"[AITRPG] 剧情AI结果: {rhythm_result}")
+                else:
+                    # === 三层模式：第四步 节奏AI - 节奏评估与软变化补充 ===
+                    logger.info("[AITRPG] 调用节奏AI进行节奏评估...")
+                    self._start_progress_step(session_id, "rhythm", "节奏AI 正在评估剧情节奏")
+                    rhythm_trace_id = f"{session_id}:rhythm"
+                    rhythm_result = await self.rhythm_ai.process(
+                        player_input=player_input,
+                        rule_plan=rule_plan,
+                        rule_result=rule_result,
+                        game_state=preview_state,
+                        module_data=module_data,
+                        history=history,
+                        trace_id=rhythm_trace_id,
+                        custom_api=(custom_api or {}).get("rhythm"),
+                    )
+                    self._finish_progress_step(session_id, "rhythm", self.rhythm_ai.pop_call_metric(rhythm_trace_id), "节奏评估完成")
+                    logger.info(f"[AITRPG] 节奏AI结果: {rhythm_result}")
 
                 soft_changes = rhythm_result.get("world_changes", {})
                 soft_changes = soft_changes if isinstance(soft_changes, dict) else {}
@@ -1020,25 +1065,33 @@ class AITRPGPlugin(Star):
 
                 # 缓存节奏AI结果（用于重试）
                 cache["rhythm_result"] = rhythm_result
-                cache["retry_from_hint"] = "narrative"
-                self._cache_step_progress(session_id, cache, ["rhythm"])
+                cache["retry_from_hint"] = "story" if (merge_mode or retry_from == "story") else "narrative"
+                if merge_mode or retry_from == "story":
+                    self._cache_step_progress(session_id, cache, ["story"])
+                else:
+                    self._cache_step_progress(session_id, cache, ["rhythm"])
 
-            # ===== 文案AI阶段（始终执行） =====
-            logger.info("[AITRPG] 调用文案AI生成叙述...")
-            self._start_progress_step(session_id, "narrative", "文案AI 正在生成叙述")
-            narrative_trace_id = f"{session_id}:narrative"
-            narrative_result = await self.narrative_ai.generate(
-                player_input=player_input,
-                rule_plan=rule_plan,
-                rule_result=rule_result,
-                rhythm_result=rhythm_result,
-                narrative_history=state.get("narrative_history", []),
-                history=history,
-                trace_id=narrative_trace_id,
-                custom_api=(custom_api or {}).get("narrative"),
-            )
-            self._finish_progress_step(session_id, "narrative", self.narrative_ai.pop_call_metric(narrative_trace_id), "叙述生成完成")
-            logger.info(f"[AITRPG] 文案生成完成")
+            # ===== 文案AI阶段 =====
+            if merged_narrative_result is not None:
+                # 合并模式：文案已由 story_ai 一次性生成，直接复用，不再调用文案AI
+                narrative_result = merged_narrative_result
+                logger.info(f"[AITRPG] 合并模式：复用剧情AI生成的叙述")
+            else:
+                logger.info("[AITRPG] 调用文案AI生成叙述...")
+                self._start_progress_step(session_id, "narrative", "文案AI 正在生成叙述")
+                narrative_trace_id = f"{session_id}:narrative"
+                narrative_result = await self.narrative_ai.generate(
+                    player_input=player_input,
+                    rule_plan=rule_plan,
+                    rule_result=rule_result,
+                    rhythm_result=rhythm_result,
+                    narrative_history=state.get("narrative_history", []),
+                    history=history,
+                    trace_id=narrative_trace_id,
+                    custom_api=(custom_api or {}).get("narrative"),
+                )
+                self._finish_progress_step(session_id, "narrative", self.narrative_ai.pop_call_metric(narrative_trace_id), "叙述生成完成")
+                logger.info(f"[AITRPG] 文案生成完成")
             cache["narrative_result"] = narrative_result
             cache["retry_from_hint"] = None
 
@@ -1054,7 +1107,7 @@ class AITRPGPlugin(Star):
                     "move_check_result": move_check_result,
                     "game_state": state
                 },
-                message="三层 AI 处理完成",
+                message="剧情AI 处理完成" if merge_mode else "三层 AI 处理完成",
             )
         except Exception as e:
             # 重新获取 cache（_precheck_action 可能已在 early_result 路径中写入）
@@ -1559,9 +1612,10 @@ class AITRPGPlugin(Star):
             f"[AITRPG] compressed assistant turn={target_turn['formal_turn_index']} to summary, history_index={assistant_index}"
         )
 
-    def _begin_action_progress(self, session_id: str, player_input: str, move_to: str = None):
+    def _begin_action_progress(self, session_id: str, player_input: str, move_to: str = None, merge_mode: bool = False):
         started_at = time.perf_counter()
         started_wall = time.time()
+        steps_def = self.PROGRESS_STEPS_MERGED if merge_mode else self.PROGRESS_STEPS
         self._action_progress[session_id] = {
             "status": "running",
             "message": "准备处理中",
@@ -1600,7 +1654,7 @@ class AITRPGPlugin(Star):
                     "fallback_used": False,
                     "selected_attempt_index": None,
                 }
-                for key, label, llm in self.PROGRESS_STEPS
+                for key, label, llm in steps_def
             ],
         }
 
@@ -1608,9 +1662,23 @@ class AITRPGPlugin(Star):
         progress = self._action_progress.get(session_id)
         if not progress:
             return None
-        for step in progress.get("steps", []):
+        steps = progress.get("steps", [])
+        for step in steps:
             if step.get("key") == step_key:
                 return step
+        # 双层模式重映射：边缘流程（到场/结局/后日谈/纯移动）仍按三层步骤名
+        # 调用 rhythm/narrative 的 skip/start/finish。此时 session 里只有 story
+        # 槽位；把它们路由到 story，让进度条能正常推进。
+        # 用 _remap_owner 标记槽位已被 remap 占用：未设置时只有 pending 才允许
+        # 占用（避免 story_ai 已完成后被后续 skip("narrative") 覆写）。
+        if step_key in ("rhythm", "narrative"):
+            for step in steps:
+                if step.get("key") != "story":
+                    continue
+                if step.get("status") == "pending" or step.get("_remap_owner"):
+                    step["_remap_owner"] = True
+                    return step
+                return None
         return None
 
     def _apply_progress_metrics(self, step: dict, metrics: dict | None = None):
@@ -1631,6 +1699,31 @@ class AITRPGPlugin(Star):
         step["fallback_used"] = bool(metrics.get("fallback_used"))
         step["selected_attempt_index"] = metrics.get("selected_attempt_index")
 
+    def _accumulate_progress_metrics(self, step: dict, metrics: dict | None = None):
+        """remap 占用的槽位在同一轮内多次完成，用累加语义合并时长/tokens。"""
+        metrics = metrics if isinstance(metrics, dict) else {}
+        step["prompt_tokens"] = int(step.get("prompt_tokens") or 0) + int(metrics.get("prompt_tokens", 0) or 0)
+        step["completion_tokens"] = int(step.get("completion_tokens") or 0) + int(metrics.get("completion_tokens", 0) or 0)
+        step["total_tokens"] = int(step.get("total_tokens") or 0) + int(metrics.get("total_tokens", 0) or 0)
+        step["token_source"] = metrics.get("token_source") or step.get("token_source")
+        step["call_count"] = int(step.get("call_count") or 0) + int(metrics.get("call_count", 0) or 0)
+        step["provider_id"] = metrics.get("provider_id") or step.get("provider_id")
+        step["configured_model"] = metrics.get("configured_model") or step.get("configured_model")
+        step["actual_model"] = metrics.get("actual_model") or step.get("actual_model")
+        step["model_source"] = metrics.get("model_source") or step.get("model_source")
+        new_display = metrics.get("model_display")
+        if new_display:
+            existing = step.get("model_display") or ""
+            existing_parts = [p.strip() for p in existing.split(" | ") if p.strip()]
+            if new_display not in existing_parts:
+                existing_parts.append(new_display)
+            step["model_display"] = " | ".join(existing_parts)
+        step["attempts"] = list(step.get("attempts") or []) + list(metrics.get("attempts") or [])
+        step["attempt_count"] = int(step.get("attempt_count") or 0) + int(metrics.get("attempt_count", 0) or 0)
+        step["candidate_count"] = int(step.get("candidate_count") or 0) + int(metrics.get("candidate_count", 0) or 0)
+        step["fallback_used"] = bool(step.get("fallback_used")) or bool(metrics.get("fallback_used"))
+        step["selected_attempt_index"] = metrics.get("selected_attempt_index") or step.get("selected_attempt_index")
+
     def _pop_call_metric_for_step(self, session_id: str, step_key: str) -> dict:
         trace_id = f"{session_id}:{step_key}"
         if step_key in ("rule_intent", "rule_adjudication"):
@@ -1639,6 +1732,8 @@ class AITRPGPlugin(Star):
             return self.rhythm_ai.pop_call_metric(trace_id) if self.rhythm_ai else {}
         if step_key == "narrative":
             return self.narrative_ai.pop_call_metric(trace_id) if self.narrative_ai else {}
+        if step_key == "story":
+            return self.story_ai.pop_call_metric(trace_id) if self.story_ai else {}
         return {}
 
     def _start_progress_step(self, session_id: str, step_key: str, message: str = ""):
@@ -1648,23 +1743,27 @@ class AITRPGPlugin(Star):
             return
 
         now = time.perf_counter()
+        # remap 复用：同一槽位经历过 skip/finish 后被再次 start（到场流程先
+        # 节奏再文案），保留已累加的时长/tokens，避免被清零。
+        is_remap_restart = bool(step.get("_remap_owner")) and step.get("status") in ("completed", "skipped")
         step["status"] = "running"
         step["message"] = message or step.get("message") or ""
         step["started_at"] = now
         step["finished_at"] = None
-        step["duration_ms"] = None
-        step["provider_id"] = None
-        step["configured_model"] = None
-        step["actual_model"] = None
-        step["model_source"] = None
-        step["model_display"] = None
-        step["attempts"] = []
-        step["attempt_count"] = 0
-        step["candidate_count"] = 0
-        step["fallback_used"] = False
-        step["selected_attempt_index"] = None
+        if not is_remap_restart:
+            step["duration_ms"] = None
+            step["provider_id"] = None
+            step["configured_model"] = None
+            step["actual_model"] = None
+            step["model_source"] = None
+            step["model_display"] = None
+            step["attempts"] = []
+            step["attempt_count"] = 0
+            step["candidate_count"] = 0
+            step["fallback_used"] = False
+            step["selected_attempt_index"] = None
 
-        progress["current_step_key"] = step_key
+        progress["current_step_key"] = step.get("key")
         progress["current_step_label"] = step.get("label")
         progress["message"] = message or step.get("label")
         progress["updated_at"] = now
@@ -1678,13 +1777,18 @@ class AITRPGPlugin(Star):
         now = time.perf_counter()
         if step.get("started_at") is None:
             step["started_at"] = now
+        run_duration_ms = int((now - step["started_at"]) * 1000)
         step["finished_at"] = now
-        step["duration_ms"] = int((now - step["started_at"]) * 1000)
         step["status"] = "completed"
         if message:
             step["message"] = message
 
-        self._apply_progress_metrics(step, metrics)
+        if step.get("_remap_owner"):
+            step["duration_ms"] = int(step.get("duration_ms") or 0) + run_duration_ms
+            self._accumulate_progress_metrics(step, metrics)
+        else:
+            step["duration_ms"] = run_duration_ms
+            self._apply_progress_metrics(step, metrics)
 
         progress["updated_at"] = now
 

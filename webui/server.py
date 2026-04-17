@@ -525,6 +525,7 @@ def create_trpg_app(plugin):
         player_input = data.get("input", "").strip()
         move_to = data.get("move_to", "").strip() or None
         custom_api = data.get("custom_api") or None
+        merge_mode = bool(data.get("merge_mode", False))
         if isinstance(custom_api, dict) and not any(
             isinstance(v, dict) and v.get("base_url") and v.get("api_key") and v.get("model")
             for v in custom_api.values()
@@ -546,6 +547,7 @@ def create_trpg_app(plugin):
                         history=web_session["history"],
                         move_to=move_to,
                         custom_api=custom_api,
+                        merge_mode=merge_mode,
                     )
 
                     narrative = result["narrative_result"]["narrative"]
@@ -736,10 +738,11 @@ def create_trpg_app(plugin):
         if not retry_from:
             retry_from = plugin.get_action_progress_payload(web_session["session_id"]).get("retry_from_hint") or "rule"
 
-        if retry_from not in ("rule", "rhythm", "narrative"):
+        if retry_from not in ("rule", "rhythm", "narrative", "story"):
             return jsonify({"error": f"无效的重试起点: {retry_from}"}), 400
 
         custom_api = data.get("custom_api") or None
+        merge_mode = bool(data.get("merge_mode", False))
 
         session_id = web_session["session_id"]
         _action_results.pop(cookie_id, None)
@@ -755,6 +758,7 @@ def create_trpg_app(plugin):
                         move_to=None,
                         retry_from=retry_from,
                         custom_api=custom_api,
+                        merge_mode=merge_mode,
                     )
 
                     narrative = result["narrative_result"]["narrative"]

@@ -1795,3 +1795,7 @@ html, body {
     color: var(--accent);
     background: var(--accent-bg);
 }
+#btn-merge-mode.merge-mode-on {
+    color: var(--accent);
+    background: var(--accent-bg);
+}
