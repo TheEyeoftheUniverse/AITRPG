@@ -674,6 +674,14 @@ function renderProcessingGroup(group) {
         : "";
     const tokenSourceLabel = group.tokenSource === "mixed" ? "混合" : "";
 
+    const modelChip = group.modelDisplay
+        ? (() => {
+            const full = String(group.modelDisplay);
+            const short = full.length > 16 ? full.slice(0, 14) + "…" : full;
+            return `<span class="processing-chip processing-chip--model" title="实际模型 ${escapeHtml(full)}">${escapeHtml(short)}</span>`;
+        })()
+        : "";
+
     return `
         <div class="processing-step ${group.status}">
             <div class="processing-step-main">
@@ -683,10 +691,10 @@ function renderProcessingGroup(group) {
             <div class="processing-step-meta">
                 <span class="processing-chip ${statusTone}">${statusLabel}</span>
                 <span class="processing-chip">${escapeHtml(formatDurationMs(group.durationMs))}</span>
-                ${group.modelDisplay ? `<span class="processing-chip">实际模型 ${escapeHtml(group.modelDisplay)}</span>` : ""}
-                ${group.promptTokens ? `<span class="processing-chip">输入 ${group.promptTokens}</span>` : ""}
-                ${group.completionTokens ? `<span class="processing-chip">输出 ${group.completionTokens}</span>` : ""}
-                ${group.totalTokens ? `<span class="processing-chip">总计 ${group.totalTokens}</span>` : ""}
+                ${modelChip}
+                ${group.promptTokens ? `<span class="processing-chip" title="输入 token">⬆ ${group.promptTokens}</span>` : ""}
+                ${group.completionTokens ? `<span class="processing-chip" title="输出 token">⬇ ${group.completionTokens}</span>` : ""}
+                ${group.totalTokens ? `<span class="processing-chip" title="总 token">Σ ${group.totalTokens}</span>` : ""}
                 ${tokenSourceLabel ? `<span class="processing-chip">${tokenSourceLabel}</span>` : ""}
             </div>
         </div>
@@ -696,8 +704,17 @@ function renderProcessingGroup(group) {
 function hideProcessingStatus() {
     const panel = document.getElementById("processing-status");
     if (!panel) return;
-    panel.classList.add("hidden");
-    panel.classList.add("collapsed");
+    // 作为常驻状态栏的一栏，不再整体隐藏；重置为待机并折叠
+    const badge = document.getElementById("processing-status-badge");
+    const summary = document.getElementById("processing-status-summary");
+    const steps = document.getElementById("processing-status-steps");
+    if (badge) {
+        badge.textContent = "待机";
+        badge.className = "processing-status-badge";
+    }
+    if (summary) summary.textContent = "等待下一次行动...";
+    if (steps) steps.innerHTML = "";
+    panel.classList.add("status-section-collapsed");
 }
 
 function renderProcessingStatus(progress, options = {}) {
@@ -705,8 +722,7 @@ function renderProcessingStatus(progress, options = {}) {
     const badge = document.getElementById("processing-status-badge");
     const summary = document.getElementById("processing-status-summary");
     const steps = document.getElementById("processing-status-steps");
-    const toggle = document.getElementById("processing-status-toggle");
-    if (!panel || !badge || !summary || !steps || !toggle) return;
+    if (!panel || !badge || !summary || !steps) return;
 
     if (!progress || !Object.keys(progress).length) {
         hideProcessingStatus();
@@ -745,12 +761,7 @@ function renderProcessingStatus(progress, options = {}) {
 
     // 网络错误等没有单独步骤信息的场景：不再显示内嵌重试按钮，使用顶部栏重试按钮
 
-    toggle.classList.remove("hidden");
-    toggle.setAttribute("aria-expanded", processingStatusCollapsed ? "false" : "true");
-    toggle.title = processingStatusCollapsed ? "展开处理详情" : "收起处理详情";
-
-    panel.classList.remove("hidden");
-    panel.classList.toggle("collapsed", processingStatusCollapsed);
+    panel.classList.toggle("status-section-collapsed", processingStatusCollapsed);
 }
 
 function buildInitialProcessingState() {
@@ -984,15 +995,9 @@ function clearProcessingStatus() {
 
 window.toggleProcessingStatus = function toggleProcessingStatus() {
     const panel = document.getElementById("processing-status");
-    if (!panel || panel.classList.contains("hidden")) return;
+    if (!panel) return;
     processingStatusCollapsed = !processingStatusCollapsed;
-    panel.classList.toggle("collapsed", processingStatusCollapsed);
-
-    const toggle = document.getElementById("processing-status-toggle");
-    if (toggle) {
-        toggle.setAttribute("aria-expanded", processingStatusCollapsed ? "false" : "true");
-        toggle.title = processingStatusCollapsed ? "展开处理详情" : "收起处理详情";
-    }
+    panel.classList.toggle("status-section-collapsed", processingStatusCollapsed);
 };
 
 window.renderProcessingStatus = renderProcessingStatus;

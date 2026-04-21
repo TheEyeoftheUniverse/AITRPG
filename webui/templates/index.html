@@ -91,27 +91,14 @@
 
             <!-- 中间聊天区 -->
             <main class="chat-area">
-                <section id="processing-status" class="processing-status hidden" aria-live="polite">
-                    <div class="processing-status-header">
-                        <div class="processing-status-title">
-                            <span class="mdi mdi-timer-sand"></span>
-                            <span>AI 处理进度</span>
-                        </div>
-                        <div class="processing-status-actions">
-                            <div id="processing-status-badge" class="processing-status-badge">待机</div>
-                            <button
-                                id="processing-status-toggle"
-                                class="processing-status-toggle hidden"
-                                type="button"
-                                onclick="toggleProcessingStatus()"
-                                title="展开或收起处理详情"
-                            >
-                                <span class="mdi mdi-chevron-up"></span>
-                            </button>
-                        </div>
+                <section id="map-section" class="chat-map-panel map-section">
+                    <div class="status-title">
+                        <span class="mdi mdi-map"></span> 地图
+                        <span class="map-hint">点击地图节点，发送后完成移动</span>
                     </div>
-                    <div id="processing-status-summary" class="processing-status-summary">等待下一次行动...</div>
-                    <div id="processing-status-steps" class="processing-status-steps"></div>
+                    <div id="game-map" class="map-container">
+                        <svg id="map-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+                    </div>
                 </section>
                 <div id="chat-messages" class="chat-messages">
                     <!-- 动态填充 -->
@@ -206,29 +193,18 @@
                             <span class="placeholder-text">暂未发现线索</span>
                         </div>
                     </div>
-                    <!-- 地图 -->
-                    <div class="status-section map-section" id="map-section">
+                    <!-- AI 处理进度 -->
+                    <div class="status-section processing-status" id="processing-status" aria-live="polite">
                         <div class="status-title">
-                            <button class="status-toggle" type="button" onclick="toggleStatusSection('map-section')" title="展开或收起地图">
+                            <button class="status-toggle" type="button" onclick="toggleProcessingStatus()" title="展开或收起AI处理进度">
                                 <span class="mdi mdi-chevron-down"></span>
                             </button>
-                            <span class="mdi mdi-map"></span> 地图
+                            <span class="mdi mdi-timer-sand"></span> AI 处理进度
+                            <span id="processing-status-badge" class="processing-status-badge">待机</span>
                         </div>
-                        <div id="game-map" class="map-container">
-                            <svg id="map-svg" xmlns="http://www.w3.org/2000/svg"></svg>
-                        </div>
-                        <div class="status-content map-help">
-                            <div class="map-help-title">
-                                <span class="mdi mdi-lightbulb-on-outline"></span>
-                                <span>操作提示</span>
-                            </div>
-                            <ul class="map-help-list">
-                                <li>移动场景：点击地图上的可达地点，发送后执行移动。</li>
-                                <li>角色对话：仅引号内的输入会被识别为对话。</li>
-                                <li>发送输入：按 Enter 直接发送，Shift+Enter 换行。</li>
-                                <li>界面折叠：左右两栏和右侧状态卡片都可以展开或收起。</li>
-                                <li>重新开局：右上角按钮可重置当前游戏。</li>
-                            </ul>
+                        <div class="status-content">
+                            <div id="processing-status-summary" class="processing-status-summary">等待下一次行动...</div>
+                            <div id="processing-status-steps" class="processing-status-steps"></div>
                         </div>
                     </div>
                 </div>
