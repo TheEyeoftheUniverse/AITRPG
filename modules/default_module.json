@@ -78,7 +78,13 @@
         "guest_bedroom": {
             "name": "次卧",
             "description": "次卧的门缝里透出微弱的光，里面则是普通的卧室。",
-            "npc_present_description": "当玩家初次靠近时，门后会传来冰冷的女声：“谁？”如果这是玩家初次见到艾米莉，那么艾米莉是把自己反锁在次卧里的。在艾米莉自我介绍之前，禁止在文本中剧透她的名字。",
+            "first_entry_blocked": {
+                "flag": "guest_bedroom_first_knock_shown",
+                "text": "你走到次卧门前。门把手僵硬地顶在原处，拧不动——里侧上了锁。门缝透出的那缕微光被什么东西挡了一下，又迅速让开。\n\n片刻静默后，一道冰冷的女声压着门板渗出来，低得近乎耳语：\n\n“谁？”\n\n她没有自报家门，也没有追问下文，只是抛出这一个字，在门的另一侧屏住了呼吸。",
+                "reason_flag": "guest_bedroom_first_knock_reason",
+                "reason_value": "player_attempted_first_entry_to_guest_bedroom"
+            },
+            "npc_present_description": "当玩家靠近次卧时，门后会传来冰冷的女声：“谁？”。艾米莉把自己反锁在次卧里——除非剧情中明确触发了她开门（建立足够信任、约定隔墙对话等），否则在任何情况下都禁止描写这扇门被打开、被撞开、被撬开，也禁止描写玩家进入次卧内部。在她自我介绍之前，禁止在文本中剧透她的名字。",
             "has_door": true,
             "objects": [
                 "紧锁的门"
