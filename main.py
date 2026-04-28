@@ -412,6 +412,7 @@ class AITRPGPlugin(Star):
             move_result = self.session_manager.move_player(session_id, move_to)
             move_check_result = move_result.get("check_result")
             move_movement_note = move_result.get("movement_note")
+            move_first_entry_narrative = str(move_result.get("first_entry_narrative") or "").strip()
             if not move_result["success"]:
                 state = self.session_manager.get_session(session_id)
                 for step_key, _, _ in self.PROGRESS_STEPS:
@@ -461,6 +462,53 @@ class AITRPGPlugin(Star):
                         "game_state": state,
                     },
                     message="结局触发",
+                ), None
+
+            if move_first_entry_narrative:
+                target_loc = self.session_manager.get_location_context(session_id, move_to)
+                loc_name = target_loc.get("name", move_to)
+                activation_changes = {}
+                if self.session_manager.should_activate_butler_on_entry(session_id, move_to):
+                    activation_changes = self.session_manager.build_butler_activation_changes(
+                        session_id,
+                        "player_entered_living_room",
+                    )
+
+                for step_key, _, _ in self.PROGRESS_STEPS:
+                    self._skip_progress_step(session_id, step_key, "首次进入固定文本")
+
+                return self._finalize_action_result(
+                    session_id,
+                    {
+                        "rule_plan": {
+                            "normalized_action": {
+                                "verb": "move",
+                                "target_kind": "location",
+                                "target_key": move_to,
+                                "raw_target_text": loc_name,
+                            }
+                        },
+                        "rule_result": move_check_result or {"check_type": None, "success": True},
+                        "hard_changes": {},
+                        "rhythm_result": self._advance_passive_move_round(
+                            session_id,
+                            module_data,
+                            {
+                                "feasible": True,
+                                "hint": move_first_entry_narrative,
+                                "stage_assessment": "首次进入固定文本",
+                                "world_changes": activation_changes,
+                                "soft_world_changes": {},
+                            },
+                        ),
+                        "narrative_result": {
+                            "narrative": move_first_entry_narrative,
+                            "summary": f"首次进入{loc_name}",
+                        },
+                        "move_check_result": move_check_result,
+                        "game_state": self.session_manager.get_session(session_id),
+                    },
+                    message="场景移动完成",
                 ), None
 
         # === 纯移动无行动 ===

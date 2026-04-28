@@ -3234,6 +3234,7 @@ class SessionManager:
 
         dodge_result = None
         movement_note = None
+        first_entry_narrative = None
         if self._is_player_movement_restricted_by_pursuer_state(state):
             butler_location = self._get_butler_contact_location_from_state(state)
             activation_grace_exit = self._is_butler_activation_grace_exit(state, current, target_key)
@@ -3302,11 +3303,7 @@ class SessionManager:
                 current_location=previous_location,
             )
             if first_entry_warning_text:
-                movement_note = (
-                    f"{first_entry_warning_text} {movement_note}".strip()
-                    if movement_note
-                    else first_entry_warning_text
-                )
+                first_entry_narrative = first_entry_warning_text
 
         return {
             "success": True,
@@ -3314,6 +3311,7 @@ class SessionManager:
             "previous_location": previous_location,
             "check_result": dodge_result,
             "movement_note": movement_note,
+            "first_entry_narrative": first_entry_narrative,
         }
 
         return {"success": True, "message": f"移动到{locations[target_key].get('name', target_key)}"}
