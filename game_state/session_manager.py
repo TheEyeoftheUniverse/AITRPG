@@ -378,6 +378,10 @@ class SessionManager:
         if not flag or not text:
             return {}
 
+        mode = str(first_entry.get("mode") or "block").strip().lower()
+        if mode != "warn_only":
+            mode = "block"
+
         reason_flag = str(first_entry.get("reason_flag") or fallback_reason_flag or "").strip()
         reason_value = str(first_entry.get("reason_value") or fallback_reason or "").strip()
 
@@ -397,6 +401,7 @@ class SessionManager:
         return {
             "flag": flag,
             "text": text,
+            "mode": mode,
             "reason_flag": reason_flag,
             "reason_value": reason_value,
             "requires_current_location": [
@@ -412,13 +417,19 @@ class SessionManager:
             "set_flags": copy.deepcopy(set_flags) if isinstance(set_flags, dict) else {},
         }
 
-    def _consume_first_entry_block(self, state: Dict[str, Any], block_cfg: Dict[str, Any]) -> str:
+    def _consume_first_entry_block(
+        self,
+        state: Dict[str, Any],
+        block_cfg: Dict[str, Any],
+        *,
+        current_location: str = "",
+    ) -> str:
         if not isinstance(state, dict) or not isinstance(block_cfg, dict) or not block_cfg.get("flag"):
             return ""
 
-        current_location = str(state.get("current_location") or "").strip()
+        active_location = str(current_location or state.get("current_location") or "").strip()
         required_locations = block_cfg.get("requires_current_location", [])
-        if isinstance(required_locations, list) and required_locations and current_location not in required_locations:
+        if isinstance(required_locations, list) and required_locations and active_location not in required_locations:
             return ""
 
         world_state = state.setdefault("world_state", {})
@@ -444,14 +455,13 @@ class SessionManager:
 
         return str(block_cfg.get("text") or "").strip()
 
-    def _consume_location_first_entry_block(self, state: Dict[str, Any], current_key: str, target_key: str) -> str:
+    def _get_location_first_entry_block_config(self, state: Dict[str, Any], target_key: str) -> Dict[str, Any]:
         if not isinstance(state, dict):
-            return ""
+            return {}
         module_data = state.get("module_data", {}) if isinstance(state.get("module_data"), dict) else {}
         locations = module_data.get("locations", {}) if isinstance(module_data.get("locations"), dict) else {}
         location_cfg = locations.get(target_key, {}) if isinstance(locations.get(target_key), dict) else {}
-        block_cfg = self._build_first_entry_block_config(location_cfg)
-        return self._consume_first_entry_block(state, block_cfg)
+        return self._build_first_entry_block_config(location_cfg)
 
     def get_available_micro_scenes(self, session_id: str) -> Dict[str, Dict[str, Any]]:
         state = self.sessions.get(session_id)
@@ -3201,7 +3211,20 @@ class SessionManager:
                 }
             return {"success": False, "message": "目标位置不可达（路径被锁定）"}
 
-        first_entry_block_text = self._consume_location_first_entry_block(state, current, target_key)
+        first_entry_cfg = self._get_location_first_entry_block_config(state, target_key)
+        first_entry_mode = str(first_entry_cfg.get("mode") or "block").strip().lower()
+        if first_entry_mode != "warn_only":
+            first_entry_mode = "block"
+
+        if first_entry_mode == "block":
+            first_entry_block_text = self._consume_first_entry_block(
+                state,
+                first_entry_cfg,
+                current_location=current,
+            )
+        else:
+            first_entry_block_text = ""
+
         if first_entry_block_text:
             return {
                 "success": False,
@@ -3271,6 +3294,19 @@ class SessionManager:
         # 标记已访问
         if target_key not in state["visited_locations"]:
             state["visited_locations"].append(target_key)
+
+        if first_entry_mode == "warn_only":
+            first_entry_warning_text = self._consume_first_entry_block(
+                state,
+                first_entry_cfg,
+                current_location=previous_location,
+            )
+            if first_entry_warning_text:
+                movement_note = (
+                    f"{first_entry_warning_text} {movement_note}".strip()
+                    if movement_note
+                    else first_entry_warning_text
+                )
 
         return {
             "success": True,

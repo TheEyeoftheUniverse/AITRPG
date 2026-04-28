@@ -88,7 +88,7 @@
 | `hidden_name` | string | 地图或 UI 上的表名 |
 | `show_name_when_visible` | bool | 未进入但已显现时是否直接显示名称 |
 | `reveal_conditions` | object | 隐藏地点显现条件 |
-| `first_entry_blocked` | object | 首次尝试进入时阻止并返回提示 |
+| `first_entry_blocked` | object | 首次进入时的固定文本与阻挡模式 |
 
 `reveal_conditions` 当前常用子字段：
 
@@ -97,10 +97,11 @@
 
 这些条件通常由线索、物品或 flag 驱动。
 
-`first_entry_blocked` 适用于任何“第一次尝试进入时先警告、第二次才真正进入”的地点。
+`first_entry_blocked` 适用于任何“第一次触发时先展示固定文本”的地点。默认会阻止进入；若 `mode=warn_only`，则只展示文本、不阻挡进入。
 
 常见子字段：
 
+- `mode`
 - `flag`
 - `text`
 - `reason_flag`
@@ -330,13 +331,14 @@
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `flag` | string | 首次阻止写入的标记 |
+| `mode` | string | 可选，`block`（默认）或 `warn_only` |
+| `flag` | string | 首次触发时写入的标记 |
 | `text` | string | 返回给玩家的提示文本 |
 | `reason_flag` | string | 可选，附加原因标记 |
 | `reason_value` | string | 可选，附加原因值 |
-| `requires_current_location` | string[] | 只在特定当前位置阻止 |
-| `visited_locations_on_block` | string[] | 被阻止时顺手点亮的地点 |
-| `set_flags` | object | 被阻止时额外写入的 flags |
+| `requires_current_location` | string[] | 只在特定当前位置触发 |
+| `visited_locations_on_block` | string[] | 触发时顺手点亮的地点 |
+| `set_flags` | object | 触发时额外写入的 flags |
 
 ## endings
 
