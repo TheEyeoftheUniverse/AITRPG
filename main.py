@@ -922,6 +922,16 @@ class AITRPGPlugin(Star):
                 cache["retry_from_hint"] = "story" if merge_mode else "rhythm"
                 self._cache_step_progress(session_id, cache, ["rule_intent", "rule_adjudication", "rule_check"])
 
+            # 跨墙被动听写到 hard_changes 里：让 Rhythm 在本轮就能看到隔墙 NPC
+            # 已经积累了 overheard_remote_dialogue / interaction_history，进而进入
+            # npc_context 并产出 player_descriptor。
+            cross_wall_overhear_changes = self._derive_cross_wall_overhear_changes(
+                player_input, rule_plan, state, module_data,
+            )
+            if cross_wall_overhear_changes:
+                hard_changes = self._merge_world_changes(hard_changes, cross_wall_overhear_changes)
+                cache["hard_changes"] = hard_changes
+
             # ===== 节奏AI阶段（合并模式下用 StoryAI 一次性完成节奏+文案） =====
             merged_narrative_result = None  # 合并模式下由 story_ai 一次性产出
             if retry_from == "narrative":

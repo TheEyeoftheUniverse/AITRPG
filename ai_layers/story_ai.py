@@ -293,6 +293,9 @@ class StoryAI:
                 "系统检测到玩家输入包含引号，判定为【对话】。引号内是玩家角色的台词，不是实际行动。",
             ])
 
+        # 玩家视角 NPC 称谓任务（与 rhythm_ai 共用同一份说明）
+        parts.append(self.rhythm_ai.build_player_visible_npcs_task_block())
+
         return "\n".join(parts)
 
     def _build_narrative_constraints(self, rhythm_preview: dict, dialogue_npcs: dict, history: list) -> str:
