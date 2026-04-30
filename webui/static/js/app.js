@@ -6,7 +6,7 @@ let isProcessing = false;
 let selectedDestination = null;   // 待移动的目标location key
 let currentMapData = null;        // 缓存的地图数据
 let progressPollTimer = null;
-let processingStatusCollapsed = true;
+let processingStatusCollapsed = false;
 let endingPhase = null;           // null | "triggered" | "concluded"
 let currentAbortController = null; // 用于中断正在进行的fetch请求
 let lastPlayerInput = "";          // 上次玩家输入（用于重试恢复）
@@ -694,10 +694,31 @@ function renderProcessingGroup(group) {
 }
 
 function hideProcessingStatus() {
+    // 待机态：保留面板可见、保持默认展开，仅把内容重置为闲置文案。
     const panel = document.getElementById("processing-status");
     if (!panel) return;
-    panel.classList.add("hidden");
-    panel.classList.add("collapsed");
+    panel.classList.remove("hidden");
+    panel.classList.remove("collapsed");
+
+    const badge = document.getElementById("processing-status-badge");
+    if (badge) {
+        badge.textContent = "待机";
+        badge.className = "processing-status-badge";
+    }
+    const summary = document.getElementById("processing-status-summary");
+    if (summary) {
+        summary.textContent = "等待下一次行动...";
+    }
+    const steps = document.getElementById("processing-status-steps");
+    if (steps) {
+        steps.innerHTML = "";
+    }
+    const toggle = document.getElementById("processing-status-toggle");
+    if (toggle) {
+        toggle.classList.remove("hidden");
+        toggle.setAttribute("aria-expanded", "true");
+        toggle.title = "收起处理详情";
+    }
 }
 
 function renderProcessingStatus(progress, options = {}) {
@@ -978,7 +999,7 @@ function stopProgressPolling() {
 
 function clearProcessingStatus() {
     stopProgressPolling();
-    processingStatusCollapsed = true;
+    processingStatusCollapsed = false;
     hideProcessingStatus();
 }
 

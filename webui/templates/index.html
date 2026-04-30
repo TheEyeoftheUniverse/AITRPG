@@ -209,7 +209,7 @@
                     <!-- AI 处理进度 -->
                     <div class="status-section processing-status" id="processing-status" aria-live="polite">
                         <div class="status-title">
-                            <button class="status-toggle" type="button" onclick="toggleProcessingStatus()" title="展开或收起AI处理进度">
+                            <button id="processing-status-toggle" class="status-toggle" type="button" onclick="toggleProcessingStatus()" title="展开或收起AI处理进度" aria-expanded="true">
                                 <span class="mdi mdi-chevron-down"></span>
                             </button>
                             <span class="mdi mdi-timer-sand"></span> AI 处理进度
