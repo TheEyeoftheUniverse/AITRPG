@@ -694,11 +694,11 @@ function renderProcessingGroup(group) {
 }
 
 function hideProcessingStatus() {
-    // 待机态：保留面板可见、保持默认展开，仅把内容重置为闲置文案。
+    // 待机态：保留面板可见，仅重置内容为闲置文案；折叠/展开跟随玩家此前的选择。
     const panel = document.getElementById("processing-status");
     if (!panel) return;
     panel.classList.remove("hidden");
-    panel.classList.remove("collapsed");
+    panel.classList.toggle("collapsed", processingStatusCollapsed);
 
     const badge = document.getElementById("processing-status-badge");
     if (badge) {
@@ -716,8 +716,8 @@ function hideProcessingStatus() {
     const toggle = document.getElementById("processing-status-toggle");
     if (toggle) {
         toggle.classList.remove("hidden");
-        toggle.setAttribute("aria-expanded", "true");
-        toggle.title = "收起处理详情";
+        toggle.setAttribute("aria-expanded", processingStatusCollapsed ? "false" : "true");
+        toggle.title = processingStatusCollapsed ? "展开处理详情" : "收起处理详情";
     }
 }
 
@@ -742,15 +742,12 @@ function renderProcessingStatus(progress, options = {}) {
     });
     const status = progress.status || "running";
 
+    // 折叠状态完全由玩家的点击控制；这里不再根据 running / error / completed
+    // 自动覆盖玩家的选择，避免完成后自动折叠破坏"默认展开"的预期。
+    // 仅显式 forceExpanded / forceCollapsed 选项可以由调用方主动改写状态。
     if (options.forceExpanded) {
         processingStatusCollapsed = false;
     } else if (options.forceCollapsed) {
-        processingStatusCollapsed = true;
-    } else if (status === "running") {
-        processingStatusCollapsed = false;
-    } else if (status === "error") {
-        processingStatusCollapsed = false;  // 出错时保持展开，方便玩家点重试
-    } else if (status === "completed") {
         processingStatusCollapsed = true;
     }
 
@@ -999,7 +996,7 @@ function stopProgressPolling() {
 
 function clearProcessingStatus() {
     stopProgressPolling();
-    processingStatusCollapsed = false;
+    // 不重置 processingStatusCollapsed：玩家手动设置的折叠状态需要跨轮保留。
     hideProcessingStatus();
 }
 
