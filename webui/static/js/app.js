@@ -2078,9 +2078,6 @@ function renderSceneNpcs(mapData) {
         }
 
         const displayName = escapeHtml(String(npc.display_name || "陌生身影"));
-        const statusHtml = npc.status
-            ? `<div class="scene-npc-card-status">${escapeHtml(String(npc.status))}</div>`
-            : "";
         const fromHtml = (npc.presence === "cross_wall" && npc.from_room)
             ? `<div class="scene-npc-card-from">来自：${escapeHtml(String(npc.from_room))}</div>`
             : "";
@@ -2091,7 +2088,6 @@ function renderSceneNpcs(mapData) {
                     <span class="scene-npc-card-name">${displayName}</span>
                     ${tags.join("")}
                 </div>
-                ${statusHtml}
                 ${fromHtml}
             </div>
         `;

@@ -3524,28 +3524,6 @@ class SessionManager:
                 return True
         return False
 
-    def _build_npc_status_text(
-        self,
-        runtime_state: Dict[str, Any],
-        npc_data: Dict[str, Any],
-        revealed: bool,
-    ) -> str:
-        """提取一条简短状态摘要，但只接受运行时被 AI 真正更新过的内容。
-
-        模组静态字段（current_state / first_appearance / appearance / soft_state.initial_summary）
-        全部不直接展示，避免把模组设定原文当成 UI 文案泄露给玩家。
-        """
-        if not revealed or not isinstance(runtime_state, dict):
-            return ""
-        soft_state = runtime_state.get("soft_state")
-        if not isinstance(soft_state, dict):
-            return ""
-        # updated_round=0 表示仍是初始模板值（来源于模组），不视为已揭露。
-        if not int(soft_state.get("updated_round", 0) or 0):
-            return ""
-        summary = str(soft_state.get("summary") or "").strip()
-        return summary
-
     def _resolve_player_descriptor(self, runtime_state: Dict[str, Any]) -> Dict[str, Any]:
         """读取由 Rhythm 写回的 player_descriptor，未生成则返回空 dict。"""
         if not isinstance(runtime_state, dict):
@@ -3572,6 +3550,8 @@ class SessionManager:
         - 没有 player_descriptor → 不下发卡片（玩家此刻没感知到，UI 不该提前曝光）
         - 有 player_descriptor → 文本 = descriptor.text，并附带 channel 让前端区分通道
         - 同场景 / 隔墙 / 威胁实体的拓扑分类继续保留，仅决定卡片样式标签
+        - 不再下发 status 字段：soft_state.summary 是给文案层的内部指令性文本
+          （response_strategy / next_line_goal 派生），不能直接给玩家看
         """
         if not current_location:
             return []
@@ -3579,9 +3559,6 @@ class SessionManager:
         result: List[Dict[str, Any]] = []
         npc_states = npc_states if isinstance(npc_states, dict) else {}
         seen_ids: Set[str] = set()
-
-        module_npcs = get_module_npcs(module_data)
-        module_threats = get_module_threat_entities(module_data)
 
         # 1) 同场景普通 NPC
         for npc_name in get_present_npcs_for_location(state, module_data, current_location):
@@ -3591,8 +3568,6 @@ class SessionManager:
             descriptor = self._resolve_player_descriptor(runtime_state)
             if not descriptor:
                 continue
-            npc_data = module_npcs.get(npc_name, {})
-            revealed = self._is_npc_revealed_to_player(runtime_state)
             result.append({
                 "id": npc_name,
                 "display_name": descriptor["text"],
@@ -3600,7 +3575,6 @@ class SessionManager:
                 "name_revealed": descriptor["channel"] == "name_known",
                 "presence": "same_room",
                 "is_threat": False,
-                "status": self._build_npc_status_text(runtime_state, npc_data, revealed),
                 "from_room": None,
             })
             seen_ids.add(npc_name)
@@ -3613,8 +3587,6 @@ class SessionManager:
             descriptor = self._resolve_player_descriptor(runtime_state)
             if not descriptor:
                 continue
-            threat_data = module_threats.get(threat_name, {})
-            revealed = self._is_npc_revealed_to_player(runtime_state)
             result.append({
                 "id": threat_name,
                 "display_name": descriptor["text"],
@@ -3622,7 +3594,6 @@ class SessionManager:
                 "name_revealed": descriptor["channel"] == "name_known",
                 "presence": "same_room",
                 "is_threat": True,
-                "status": self._build_npc_status_text(runtime_state, threat_data, revealed),
                 "from_room": None,
             })
             seen_ids.add(threat_name)
@@ -3636,8 +3607,6 @@ class SessionManager:
             descriptor = self._resolve_player_descriptor(runtime_state)
             if not descriptor:
                 continue
-            npc_data = module_npcs.get(npc_name, {})
-            revealed = self._is_npc_revealed_to_player(runtime_state)
             from_room_display = ""
             if isinstance(cross_info, dict):
                 from_room_display = str(cross_info.get("from_room_display_name") or "").strip()
@@ -3648,7 +3617,6 @@ class SessionManager:
                 "name_revealed": descriptor["channel"] == "name_known",
                 "presence": "cross_wall",
                 "is_threat": False,
-                "status": self._build_npc_status_text(runtime_state, npc_data, revealed),
                 "from_room": from_room_display or None,
             })
             seen_ids.add(npc_name)
