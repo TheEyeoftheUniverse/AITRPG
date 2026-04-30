@@ -204,6 +204,13 @@ cython_debug/
 # Runtime save files
 data/web_sessions/
 
+# Generated runtime outputs
+outputs/
+
+# AI tooling metadata (Codex CLI etc.)
+.codex
+.codex/
+
 # Local-only development assets
 docs/
 tests/
