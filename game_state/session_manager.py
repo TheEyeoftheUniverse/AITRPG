@@ -7,10 +7,14 @@ from typing import Dict, Any, List, Set
 from .location_context import (
     DEFAULT_RUNTIME_MEMORY_TEMPLATE,
     build_runtime_location_context,
+    get_cross_wall_npcs,
     get_entity_dialogue_guide,
     get_entity_first_appearance,
     get_module_all_entities,
     get_module_npcs,
+    get_module_threat_entities,
+    get_present_npcs_for_location,
+    get_present_threats_for_location,
     get_primary_pursuer_name,
     get_primary_pursuer_settings,
     normalize_module_data,
@@ -3472,6 +3476,13 @@ class SessionManager:
             if npc_loc and npc_loc in visible_locations and npc_loc in visited_locations:
                 npc_marker_locations.add(npc_loc)
 
+        current_scene_npcs = self._build_current_scene_npc_list(
+            state,
+            module_data,
+            npc_states,
+            current_location=state["current_location"],
+        )
+
         return {
             "locations": visible_locations,
             "edges": edges,
@@ -3485,7 +3496,151 @@ class SessionManager:
                 location_key for location_key in npc_marker_locations
                 if location_key in visible_locations
             ],
+            "current_scene_npcs": current_scene_npcs,
         }
+
+    def _is_npc_revealed_to_player(self, runtime_state: Dict[str, Any]) -> bool:
+        """判定 NPC 名字与详细状态是否已被剧情揭露给玩家。
+
+        仅基于运行时积累的交互痕迹判断；模组初始 trust 不视为已揭露，
+        以满足"刚见面不应直接知道 NPC 名字"的需求。
+        """
+        if not isinstance(runtime_state, dict):
+            return False
+        memory = runtime_state.get("memory", {})
+        memory = memory if isinstance(memory, dict) else {}
+        contact_keys = (
+            "player_facts",
+            "topics_discussed",
+            "answered_questions",
+            "promises",
+            "evidence_seen",
+            "overheard_remote_dialogue",
+            "interaction_history",
+        )
+        for key in contact_keys:
+            value = memory.get(key)
+            if value:
+                return True
+        return False
+
+    def _build_npc_status_text(
+        self,
+        runtime_state: Dict[str, Any],
+        npc_data: Dict[str, Any],
+        revealed: bool,
+    ) -> str:
+        """从 soft_state / current_state 提取一条简短状态摘要。"""
+        if not revealed:
+            return ""
+        soft_state = runtime_state.get("soft_state") if isinstance(runtime_state, dict) else None
+        if isinstance(soft_state, dict):
+            summary = str(soft_state.get("summary") or "").strip()
+            if summary:
+                return summary
+        if isinstance(npc_data, dict):
+            current_state = str(npc_data.get("current_state") or "").strip()
+            if current_state:
+                return current_state
+        return ""
+
+    def _resolve_npc_display_name(
+        self,
+        npc_name: str,
+        npc_data: Dict[str, Any],
+        revealed: bool,
+    ) -> str:
+        if revealed:
+            return str(npc_name)
+        if isinstance(npc_data, dict):
+            for key in ("first_appearance", "appearance"):
+                value = str(npc_data.get(key) or "").strip()
+                if value:
+                    return value
+        return "陌生身影"
+
+    def _build_current_scene_npc_list(
+        self,
+        state: Dict[str, Any],
+        module_data: Dict[str, Any],
+        npc_states: Dict[str, Any],
+        current_location: str,
+    ) -> List[Dict[str, Any]]:
+        """构造当前场景的 NPC/威胁实体信息卡列表。
+
+        - 同场景 NPC/威胁实体：直接展示（未揭露名字时使用 first_appearance 代称）
+        - 隔墙 NPC：仅在已经发生过交互（说过/听过话）后展示
+        """
+        if not current_location:
+            return []
+
+        result: List[Dict[str, Any]] = []
+        npc_states = npc_states if isinstance(npc_states, dict) else {}
+        seen_ids: Set[str] = set()
+
+        module_npcs = get_module_npcs(module_data)
+        module_threats = get_module_threat_entities(module_data)
+
+        # 1) 同场景普通 NPC
+        for npc_name in get_present_npcs_for_location(state, module_data, current_location):
+            if npc_name in seen_ids:
+                continue
+            runtime_state = npc_states.get(npc_name, {}) if isinstance(npc_states.get(npc_name), dict) else {}
+            npc_data = module_npcs.get(npc_name, {})
+            revealed = self._is_npc_revealed_to_player(runtime_state)
+            result.append({
+                "id": npc_name,
+                "display_name": self._resolve_npc_display_name(npc_name, npc_data, revealed),
+                "name_revealed": revealed,
+                "presence": "same_room",
+                "is_threat": False,
+                "status": self._build_npc_status_text(runtime_state, npc_data, revealed),
+                "from_room": None,
+            })
+            seen_ids.add(npc_name)
+
+        # 2) 同场景威胁实体
+        for threat_name in get_present_threats_for_location(state, module_data, current_location):
+            if threat_name in seen_ids:
+                continue
+            runtime_state = npc_states.get(threat_name, {}) if isinstance(npc_states.get(threat_name), dict) else {}
+            threat_data = module_threats.get(threat_name, {})
+            revealed = self._is_npc_revealed_to_player(runtime_state)
+            result.append({
+                "id": threat_name,
+                "display_name": self._resolve_npc_display_name(threat_name, threat_data, revealed),
+                "name_revealed": revealed,
+                "presence": "same_room",
+                "is_threat": True,
+                "status": self._build_npc_status_text(runtime_state, threat_data, revealed),
+                "from_room": None,
+            })
+            seen_ids.add(threat_name)
+
+        # 3) 隔墙 NPC：仅在已发生交互后才展示
+        cross_wall = get_cross_wall_npcs(state, module_data, current_location)
+        for npc_name, cross_info in cross_wall.items():
+            if npc_name in seen_ids:
+                continue
+            runtime_state = npc_states.get(npc_name, {}) if isinstance(npc_states.get(npc_name), dict) else {}
+            if not self._is_npc_revealed_to_player(runtime_state):
+                continue
+            npc_data = module_npcs.get(npc_name, {})
+            from_room_display = ""
+            if isinstance(cross_info, dict):
+                from_room_display = str(cross_info.get("from_room_display_name") or "").strip()
+            result.append({
+                "id": npc_name,
+                "display_name": self._resolve_npc_display_name(npc_name, npc_data, True),
+                "name_revealed": True,
+                "presence": "cross_wall",
+                "is_threat": False,
+                "status": self._build_npc_status_text(runtime_state, npc_data, True),
+                "from_room": from_room_display or None,
+            })
+            seen_ids.add(npc_name)
+
+        return result
 
     def get_module_data(self, session_id: str = None):
         """获取模组数据"""

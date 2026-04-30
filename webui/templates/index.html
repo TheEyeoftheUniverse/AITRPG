@@ -92,12 +92,25 @@
             <!-- 中间聊天区 -->
             <main class="chat-area">
                 <section id="map-section" class="chat-map-panel map-section">
-                    <div class="status-title">
-                        <span class="mdi mdi-map"></span> 地图
-                        <span class="map-hint">点击地图节点，发送后完成移动</span>
-                    </div>
-                    <div id="game-map" class="map-container">
-                        <svg id="map-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+                    <div class="scene-overview">
+                        <div class="scene-overview-col scene-overview-col--npc">
+                            <div class="status-title">
+                                <span class="mdi mdi-account-group"></span> 当前场景的NPC信息
+                            </div>
+                            <div id="scene-npc-list" class="scene-npc-list">
+                                <p class="placeholder-text">当前场景暂无可见的NPC</p>
+                            </div>
+                        </div>
+                        <div class="scene-overview-divider" aria-hidden="true"></div>
+                        <div class="scene-overview-col scene-overview-col--map">
+                            <div class="status-title">
+                                <span class="mdi mdi-map"></span> 地图
+                                <span class="map-hint">点击地图节点，发送后完成移动</span>
+                            </div>
+                            <div id="game-map" class="map-container">
+                                <svg id="map-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+                            </div>
+                        </div>
                     </div>
                 </section>
                 <div id="chat-messages" class="chat-messages">

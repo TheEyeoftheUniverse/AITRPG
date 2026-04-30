@@ -329,3 +329,168 @@
         display: none;
     }
 }
+
+/* === 顶部场景概览：左 NPC 信息区 / 右 地图区 === */
+.scene-overview {
+    display: grid;
+    grid-template-columns: 1fr 1px 1fr;
+    gap: 12px;
+    align-items: stretch;
+    width: 100%;
+}
+
+.scene-overview-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.scene-overview-divider {
+    background: rgba(139, 111, 78, 0.22);
+    width: 1px;
+    align-self: stretch;
+}
+
+.scene-overview-col--npc {
+    min-height: 70px;
+}
+
+.scene-overview-col--npc .status-title {
+    margin-bottom: 4px;
+}
+
+.scene-npc-list {
+    flex: 1;
+    max-height: 120px;
+    min-height: 70px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 2px;
+    /* 与右侧地图栏一致：隐藏滚动条本体，避免占用横向空间 */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.scene-npc-list::-webkit-scrollbar {
+    display: none;
+}
+
+.scene-npc-list .placeholder-text {
+    margin: 0;
+    font-size: 12px;
+    opacity: 0.65;
+}
+
+.scene-npc-card {
+    border: 1px solid rgba(139, 111, 78, 0.18);
+    border-left: 3px solid rgba(139, 111, 78, 0.45);
+    border-radius: 3px;
+    padding: 5px 8px;
+    background: rgba(139, 111, 78, 0.05);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.scene-npc-card--threat {
+    border-left-color: var(--hp-color, #b54040);
+    background: rgba(176, 64, 64, 0.08);
+}
+
+.scene-npc-card--cross-wall {
+    border-left-style: dashed;
+    border-left-color: var(--warning, #b08a3e);
+    background: rgba(176, 138, 62, 0.06);
+}
+
+.scene-npc-card--unrevealed {
+    opacity: 0.85;
+    font-style: italic;
+}
+
+.scene-npc-card-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.scene-npc-card-name {
+    font-weight: 600;
+    color: var(--text-primary, inherit);
+    word-break: break-word;
+}
+
+.scene-npc-card--unrevealed .scene-npc-card-name {
+    font-weight: 500;
+    color: var(--text-secondary, inherit);
+}
+
+.scene-npc-card-tag {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: rgba(139, 111, 78, 0.15);
+    color: var(--text-secondary, inherit);
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.scene-npc-card-tag--threat {
+    background: rgba(176, 64, 64, 0.18);
+    color: var(--hp-color, #b54040);
+}
+
+.scene-npc-card-tag--cross-wall {
+    background: rgba(176, 138, 62, 0.18);
+    color: var(--warning, #b08a3e);
+}
+
+.scene-npc-card-status {
+    margin-top: 2px;
+    color: var(--text-secondary, inherit);
+    opacity: 0.85;
+    font-size: 11.5px;
+    word-break: break-word;
+}
+
+.scene-npc-card-from {
+    margin-top: 2px;
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+/* 桌面端：拆分后右侧地图区域比原全宽窄一半，把内部 SVG 放回较大显示比例避免缩太小 */
+.scene-overview .map-container {
+    max-height: 120px;
+    min-height: 70px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.scene-overview #map-svg {
+    width: 90%;
+}
+
+@media (max-width: 768px) {
+    /* 小屏：双栏降级为上下结构，仍同时保留 NPC 与地图两块 */
+    .scene-overview {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+
+    .scene-overview-divider {
+        display: none;
+    }
+
+    .scene-npc-list {
+        max-height: 84px;
+        min-height: 48px;
+    }
+
+    .scene-overview #map-svg {
+        width: 72%;
+    }
+}
