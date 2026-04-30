@@ -3546,14 +3546,18 @@ class SessionManager:
         summary = str(soft_state.get("summary") or "").strip()
         return summary
 
-    def _resolve_npc_display_name(
-        self,
-        npc_name: str,
-        npc_data: Dict[str, Any],
-        revealed: bool,
-    ) -> str:
-        # 未揭露的 NPC 直接不展示卡片，因此这里只处理已揭露分支。
-        return str(npc_name)
+    def _resolve_player_descriptor(self, runtime_state: Dict[str, Any]) -> Dict[str, Any]:
+        """读取由 Rhythm 写回的 player_descriptor，未生成则返回空 dict。"""
+        if not isinstance(runtime_state, dict):
+            return {}
+        descriptor = runtime_state.get("player_descriptor")
+        if not isinstance(descriptor, dict):
+            return {}
+        text = str(descriptor.get("text") or "").strip()
+        channel = str(descriptor.get("channel") or "").strip().lower()
+        if not text or channel not in {"voice_only", "visual", "name_known"}:
+            return {}
+        return {"text": text, "channel": channel}
 
     def _build_current_scene_npc_list(
         self,
@@ -3564,8 +3568,10 @@ class SessionManager:
     ) -> List[Dict[str, Any]]:
         """构造当前场景的 NPC/威胁实体信息卡列表。
 
-        统一原则：未被剧情 / 交互揭露的 NPC 一律不显示卡片，
-        避免"屋里有 X 个 NPC"这件事本身成为剧透。
+        显示规则：UI 文本完全由 Rhythm 生成的 player_descriptor 决定。
+        - 没有 player_descriptor → 不下发卡片（玩家此刻没感知到，UI 不该提前曝光）
+        - 有 player_descriptor → 文本 = descriptor.text，并附带 channel 让前端区分通道
+        - 同场景 / 隔墙 / 威胁实体的拓扑分类继续保留，仅决定卡片样式标签
         """
         if not current_location:
             return []
@@ -3577,63 +3583,72 @@ class SessionManager:
         module_npcs = get_module_npcs(module_data)
         module_threats = get_module_threat_entities(module_data)
 
-        # 1) 同场景普通 NPC：仅在已揭露后才出现
+        # 1) 同场景普通 NPC
         for npc_name in get_present_npcs_for_location(state, module_data, current_location):
             if npc_name in seen_ids:
                 continue
             runtime_state = npc_states.get(npc_name, {}) if isinstance(npc_states.get(npc_name), dict) else {}
-            if not self._is_npc_revealed_to_player(runtime_state):
+            descriptor = self._resolve_player_descriptor(runtime_state)
+            if not descriptor:
                 continue
             npc_data = module_npcs.get(npc_name, {})
+            revealed = self._is_npc_revealed_to_player(runtime_state)
             result.append({
                 "id": npc_name,
-                "display_name": self._resolve_npc_display_name(npc_name, npc_data, True),
-                "name_revealed": True,
+                "display_name": descriptor["text"],
+                "channel": descriptor["channel"],
+                "name_revealed": descriptor["channel"] == "name_known",
                 "presence": "same_room",
                 "is_threat": False,
-                "status": self._build_npc_status_text(runtime_state, npc_data, True),
+                "status": self._build_npc_status_text(runtime_state, npc_data, revealed),
                 "from_room": None,
             })
             seen_ids.add(npc_name)
 
-        # 2) 同场景威胁实体：同样需要已揭露
+        # 2) 同场景威胁实体
         for threat_name in get_present_threats_for_location(state, module_data, current_location):
             if threat_name in seen_ids:
                 continue
             runtime_state = npc_states.get(threat_name, {}) if isinstance(npc_states.get(threat_name), dict) else {}
-            if not self._is_npc_revealed_to_player(runtime_state):
+            descriptor = self._resolve_player_descriptor(runtime_state)
+            if not descriptor:
                 continue
             threat_data = module_threats.get(threat_name, {})
+            revealed = self._is_npc_revealed_to_player(runtime_state)
             result.append({
                 "id": threat_name,
-                "display_name": self._resolve_npc_display_name(threat_name, threat_data, True),
-                "name_revealed": True,
+                "display_name": descriptor["text"],
+                "channel": descriptor["channel"],
+                "name_revealed": descriptor["channel"] == "name_known",
                 "presence": "same_room",
                 "is_threat": True,
-                "status": self._build_npc_status_text(runtime_state, threat_data, True),
+                "status": self._build_npc_status_text(runtime_state, threat_data, revealed),
                 "from_room": None,
             })
             seen_ids.add(threat_name)
 
-        # 3) 隔墙 NPC：必须已发生过交互
+        # 3) 隔墙 NPC
         cross_wall = get_cross_wall_npcs(state, module_data, current_location)
         for npc_name, cross_info in cross_wall.items():
             if npc_name in seen_ids:
                 continue
             runtime_state = npc_states.get(npc_name, {}) if isinstance(npc_states.get(npc_name), dict) else {}
-            if not self._is_npc_revealed_to_player(runtime_state):
+            descriptor = self._resolve_player_descriptor(runtime_state)
+            if not descriptor:
                 continue
             npc_data = module_npcs.get(npc_name, {})
+            revealed = self._is_npc_revealed_to_player(runtime_state)
             from_room_display = ""
             if isinstance(cross_info, dict):
                 from_room_display = str(cross_info.get("from_room_display_name") or "").strip()
             result.append({
                 "id": npc_name,
-                "display_name": self._resolve_npc_display_name(npc_name, npc_data, True),
-                "name_revealed": True,
+                "display_name": descriptor["text"],
+                "channel": descriptor["channel"],
+                "name_revealed": descriptor["channel"] == "name_known",
                 "presence": "cross_wall",
                 "is_threat": False,
-                "status": self._build_npc_status_text(runtime_state, npc_data, True),
+                "status": self._build_npc_status_text(runtime_state, npc_data, revealed),
                 "from_room": from_room_display or None,
             })
             seen_ids.add(npc_name)

@@ -249,6 +249,32 @@ class RhythmAI:
             "- 信任是双向的：玩家愿意主动分享、倾听、关心NPC时，NPC也应该逐步敞开，而不是始终保持审视姿态。\n"
             "- 只有当 npc_context 明确包含 interaction_mode=cross_wall_voice_only 的对象时，才允许发生隔墙交流。\n"
             "- 如果 npc_context 中没有隔墙NPC，不要主动提及隔壁房间NPC的动静、沉默、回应或状态。\n"
+            "\n"
+            "# 玩家视角 NPC 称谓任务\n"
+            "你需要为当前场景中【玩家此刻能感知到】的每个 NPC，输出一条玩家视角的称谓，这条称谓将直接显示在 UI 上的「当前场景NPC信息」卡片。这是面向玩家的，不是面向叙述层的提示，必须严格按玩家此刻的实际感知通道写。\n\n"
+            "## player_visible_npcs schema\n"
+            "{\n"
+            '  "NPC名": {\n'
+            '    "descriptor": "10字以内的玩家视角称谓",\n'
+            '    "channel": "voice_only" | "visual" | "name_known"\n'
+            "  }\n"
+            "}\n\n"
+            "## 通道判定铁律（违反即视为剧透 BUG）\n"
+            "- voice_only：玩家只能听到声音、未见到本人（典型场景：interaction_mode=cross_wall_voice_only，或 NPC 在视野外通过门/墙发声）。descriptor 仅可描述声音特征（音色、性别推测、语气），禁止任何外貌、服装、动作、表情描写，禁止使用 NPC 真名。例：「冷漠的女声」「压抑的低语」。\n"
+            "- visual：玩家与 NPC 同处一室、能看见 NPC 本人，但 NPC 还没自报姓名，玩家也未通过证物/他人之口知道 NPC 名字（即 memory.player_facts 内不含该 NPC 的 name/identity 类信息）。descriptor 仅可用外观短语，禁止使用 NPC 真名。例：「床边的年轻女人」「黑西装的男人」。\n"
+            "- name_known：玩家已经通过对话或线索知道 NPC 真名（典型证据：memory.player_facts 命中 name/identity，或 memory.answered_questions 含身份相关 key，或本轮 NPC 主动报出姓名）。descriptor 用 NPC 真名或常用短称谓。例：「艾米莉」。\n\n"
+            "## 单调约束\n"
+            "- runtime_state.player_descriptor 已存在时，channel 不允许倒退。已经达到 name_known 的，必须继续 name_known；已经 visual 的，不可回退到 voice_only（除非剧情明确导致玩家失去视觉接触，但仍不可回退已知的姓名）。\n"
+            "- 如果你判断本轮没有任何感知通道升级，且已有 player_descriptor 仍然准确，可以原样重复输出（保持 UI 文案稳定），或者省略该 NPC 条目（此时系统保留旧值）。\n\n"
+            "## 谁应当被输出\n"
+            "- 同场景且玩家能看见 → 必出（visual 或 name_known）\n"
+            "- 隔墙且本轮发生过实际语音接触（npc_context 中存在 interaction_mode=cross_wall_voice_only 且对话已发生） → 必出（voice_only 或更高）\n"
+            "- 同场景但玩家完全未察觉（如 NPC 藏在暗处、玩家入场时模组叙述还没引入她）→ 不要输出该 NPC，不要在卡片上提前曝光「她在这里」\n"
+            "- npc_context 中没有的 NPC，不要凭空输出\n\n"
+            "## 反例（禁止）\n"
+            "- 玩家只在隔壁说了一句话、对方还没回应 → 不要输出 voice_only 称谓（玩家此刻还没听到对方声音）\n"
+            "- 玩家只听到声音 → 不要写「穿黑衣的女人」（混入了视觉信息）\n"
+            "- NPC 还没报名字、玩家也没从证物得知 → 不要写真名\n"
         )
         input_classification = (rule_plan or {}).get("input_classification", "action")
         if input_classification == "dialogue":
@@ -496,6 +522,11 @@ class RhythmAI:
 
         if not isinstance(normalized.get("npc_memory_updates"), dict):
             normalized["npc_memory_updates"] = {}
+
+        normalized["player_visible_npcs"] = self._sanitize_player_visible_npcs(
+            normalized.get("player_visible_npcs"),
+            npc_context,
+        )
 
         ending_request = normalized.get("ending_request")
         if not isinstance(ending_request, dict):
@@ -970,6 +1001,36 @@ class RhythmAI:
             if len(result) >= limit:
                 break
         return result
+
+    def _sanitize_player_visible_npcs(self, raw, npc_context: dict) -> dict:
+        """规范化 LLM 输出的 player_visible_npcs，并丢弃任何不在场景上下文里的 NPC。
+
+        - 只接受 npc_context 中确实出现的 NPC 名（防止 LLM 凭空捏造或泄露未到场角色）
+        - channel 必须落在三档之内，否则丢弃
+        - descriptor 必须非空字符串，自动 strip 并裁剪到 30 字以内（兜底，正常 ≤ 10 字）
+        """
+        if not isinstance(raw, dict):
+            return {}
+        if not isinstance(npc_context, dict):
+            npc_context = {}
+
+        allowed_channels = {"voice_only", "visual", "name_known"}
+        sanitized: dict = {}
+        for raw_name, raw_entry in raw.items():
+            npc_name = str(raw_name or "").strip()
+            if not npc_name or npc_name not in npc_context:
+                continue
+            if not isinstance(raw_entry, dict):
+                continue
+            descriptor = str(raw_entry.get("descriptor") or "").strip()
+            channel = str(raw_entry.get("channel") or "").strip().lower()
+            if not descriptor or channel not in allowed_channels:
+                continue
+            sanitized[npc_name] = {
+                "descriptor": self._trim_text(descriptor, 30),
+                "channel": channel,
+            }
+        return sanitized
 
     def _trim_text(self, value: str, limit: int) -> str:
         text = str(value or "").strip()

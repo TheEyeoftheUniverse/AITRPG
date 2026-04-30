@@ -982,6 +982,7 @@ class AITRPGPlugin(Star):
                 # 根据trust_change_reasons查模组trust_map，计算信任增量（支持多reason叠加+一次性去重）
                 self._apply_trust_changes(rhythm_result, module_data, merged_changes, state)
                 self._apply_soft_state_updates(rhythm_result, merged_changes, state)
+                self._apply_npc_descriptor_updates(rhythm_result, merged_changes, state)
 
                 rhythm_result["feasible"] = bool(rule_plan.get("feasibility", {}).get("ok", True))
                 if not rhythm_result.get("hint"):
@@ -2199,6 +2200,65 @@ class AITRPGPlugin(Star):
             "summary": summary,
             "updated_round": round_no,
         }
+
+    _PLAYER_DESCRIPTOR_CHANNEL_RANK = {
+        "voice_only": 0,
+        "visual": 1,
+        "name_known": 2,
+    }
+
+    def _apply_npc_descriptor_updates(self, rhythm_result: dict, merged_changes: dict, game_state: dict):
+        """把 Rhythm 输出的 player_visible_npcs 写回 npc_updates。
+
+        - 只写 channel 单调升级或同级的条目（防止已揭露名字的 NPC 退回 voice_only）
+        - descriptor 必须非空、channel 必须在三档之内（_sanitize_player_visible_npcs 已保证）
+        - 没有 player_descriptor 历史记录 → 任意一档都允许首次写入
+        """
+        visible = rhythm_result.get("player_visible_npcs")
+        if not isinstance(visible, dict) or not visible:
+            return
+
+        round_no = 0
+        if isinstance(game_state, dict):
+            round_no = int(game_state.get("round_count", 0) or 0) + 1
+
+        npc_states = {}
+        if isinstance(game_state, dict):
+            world_state = game_state.get("world_state", {})
+            if isinstance(world_state, dict):
+                raw_npcs = world_state.get("npcs", {})
+                if isinstance(raw_npcs, dict):
+                    npc_states = raw_npcs
+
+        rank = self._PLAYER_DESCRIPTOR_CHANNEL_RANK
+
+        for npc_name, entry in visible.items():
+            if not isinstance(entry, dict):
+                continue
+            new_channel = str(entry.get("channel") or "").strip()
+            new_descriptor = str(entry.get("descriptor") or "").strip()
+            if new_channel not in rank or not new_descriptor:
+                continue
+
+            existing_state = npc_states.get(npc_name, {}) if isinstance(npc_states.get(npc_name), dict) else {}
+            existing_descriptor = existing_state.get("player_descriptor") if isinstance(existing_state.get("player_descriptor"), dict) else None
+            if existing_descriptor:
+                old_channel = str(existing_descriptor.get("channel") or "").strip()
+                if old_channel in rank and rank[new_channel] < rank[old_channel]:
+                    # 通道倒退：拒绝写入，保留旧值（防止 UI 上"艾米莉"突然倒退成"冷漠的女声"）
+                    continue
+
+            npc_updates = merged_changes.setdefault("npc_updates", {})
+            npc_entry = npc_updates.setdefault(npc_name, {})
+            if not isinstance(npc_entry, dict):
+                npc_entry = {}
+                npc_updates[npc_name] = npc_entry
+
+            npc_entry["player_descriptor"] = {
+                "text": new_descriptor,
+                "channel": new_channel,
+                "updated_round": round_no,
+            }
 
     def _merge_world_changes(self, hard_changes: dict, soft_changes: dict) -> dict:
         """合并规则层硬变化与节奏层软变化，避免状态更新分散在多处。"""
