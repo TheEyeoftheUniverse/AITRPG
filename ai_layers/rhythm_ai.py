@@ -1,5 +1,6 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
+from ..game_state.character_card import build_identity_block
 from ..game_state.location_context import (
     build_adjacent_locations_context,
     build_runtime_location_context,
@@ -172,6 +173,7 @@ class RhythmAI:
         scene_context = self._build_scene_context(game_state, module_data, rule_plan, player_input=player_input)
 
         prompt = prompt_template.replace("{current_location}", current_location)
+        prompt = prompt.replace("{player_identity_block}", build_identity_block(game_state.get("character_card")))
         prompt = prompt.replace("{round_count}", str(round_count))
         prompt = prompt.replace("{clues_found}", json.dumps(clues_found, ensure_ascii=False))
         prompt = prompt.replace("{stages}", stages)

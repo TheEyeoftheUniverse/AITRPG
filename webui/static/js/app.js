@@ -318,10 +318,15 @@ async function startGame(moduleIndex, forceNew = false) {
     }
 
     try {
+        const characterCard = (typeof getCurrentCharacterCard === "function") ? getCurrentCharacterCard() : null;
         const resp = await fetch("/trpg/api/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ module_index: moduleIndex, force_new: forceNew })
+            body: JSON.stringify({
+                module_index: moduleIndex,
+                force_new: forceNew,
+                character_card: characterCard
+            })
         });
 
         const responseText = await resp.text();
@@ -1454,30 +1459,195 @@ function updatePlayerStatus(state) {
     const player = state.player || {};
     const world = state.world_state || {};
 
-    // SAN
-    const san = player.san || 0;
-    const sanMax = 65;
-    const sanPct = Math.max(0, Math.min(100, (san / sanMax) * 100));
+    // SAN — 优先读 player.san_max（自定义卡注入），缺省 fallback 99
+    const san = Number(player.san) || 0;
+    const sanMax = Number(player.san_max) || 99;
+    const sanPct = Math.max(0, Math.min(100, (san / Math.max(1, sanMax)) * 100));
     document.getElementById("san-bar").style.width = sanPct + "%";
     document.getElementById("san-value").textContent = `${san}/${sanMax}`;
 
-    // HP
-    const hp = player.hp || 0;
-    const hpMax = 12;
-    const hpPct = Math.max(0, Math.min(100, (hp / hpMax) * 100));
+    // HP — 优先读 player.hp_max，缺省 12
+    const hp = Number(player.hp) || 0;
+    const hpMax = Number(player.hp_max) || 12;
+    const hpPct = Math.max(0, Math.min(100, (hp / Math.max(1, hpMax)) * 100));
     document.getElementById("hp-bar").style.width = hpPct + "%";
     document.getElementById("hp-value").textContent = `${hp}/${hpMax}`;
 
-    // Skills
+    // MP — 来自卡的 mp_max；fallback 时显示 0/0
+    const mp = Number(player.mp) || 0;
+    const mpMax = Number(player.mp_max) || 0;
+    const mpBarEl = document.getElementById("mp-bar");
+    const mpValueEl = document.getElementById("mp-value");
+    if (mpBarEl && mpValueEl) {
+        const mpPct = Math.max(0, Math.min(100, (mp / Math.max(1, mpMax || 1)) * 100));
+        mpBarEl.style.width = (mpMax > 0 ? mpPct : 0) + "%";
+        mpValueEl.textContent = `${mp}/${mpMax}`;
+    }
+
+    // 元数据：姓名、职业、幸运
+    const luckEl = document.getElementById("player-luck-value");
+    if (luckEl) luckEl.textContent = String(Number(player.luck) || 0);
+
+    const nameRow = document.getElementById("player-name-row");
+    const nameVal = document.getElementById("player-name-value");
+    if (nameRow && nameVal) {
+        const nm = player.name || "";
+        if (nm && nm !== "调查员") {
+            nameRow.classList.remove("hidden");
+            nameVal.textContent = nm;
+        } else {
+            nameRow.classList.add("hidden");
+        }
+    }
+    const profRow = document.getElementById("player-profession-row");
+    const profVal = document.getElementById("player-profession-value");
+    if (profRow && profVal) {
+        // 优先读后端提供的中文 profession_name; 否则退回英文 key
+        const profDisplay = (player.profession_name || player.profession || "").trim();
+        if (profDisplay) {
+            profRow.classList.remove("hidden");
+            profVal.textContent = profDisplay;
+        } else {
+            profRow.classList.add("hidden");
+        }
+    }
+
+    // 8 属性 + LUCK 网格（仅在卡注入时显示）
+    const attrsGrid = document.getElementById("player-attrs-grid");
+    if (attrsGrid) {
+        const attrs = player.attributes || {};
+        // COC7 八属性中文名 (英文是行业通用 key 故双语呈现)
+        const ATTR_LABEL_ZH = {
+            STR: "力量", CON: "体质", SIZ: "体型",
+            DEX: "敏捷", APP: "外貌", INT: "智力",
+            POW: "意志", EDU: "教育"
+        };
+        const order = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU"];
+        const present = order.filter(k => attrs[k] != null);
+        if (present.length > 0) {
+            attrsGrid.classList.remove("hidden");
+            attrsGrid.innerHTML = "";
+            for (const k of order) {
+                if (attrs[k] == null) continue;
+                const cell = document.createElement("div");
+                cell.className = "player-attr-cell";
+                const lbl = document.createElement("span");
+                lbl.className = "player-attr-label";
+                lbl.textContent = `${ATTR_LABEL_ZH[k] || k}(${k})`;
+                const val = document.createElement("span");
+                val.className = "player-attr-value";
+                val.textContent = String(attrs[k]);
+                cell.appendChild(lbl);
+                cell.appendChild(val);
+                attrsGrid.appendChild(cell);
+            }
+        } else {
+            attrsGrid.classList.add("hidden");
+            attrsGrid.innerHTML = "";
+        }
+    }
+
+    // 调查员生平：性别 / 居住地 / 出生地（紧凑显示在属性区块底部）
+    const lifeRow = document.getElementById("player-life-row");
+    if (lifeRow) {
+        const sex = (player.sex || "").trim();
+        const residence = (player.residence || "").trim();
+        const birthplace = (player.birthplace || "").trim();
+        const parts = [];
+        if (sex) parts.push(`性别 ${sex}`);
+        if (residence) parts.push(`现居 ${residence}`);
+        if (birthplace) parts.push(`生于 ${birthplace}`);
+        if (parts.length > 0) {
+            lifeRow.classList.remove("hidden");
+            lifeRow.textContent = parts.join("　·　");
+        } else {
+            lifeRow.classList.add("hidden");
+            lifeRow.textContent = "";
+        }
+    }
+
+    // 双点数池 used/total（仅在卡注入且 occupation_total > 0 时显示）
+    const poolsRow = document.getElementById("player-pools-row");
+    if (poolsRow) {
+        const sp = player.skill_pools || {};
+        const occT = Number(sp.occupation_total) || 0;
+        const occU = Number(sp.occupation_used) || 0;
+        const intT = Number(sp.interest_total) || 0;
+        const intU = Number(sp.interest_used) || 0;
+        if (occT > 0 || intT > 0) {
+            poolsRow.classList.remove("hidden");
+            poolsRow.innerHTML = "";
+            const occBadge = document.createElement("span");
+            occBadge.className = "pool-badge" + (occU < occT ? " pool-badge--unfilled" : "");
+            occBadge.textContent = `职业点 ${occU}/${occT}`;
+            const intBadge = document.createElement("span");
+            intBadge.className = "pool-badge" + (intU < intT ? " pool-badge--unfilled" : "");
+            intBadge.textContent = `兴趣点 ${intU}/${intT}`;
+            poolsRow.appendChild(occBadge);
+            poolsRow.appendChild(intBadge);
+        } else {
+            poolsRow.classList.add("hidden");
+            poolsRow.innerHTML = "";
+        }
+    }
+
+    // Skills — 改为按数值降序的 chip 排版（更易读，分高低）
     const skillsEl = document.getElementById("player-skills");
     const skills = player.skills || {};
-    const skillEntries = Object.entries(skills);
+    const skillEntries = Object.entries(skills)
+        .filter(([_, v]) => typeof v === "number")
+        .sort((a, b) => b[1] - a[1]);
     if (skillEntries.length > 0) {
-        skillsEl.innerHTML = skillEntries.map(([name, value]) =>
-            `<span class="item-tag">${escapeHtml(name)} ${escapeHtml(String(value))}</span>`
-        ).join("");
+        skillsEl.innerHTML = skillEntries.map(([name, value]) => {
+            const v = Number(value) || 0;
+            // 高数值高亮：≥60 强、≥40 中、其它弱
+            let cls = "skill-chip";
+            if (v >= 60) cls += " skill-chip--high";
+            else if (v >= 40) cls += " skill-chip--mid";
+            return `<span class="${cls}"><span class="skill-chip-name">${escapeHtml(name)}</span><span class="skill-chip-value">${v}</span></span>`;
+        }).join("");
     } else {
         skillsEl.innerHTML = `<span class="placeholder-text">暂无技能</span>`;
+    }
+
+    // 调查员背景（COC7 6 项；任一非空则显示 section）
+    const bgSection = document.getElementById("background-section");
+    const bgEl = document.getElementById("player-background");
+    if (bgSection && bgEl) {
+        const bg = player.background || {};
+        const bgLabels = {
+            personal_description: "个人描述",
+            ideology_beliefs: "思想/信念",
+            significant_people: "重要之人",
+            meaningful_locations: "意义非凡之地",
+            treasured_possessions: "宝贵之物",
+            traits: "特质"
+        };
+        const order = ["personal_description", "ideology_beliefs", "significant_people",
+                       "meaningful_locations", "treasured_possessions", "traits"];
+        const nonEmpty = order.filter(k => (bg[k] || "").trim().length > 0);
+        if (nonEmpty.length > 0) {
+            bgSection.classList.remove("hidden");
+            bgEl.innerHTML = "";
+            for (const k of order) {
+                const text = (bg[k] || "").trim();
+                if (!text) continue;
+                const item = document.createElement("div");
+                item.className = "player-bg-item";
+                const label = document.createElement("div");
+                label.className = "player-bg-label";
+                label.textContent = bgLabels[k];
+                const val = document.createElement("div");
+                val.className = "player-bg-value";
+                val.textContent = text;
+                item.appendChild(label);
+                item.appendChild(val);
+                bgEl.appendChild(item);
+            }
+        } else {
+            bgSection.classList.add("hidden");
+            bgEl.innerHTML = `<span class="placeholder-text">未配置背景</span>`;
+        }
     }
 
     // Inventory
@@ -1845,10 +2015,10 @@ function renderMap(mapData) {
         const nodeW = 60;
         const nodeH = 28;
         const gapX = 16;
-        const gapY = 56;
+        const gapY = 32;
         const labelW = 28;
         const padX = 8;
-        const padY = 12;
+        const padY = 10;
         const ns = "http://www.w3.org/2000/svg";
 
         // 每层内布局：
@@ -2040,6 +2210,26 @@ function renderMap(mapData) {
             svg.appendChild(g);
         }
 
+        // 计算 fit-contain：SVG 默认缩放到既不超过容器宽也不超过容器高 (取小者)
+        // 让玩家进场就能一眼看到全部地图节点而无需滚动条；玩家可用 +/- 主动放大缩小
+        const container = document.getElementById("game-map");
+        if (container) {
+            const cw = Math.max(0, container.clientWidth - 16);
+            const ch = Math.max(0, container.clientHeight - 16);
+            if (cw > 0 && ch > 0 && svgW > 0 && svgH > 0) {
+                const fitScale = Math.min(cw / svgW, ch / svgH);
+                // 不主动放大超过 1:1；同时不允许低于 0.55 防止地图被压缩到看不清
+                window._mapBaseScale = Math.max(0.55, Math.min(fitScale, 1));
+            } else {
+                window._mapBaseScale = 1;
+            }
+        } else {
+            window._mapBaseScale = 1;
+        }
+        if (typeof window._mapZoom !== "number") window._mapZoom = 1.0;
+        applyMapZoom(window._mapZoom);
+        attachMapPanHandlers();
+
         console.log(`[Map] Rendered ${keys.length} nodes, ${edges.length} edges`);
     } catch (err) {
         console.error("[Map] Render failed:", err, mapData);
@@ -2194,6 +2384,97 @@ function disableMapInteraction() {
         svg.style.pointerEvents = "none";
         svg.style.opacity = "0.5";
     }
+}
+
+// ─── 地图缩放控件 ───
+function applyMapZoom(zoom) {
+    const svg = document.getElementById("map-svg");
+    if (!svg || !svg.viewBox || !svg.viewBox.baseVal) return;
+    const base = window._mapBaseScale || 1;
+    const total = Math.max(0.1, base * zoom);
+    const w = parseFloat(svg.viewBox.baseVal.width) || 200;
+    const h = parseFloat(svg.viewBox.baseVal.height) || 120;
+    svg.style.width = (w * total) + "px";
+    svg.style.height = (h * total) + "px";
+    window._mapZoom = zoom;
+}
+
+function mapZoomIn() {
+    const next = Math.min((window._mapZoom || 1) * 1.2, 3);
+    applyMapZoom(next);
+}
+
+function mapZoomOut() {
+    const next = Math.max((window._mapZoom || 1) / 1.2, 0.4);
+    applyMapZoom(next);
+}
+
+function mapZoomReset() {
+    applyMapZoom(1);
+}
+
+// ─── 地图拖拽（按住空白处拖动 .map-container scrollLeft/Top） ───
+let _mapPanState = null;
+let _mapPanInstalled = false;
+let _mapJustDragged = false;
+
+function attachMapPanHandlers() {
+    if (_mapPanInstalled) return;
+    const container = document.getElementById("game-map");
+    if (!container) return;
+    _mapPanInstalled = true;
+
+    container.addEventListener("mousedown", (e) => {
+        // 左键 + 起点不在节点交互元素上时才进入 pan 模式
+        if (e.button !== 0) return;
+        // 起点在节点(rect/text/g)上时让节点点击优先处理
+        const path = e.composedPath ? e.composedPath() : [];
+        const onNode = path.some(el =>
+            el.classList && (el.classList.contains("map-node") || el.tagName === "g"
+                && el.parentNode && el.parentNode.id === "map-svg" && el.classList.contains("map-node"))
+        );
+        if (onNode) return;
+        _mapPanState = {
+            startX: e.clientX,
+            startY: e.clientY,
+            scrollLeft: container.scrollLeft,
+            scrollTop: container.scrollTop,
+            moved: false,
+        };
+        container.classList.add("map-panning");
+        e.preventDefault();
+    });
+
+    container.addEventListener("mousemove", (e) => {
+        if (!_mapPanState) return;
+        const dx = e.clientX - _mapPanState.startX;
+        const dy = e.clientY - _mapPanState.startY;
+        if (Math.abs(dx) + Math.abs(dy) > 4) _mapPanState.moved = true;
+        container.scrollLeft = _mapPanState.scrollLeft - dx;
+        container.scrollTop = _mapPanState.scrollTop - dy;
+    });
+
+    const endPan = () => {
+        if (!_mapPanState) return;
+        _mapJustDragged = _mapPanState.moved;
+        _mapPanState = null;
+        container.classList.remove("map-panning");
+        if (_mapJustDragged) {
+            // 吞掉本次 mouseup 后冒泡到 svg/node 的 click
+            setTimeout(() => { _mapJustDragged = false; }, 80);
+        }
+    };
+    container.addEventListener("mouseup", endPan);
+    container.addEventListener("mouseleave", endPan);
+
+    // 拖动后立刻发生的 click 吞掉，防止误触发节点跳转
+    container.addEventListener("click", (e) => {
+        if (_mapJustDragged) {
+            e.stopPropagation();
+            e.preventDefault();
+            _mapJustDragged = false;
+        }
+    }, true);
 }
 
 function disableAllGameInput() {

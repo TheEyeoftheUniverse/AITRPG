@@ -1,0 +1,120 @@
+{
+  "_schema_note": "COC7 职业数据。occupation_skill_pool_formula.secondary_choice 是属性 key 列表，玩家从中选大值参与公式：occupation_total = primary*multiplier + max(secondary_choice 中各属性值)*multiplier。skill_choices 是该职业可花职业点的技能集合（信用评级始终允许，单独由 credit_rating 控制）。recommended_inventory 是随机生成与新建卡时的默认起始物品候选。",
+  "professions": [
+    {
+      "key": "detective",
+      "name": "侦探",
+      "description": "私人侦探或警探。靠观察、推理与人际斡旋为生，常出入档案室与犯罪现场。",
+      "credit_rating": [20, 50],
+      "occupation_skill_pool_formula": {
+        "primary": "EDU",
+        "secondary_choice": ["STR", "DEX"],
+        "multiplier": 2
+      },
+      "skill_choices": [
+        "侦查", "聆听", "心理学", "潜行",
+        "说服", "话术", "魅惑", "恐吓",
+        "攀爬", "跳跃", "驾驶（汽车）",
+        "急救", "法律", "操作", "斗殴"
+      ],
+      "recommended_inventory": [
+        "手电筒", "记事本", "钢笔", "驾驶证", "怀表"
+      ]
+    },
+    {
+      "key": "doctor",
+      "name": "医生",
+      "description": "受过正规医学训练的医师。在医院、私人诊所或战地服务，对伤病与药理熟稔。",
+      "credit_rating": [30, 80],
+      "occupation_skill_pool_formula": {
+        "primary": "EDU",
+        "secondary_choice": ["DEX", "INT"],
+        "multiplier": 2
+      },
+      "skill_choices": [
+        "医学", "急救", "心理学", "聆听",
+        "说服", "魅惑", "教育", "操作",
+        "历史", "图书馆使用", "母语", "神秘学"
+      ],
+      "recommended_inventory": [
+        "听诊器", "急救包", "处方笔记本", "钢笔", "怀表"
+      ]
+    },
+    {
+      "key": "journalist",
+      "name": "记者",
+      "description": "报社或独立通讯员。靠跑访、写稿与人脉为生，对城市暗角与档案最为熟悉。",
+      "credit_rating": [9, 30],
+      "occupation_skill_pool_formula": {
+        "primary": "EDU",
+        "secondary_choice": ["DEX", "STR"],
+        "multiplier": 2
+      },
+      "skill_choices": [
+        "侦查", "历史", "心理学", "聆听",
+        "魅惑", "说服", "话术", "图书馆使用",
+        "母语", "驾驶（汽车）", "潜行"
+      ],
+      "recommended_inventory": [
+        "记事本", "钢笔", "相机", "记者证", "口袋表"
+      ]
+    },
+    {
+      "key": "professor",
+      "name": "教授",
+      "description": "大学教员或独立学者。专精某一学科，常被卷入超出其学问之外的怪事。",
+      "credit_rating": [20, 70],
+      "occupation_skill_pool_formula": {
+        "primary": "EDU",
+        "secondary_choice": ["EDU"],
+        "multiplier": 2
+      },
+      "skill_choices": [
+        "图书馆使用", "教育", "历史", "法律",
+        "心理学", "神秘学", "说服", "母语",
+        "急救"
+      ],
+      "recommended_inventory": [
+        "皮面笔记本", "钢笔", "怀表", "眼镜", "古旧书籍"
+      ]
+    },
+    {
+      "key": "private_bodyguard",
+      "name": "私家保镖",
+      "description": "受雇护卫。身手扎实、警觉性高，对武器与近身格斗都有训练。",
+      "credit_rating": [8, 30],
+      "occupation_skill_pool_formula": {
+        "primary": "EDU",
+        "secondary_choice": ["DEX", "STR"],
+        "multiplier": 2
+      },
+      "skill_choices": [
+        "斗殴", "侦查", "心理学", "恐吓",
+        "聆听", "驾驶（汽车）", "急救",
+        "潜行", "攀爬", "投掷"
+      ],
+      "recommended_inventory": [
+        "手电筒", "工作手套", "怀表", "棍棒", "急救纱布"
+      ]
+    },
+    {
+      "key": "antiquarian",
+      "name": "古董商",
+      "description": "收藏与买卖古董的商人。识货、健谈，常与博物馆、私人藏家、走私者周旋。",
+      "credit_rating": [30, 50],
+      "occupation_skill_pool_formula": {
+        "primary": "EDU",
+        "secondary_choice": ["INT", "APP"],
+        "multiplier": 2
+      },
+      "skill_choices": [
+        "侦查", "历史", "法律", "图书馆使用",
+        "操作", "说服", "魅惑", "驾驶（汽车）",
+        "心理学", "母语"
+      ],
+      "recommended_inventory": [
+        "放大镜", "皮面笔记本", "钢笔", "怀表", "鉴定手套"
+      ]
+    }
+  ]
+}

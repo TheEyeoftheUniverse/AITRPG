@@ -15,6 +15,7 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.star import Context
 
+from ..game_state.character_card import build_identity_block
 from .provider_failover import (
     ProviderFailoverError,
     normalize_provider_candidates,
@@ -232,6 +233,7 @@ class StoryAI:
 
         # --- Fill template placeholders ---
         prompt = prompt_template
+        prompt = prompt.replace("{player_identity_block}", build_identity_block(game_state.get("character_card")))
         prompt = prompt.replace("{current_location}", current_location)
         prompt = prompt.replace("{round_count}", str(round_count))
         prompt = prompt.replace("{clues_found}", json.dumps(clues_found, ensure_ascii=False))

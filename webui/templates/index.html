@@ -18,6 +18,12 @@
             </h1>
             <p class="overlay-subtitle">选择一个模组开始冒险</p>
             <p class="overlay-hint">操作提示💡：【移动场景】点击地图进行移动；【对话】仅引号内的输入将被识别为对话。</p>
+            <div class="character-card-banner">
+                <button class="character-card-banner-btn" onclick="openCharacterCardModal()">
+                    <span class="mdi mdi-account-edit"></span> 配置调查员（COC7）
+                </button>
+                <span id="character-card-banner-status" class="character-card-banner-status">未配置 — 将使用默认调查员</span>
+            </div>
             <div id="module-list" class="module-list">
                 <!-- 动态填充 -->
             </div>
@@ -106,6 +112,11 @@
                             <div class="status-title">
                                 <span class="mdi mdi-map"></span> 地图
                                 <span class="map-hint">点击地图节点，发送后完成移动</span>
+                                <span class="map-zoom-controls">
+                                    <button class="map-zoom-btn" type="button" onclick="mapZoomOut()" title="缩小"><span class="mdi mdi-magnify-minus"></span></button>
+                                    <button class="map-zoom-btn" type="button" onclick="mapZoomReset()" title="复位（适应窗口）"><span class="mdi mdi-image-filter-center-focus"></span></button>
+                                    <button class="map-zoom-btn" type="button" onclick="mapZoomIn()" title="放大"><span class="mdi mdi-magnify-plus"></span></button>
+                                </span>
                             </div>
                             <div id="game-map" class="map-container">
                                 <svg id="map-svg" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -169,6 +180,28 @@
                                 </div>
                                 <span id="hp-value" class="stat-value">12/12</span>
                             </div>
+                            <div class="stat-row">
+                                <span class="stat-label">魔法 (MP)</span>
+                                <div class="stat-bar-wrapper">
+                                    <div id="mp-bar" class="stat-bar mp-bar" style="width: 100%"></div>
+                                </div>
+                                <span id="mp-value" class="stat-value">0/0</span>
+                            </div>
+                            <div id="player-name-row" class="stat-row stat-row-meta hidden">
+                                <span class="stat-label">姓名</span>
+                                <span id="player-name-value" class="stat-meta-value">调查员</span>
+                            </div>
+                            <div id="player-profession-row" class="stat-row stat-row-meta hidden">
+                                <span class="stat-label">职业</span>
+                                <span id="player-profession-value" class="stat-meta-value"></span>
+                            </div>
+                            <div id="player-luck-row" class="stat-row stat-row-meta">
+                                <span class="stat-label">幸运 (LUCK)</span>
+                                <span id="player-luck-value" class="stat-meta-value">50</span>
+                            </div>
+                            <div id="player-attrs-grid" class="player-attrs-grid hidden"></div>
+                            <div id="player-life-row" class="player-life-row hidden"></div>
+                            <div id="player-pools-row" class="player-pools-row hidden"></div>
                         </div>
                     </div>
                     <div class="status-section status-section-collapsed" id="skills-section">
@@ -180,6 +213,18 @@
                         </div>
                         <div id="player-skills" class="status-content">
                             <span class="placeholder-text">暂无技能</span>
+                        </div>
+                    </div>
+                    <!-- 调查员背景（COC7 6 项；未配置卡时隐藏） -->
+                    <div class="status-section status-section-collapsed hidden" id="background-section">
+                        <div class="status-title">
+                            <button class="status-toggle" type="button" onclick="toggleStatusSection('background-section')" title="展开或收起背景">
+                                <span class="mdi mdi-chevron-down"></span>
+                            </button>
+                            <span class="mdi mdi-account-details"></span> 调查员背景
+                        </div>
+                        <div id="player-background" class="status-content">
+                            <span class="placeholder-text">未配置背景</span>
                         </div>
                     </div>
                     <!-- 物品栏 -->
@@ -292,7 +337,123 @@
         </div>
     </div>
 
+    <!-- 调查员（COC7）配置模态 -->
+    <div id="character-card-modal" class="hidden">
+        <div class="character-card-dialog">
+            <div class="character-card-header">
+                <h3><span class="mdi mdi-account-edit"></span> 调查员卡（COC7）</h3>
+                <button class="character-card-close" onclick="closeCharacterCardModal()">&#x2715;</button>
+            </div>
+
+            <div class="character-card-toolbar">
+                <button class="cc-btn cc-btn--accent" onclick="ccRandomRoll()" title="按 COC7 规则随机生成一张完整调查员"><span class="mdi mdi-dice-multiple"></span> 随机调查员</button>
+                <button class="cc-btn" onclick="ccRollAttributes()" title="按 COC7 公式 roll 8 属性"><span class="mdi mdi-dice-6"></span> Roll 属性</button>
+                <button class="cc-btn cc-btn--accent" onclick="ccExportTemplate()" title="导出带 _hint 注释的空白卡 JSON，让 AI 帮你填好后再点导入"><span class="mdi mdi-file-document-outline"></span> 空白模板</button>
+                <span class="cc-toolbar-spacer"></span>
+                <button class="cc-btn" onclick="ccExport()" title="导出当前卡为 JSON 文件"><span class="mdi mdi-download"></span> 导出</button>
+                <button class="cc-btn" onclick="document.getElementById('cc-import-file').click()" title="导入 JSON 文件"><span class="mdi mdi-upload"></span> 导入</button>
+                <input id="cc-import-file" type="file" accept="application/json,.json" style="display:none" onchange="ccImport(event)">
+                <button class="cc-btn cc-btn--danger" onclick="ccClear()" title="清除已保存的卡"><span class="mdi mdi-delete"></span> 清除</button>
+            </div>
+            <div class="cc-toolbar-hint">💡 不会填? 点「空白模板」导出 JSON 给 AI 帮你填好, 再点「导入」上传</div>
+
+            <div class="character-card-body">
+                <!-- 基础信息 -->
+                <section class="cc-section">
+                    <div class="cc-section-title">基础信息</div>
+                    <div class="cc-row">
+                        <div class="cc-field">
+                            <label>姓名</label>
+                            <input id="cc-name" type="text" maxlength="20" autocomplete="off" oninput="ccOnInput()">
+                            <span class="cc-counter"><span id="cc-name-len">0</span>/20</span>
+                        </div>
+                        <div class="cc-field">
+                            <label>年龄（22-39）</label>
+                            <input id="cc-age" type="number" min="22" max="39" oninput="ccOnInput()">
+                        </div>
+                        <div class="cc-field">
+                            <label>性别</label>
+                            <input id="cc-sex" type="text" maxlength="20" placeholder="男 / 女 / 其他" oninput="ccOnInput()">
+                        </div>
+                        <div class="cc-field cc-field-grow">
+                            <label>职业</label>
+                            <select id="cc-profession" onchange="ccOnProfessionChange()"></select>
+                        </div>
+                    </div>
+                    <div class="cc-row">
+                        <div class="cc-field cc-field-grow">
+                            <label>居住地</label>
+                            <input id="cc-residence" type="text" maxlength="20" placeholder="上海法租界 / 北平西城" oninput="ccOnInput()">
+                        </div>
+                        <div class="cc-field cc-field-grow">
+                            <label>出生地</label>
+                            <input id="cc-birthplace" type="text" maxlength="20" placeholder="苏州 / 香港" oninput="ccOnInput()">
+                        </div>
+                    </div>
+                    <div class="cc-row">
+                        <div class="cc-field">
+                            <label>年代（可选）</label>
+                            <select id="cc-era" onchange="ccOnEraChange()">
+                                <option value="">未声明</option>
+                                <option value="modern">现代</option>
+                                <option value="1920s">1920s</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                        </div>
+                        <div class="cc-field cc-field-grow" id="cc-era-custom-wrap" style="display:none;">
+                            <label>自定义年代</label>
+                            <input id="cc-era-custom" type="text" maxlength="20" placeholder="维多利亚朝 / 近未来 2099" oninput="ccOnEraCustomInput()">
+                        </div>
+                    </div>
+                    <div id="cc-profession-info" class="cc-profession-info"></div>
+                </section>
+
+                <!-- 属性 -->
+                <section class="cc-section">
+                    <div class="cc-section-title">属性（8 项 + LUCK） <span class="cc-section-hint">可点「Roll 属性」生成，也可手填</span></div>
+                    <div id="cc-attrs" class="cc-attrs"></div>
+                    <div id="cc-derived" class="cc-derived"></div>
+                </section>
+
+                <!-- 技能 -->
+                <section class="cc-section">
+                    <div class="cc-section-title">技能配点 <span class="cc-section-hint">职业点：仅可用于职业技能列表 + 信用评级；兴趣点：可用于任何技能（克苏鲁神话除外）</span></div>
+                    <div class="cc-pool-status">
+                        <span>职业点：<b id="cc-pool-occ-used">0</b> / <b id="cc-pool-occ-total">0</b></span>
+                        <span>兴趣点：<b id="cc-pool-int-used">0</b> / <b id="cc-pool-int-total">0</b></span>
+                    </div>
+                    <table class="cc-skills-table">
+                        <thead><tr><th>技能</th><th>基础</th><th>+职业点</th><th>+兴趣点</th><th>合计</th></tr></thead>
+                        <tbody id="cc-skills-body"></tbody>
+                    </table>
+                </section>
+
+                <!-- 背景 -->
+                <section class="cc-section">
+                    <div class="cc-section-title">调查员背景（COC7 6 项，每项 ≤ 80 字）</div>
+                    <div id="cc-background"></div>
+                </section>
+
+                <!-- 物品 -->
+                <section class="cc-section">
+                    <div class="cc-section-title">起始物品（最多 10 项，每项 ≤ 20 字）</div>
+                    <div id="cc-inventory" class="cc-inventory"></div>
+                    <button class="cc-btn cc-btn--small" onclick="ccAddInventoryItem('')"><span class="mdi mdi-plus"></span> 添加物品</button>
+                </section>
+
+                <!-- 错误提示 -->
+                <div id="cc-error" class="cc-error hidden"></div>
+            </div>
+
+            <div class="character-card-footer">
+                <button class="cc-btn cc-btn--secondary" onclick="closeCharacterCardModal()">取消</button>
+                <button class="cc-btn cc-btn--primary" id="cc-save-btn" onclick="ccSave()">保存到本地</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/trpg/static/js/app.js?v={{ static_version }}"></script>
+    <script src="/trpg/static/js/character_card.js?v={{ static_version }}"></script>
     <script src="/trpg/static/js/workflow_override.js?v={{ static_version }}"></script>
 </body>
 </html>

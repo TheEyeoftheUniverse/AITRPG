@@ -1,5 +1,6 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
+from ..game_state.character_card import build_identity_block
 from ..game_state.location_context import (
     build_adjacent_locations_context,
     build_runtime_location_context,
@@ -367,6 +368,7 @@ class RuleAI:
         history_summaries = self._build_history_summaries(game_state)
 
         prompt = prompt_template.replace("{player_input}", player_input)
+        prompt = prompt.replace("{player_identity_block}", build_identity_block(game_state.get("character_card")))
         prompt = prompt.replace("{current_location}", current_location)
         prompt = prompt.replace("{history_summaries}", history_summaries)
         prompt = prompt.replace("{location_context}", json.dumps(location_context, ensure_ascii=False, indent=2))

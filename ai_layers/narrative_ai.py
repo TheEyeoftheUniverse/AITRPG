@@ -1,5 +1,6 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
+from ..game_state.character_card import build_identity_block
 from ..game_state.location_context import (
     get_entity_first_appearance,
     get_entity_profile_text,
@@ -72,6 +73,7 @@ class NarrativeAI:
         history: list = None,
         trace_id: str = None,
         custom_api: dict | None = None,
+        character_card: dict | None = None,
     ) -> dict:
         if history is None:
             history = []
@@ -90,6 +92,7 @@ class NarrativeAI:
             rhythm_result=rhythm_result,
             narrative_history=narrative_history,
             history=history,
+            character_card=character_card,
         )
         if not prompt:
             raise RuntimeError("文案AI生成失败：未找到可用提示词，请使用重试按钮。")
@@ -208,6 +211,7 @@ class NarrativeAI:
         rhythm_result: dict,
         narrative_history: list,
         history: list = None,
+        character_card: dict | None = None,
     ) -> str:
         if history is None:
             history = []
@@ -334,7 +338,8 @@ class NarrativeAI:
             return ""
 
         location_name = location_context.get("name", "unknown location")
-        prompt = prompt_template.replace("{rule_info}", f"{player_block}\n\n{rule_block}")
+        prompt = prompt_template.replace("{player_identity_block}", build_identity_block(character_card))
+        prompt = prompt.replace("{rule_info}", f"{player_block}\n\n{rule_block}")
         prompt = prompt.replace(
             "{rhythm_info}",
             f"{rhythm_block}\n\nRecent dialogue transcript:\n{recent_dialogue_text}\n\nLonger history summaries:\n{history_text}",

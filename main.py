@@ -1148,6 +1148,7 @@ class AITRPGPlugin(Star):
                     history=history,
                     trace_id=narrative_trace_id,
                     custom_api=(custom_api or {}).get("narrative"),
+                    character_card=state.get("character_card"),
                 )
                 self._finish_progress_step(session_id, "narrative", self.narrative_ai.pop_call_metric(narrative_trace_id), "叙述生成完成")
                 logger.info(f"[AITRPG] 文案生成完成")
@@ -1301,6 +1302,7 @@ class AITRPGPlugin(Star):
             narrative_history=state.get("narrative_history", []),
             history=history,
             trace_id=narrative_trace_id,
+            character_card=state.get("character_card"),
         )
         self._finish_progress_step(
             session_id, "narrative",
@@ -1413,6 +1415,7 @@ class AITRPGPlugin(Star):
             narrative_history=state.get("narrative_history", []),
             history=history,
             trace_id=narrative_trace_id,
+            character_card=state.get("character_card"),
         )
         self._finish_progress_step(
             session_id, "narrative",
@@ -1606,6 +1609,7 @@ class AITRPGPlugin(Star):
                 narrative_history=state.get("narrative_history", []),
                 history=history,
                 trace_id=narrative_trace_id,
+                character_card=state.get("character_card"),
             )
         except Exception:
             self._fail_progress_step(session_id, "narrative", "文案AI 生成到场叙述失败",

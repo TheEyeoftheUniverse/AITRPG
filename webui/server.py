@@ -12,6 +12,7 @@ from quart import Quart, render_template, request, jsonify, make_response
 
 from astrbot.api import logger
 from ..game_state.save_store import JsonSaveStore
+from ..game_state import character_card as character_card_module
 from ..theatrical_parser import parse_theatrical_tags
 
 
@@ -424,6 +425,29 @@ def create_trpg_app(plugin):
                 module_index = data.get("module_index", 0)
                 force_new = bool(data.get("force_new"))
 
+                character_card_payload = data.get("character_card")
+                custom_profile = None
+                if character_card_payload is not None:
+                    try:
+                        profs = character_card_module.load_professions()
+                        skills_base = character_card_module.load_skills_base()
+                    except Exception as e:
+                        logger.warning(f"[AITRPG WebUI] character_card 数据加载失败: {e}")
+                        return jsonify({"error": "character_card data unavailable"}), 500
+                    ok, errs, normalized = character_card_module.validate_card(
+                        character_card_payload, profs, skills_base
+                    )
+                    if not ok:
+                        logger.info(f"[AITRPG WebUI] character_card 校验失败: {errs}")
+                        return jsonify({
+                            "error": "character_card validation failed",
+                            "errors": errs,
+                        }), 400
+                    custom_profile = character_card_module.to_player_profile(normalized)
+                    web_session["character_card"] = normalized
+                else:
+                    web_session.pop("character_card", None)
+
                 modules = plugin.session_manager.list_modules()
                 if module_index < 0 or module_index >= len(modules):
                     return jsonify({"error": "无效的模组序号"}), 400
@@ -445,7 +469,11 @@ def create_trpg_app(plugin):
                     plugin.session_manager.delete_session(session_id)
 
                 # 创建会话并加载模组
-                plugin.session_manager.create_session(session_id, selected["filename"])
+                plugin.session_manager.create_session(
+                    session_id, selected["filename"],
+                    custom_profile=custom_profile,
+                    character_card=web_session.get("character_card"),
+                )
 
                 # 预清洗所有地点描述中的演出标签，防止AI看到原始标签
                 module_data = plugin.session_manager.get_module_data(session_id)
@@ -942,6 +970,82 @@ def create_trpg_app(plugin):
             _action_results.pop(cookie_id, None)
 
         return jsonify({"success": True})
+
+    @app.route("/trpg/api/character-card/professions", methods=["GET"])
+    async def api_character_card_professions():
+        """返回 COC7 职业列表，前端用于渲染职业 select 与公式预览。"""
+        try:
+            data = character_card_module.load_professions()
+            return jsonify({"professions": list(data.values())})
+        except Exception as e:
+            logger.warning(f"[AITRPG] 加载职业失败: {e}")
+            return jsonify({"error": "professions data unavailable"}), 500
+
+    @app.route("/trpg/api/character-card/skills-base", methods=["GET"])
+    async def api_character_card_skills_base():
+        """返回 COC7 技能基础值表（部分值是公式串，前端按 attributes 派生）。"""
+        try:
+            data = character_card_module.load_skills_base()
+            return jsonify({"skills_base": data})
+        except Exception as e:
+            logger.warning(f"[AITRPG] 加载技能基础值失败: {e}")
+            return jsonify({"error": "skills base unavailable"}), 500
+
+    @app.route("/trpg/api/character-card/roll-attributes", methods=["GET"])
+    async def api_character_card_roll_attributes():
+        """按 COC7 公式 roll 一组 8 属性 + LUCK。每次返回不同结果。"""
+        attrs = character_card_module.roll_attributes()
+        return jsonify({"attributes": attrs})
+
+    @app.route("/trpg/api/character-card/random", methods=["GET"])
+    async def api_character_card_random():
+        """生成一张完整、合法、随机的 COC7 角色卡。不持久化。
+
+        可选 query 参数: era ∈ {modern, 1920s, custom}, 决定 names/locations/backgrounds 池。
+        缺省 / 非法值 → 'modern' (默认现代风, 避免现代卡出现 '上海公共租界' 这种 1920s 地名)。
+        """
+        try:
+            era_raw = (request.args.get("era") or "").strip().lower()
+            era = era_raw if era_raw in ("modern", "1920s", "custom") else "modern"
+            profs = character_card_module.load_professions()
+            skills_base = character_card_module.load_skills_base()
+            random_pool = character_card_module.load_random_pool()
+            card = character_card_module.roll_random_card(profs, skills_base, random_pool, era=era)
+            ok, errs, normalized = character_card_module.validate_card(card, profs, skills_base)
+            if not ok:
+                logger.warning(f"[AITRPG] 随机卡未通过 validate_card 兜底: {errs}")
+                return jsonify({"error": "random card failed validation", "errors": errs}), 500
+            return jsonify({"card": normalized})
+        except Exception as e:
+            logger.warning(f"[AITRPG] 生成随机卡失败: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/trpg/api/character-card/template", methods=["GET"])
+    async def api_character_card_template():
+        """返回带 _hint 注释的空白卡模板，供玩家拿到 AI 离线填写后再导入。"""
+        try:
+            profs = character_card_module.load_professions()
+            skills_base = character_card_module.load_skills_base()
+            template = character_card_module.make_blank_template_with_hints(profs, skills_base)
+            return jsonify({"template": template})
+        except Exception as e:
+            logger.warning(f"[AITRPG] 生成模板失败: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/trpg/api/character-card/validate", methods=["POST"])
+    async def api_character_card_validate():
+        """校验一张 COC7 卡。返回 {ok, errors, normalized} —— derived 总是按公式重算覆盖。"""
+        data = await request.get_json()
+        if not isinstance(data, dict):
+            return jsonify({"ok": False, "errors": ["body must be JSON object"], "normalized": {}}), 400
+        try:
+            profs = character_card_module.load_professions()
+            skills_base = character_card_module.load_skills_base()
+            ok, errs, normalized = character_card_module.validate_card(data, profs, skills_base)
+            return jsonify({"ok": ok, "errors": errs, "normalized": normalized})
+        except Exception as e:
+            logger.warning(f"[AITRPG] 校验卡失败: {e}")
+            return jsonify({"ok": False, "errors": [str(e)], "normalized": {}}), 500
 
     # 启动后台会话清理任务
     asyncio.ensure_future(_cleanup_stale_sessions())

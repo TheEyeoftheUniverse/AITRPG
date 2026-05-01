@@ -27,7 +27,14 @@ PRIMARY_PURSUER_ROLE = "primary_pursuer"
 PRESET_PLAYER_PROFILE = {
     "name": "调查员",
     "san": 65,
+    "san_max": 99,
     "hp": 12,
+    "hp_max": 12,
+    "mp": 11,
+    "mp_max": 11,
+    "luck": 50,
+    "era": "modern",
+    "era_custom": "",
     "skills": {
         "侦查": 60,
         "图书馆": 60,
@@ -103,8 +110,13 @@ class SessionManager:
         except json.JSONDecodeError as e:
             raise ValueError(f"模组JSON格式错误: {e}")
 
-    def create_session(self, session_id: str, module_filename: str = None):
-        """创建新游戏会话"""
+    def create_session(self, session_id: str, module_filename: str = None, custom_profile: Dict[str, Any] = None, character_card: Dict[str, Any] = None):
+        """创建新游戏会话。
+
+        custom_profile 若给出，将取代 PRESET_PLAYER_PROFILE 注入 sessions[session_id]['player']。
+        character_card 若给出，将作为完整 COC7 卡存到 sessions[session_id]['character_card']，
+        供 AI prompt 拼装层读取背景等扩展字段。两者都需调用方先经 character_card.validate_card 校验。
+        """
         module_filename = module_filename or self.default_module_name
         module_data = self._load_module(module_filename)
         initial_location = self._get_initial_location(module_data)
@@ -146,7 +158,9 @@ class SessionManager:
             "narrative_history": deque(),  # 文案AI保存每轮历史总结，长期保留供摘要回放
             "visited_locations": [initial_location],  # 已访问过的location key列表
         }
-        self.sessions[session_id]["player"] = self._build_default_player_state()
+        self.sessions[session_id]["player"] = self._build_default_player_state(custom_profile)
+        if character_card:
+            self.sessions[session_id]["character_card"] = copy.deepcopy(character_card)
         self._ensure_runtime_defaults(self.sessions[session_id], module_data)
 
     def _get_initial_location(self, module_data: Dict[str, Any]) -> str:
@@ -2676,8 +2690,13 @@ class SessionManager:
         self._sync_influence_dimensions(state)
         return runtime_changes
 
-    def _build_default_player_state(self) -> Dict[str, Any]:
-        """返回固定预设角色卡。"""
+    def _build_default_player_state(self, custom_profile: Dict[str, Any] = None) -> Dict[str, Any]:
+        """返回玩家初始状态。
+
+        custom_profile 给出时优先使用（深拷贝），否则回退到 PRESET_PLAYER_PROFILE。
+        """
+        if custom_profile:
+            return copy.deepcopy(custom_profile)
         return copy.deepcopy(PRESET_PLAYER_PROFILE)
 
     def has_session(self, session_id: str) -> bool:
@@ -2750,7 +2769,12 @@ class SessionManager:
         player_state = dict(restored_state.get("player") or {})
         player_state.setdefault("name", "调查员")
         player_state.setdefault("san", 65)
+        player_state.setdefault("san_max", 99)
         player_state.setdefault("hp", 12)
+        player_state.setdefault("hp_max", 12)
+        player_state.setdefault("mp", 0)
+        player_state.setdefault("mp_max", 0)
+        player_state.setdefault("luck", 50)
         player_state.setdefault("skills", {
             "侦查": 60,
             "图书馆": 40,
