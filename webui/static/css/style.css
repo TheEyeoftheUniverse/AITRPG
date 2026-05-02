@@ -413,6 +413,32 @@ html, body {
     text-decoration: underline;
 }
 
+/* overlay 顶部工具栏: 模组编辑器 / 源码 / 自定义API 三图标.
+   绝对定位贴 overlay 顶端居中, 不被 overlay-content 的装饰线/padding 顶下去,
+   安卓窄屏依然始终在最顶部 */
+.overlay-toolbar {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    z-index: 10;
+}
+.overlay-toolbar-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-secondary);
+    text-decoration: none;
+}
+.overlay-toolbar-btn:hover {
+    background: var(--bg-hover);
+    color: var(--accent);
+}
+
 .top-bar-right {
     display: flex;
     align-items: center;
@@ -1103,6 +1129,106 @@ html, body {
     cursor: grabbing;
 }
 
+/* v3.1.0 Cytoscape 容器: 与旧 #map-svg 共存; 由 feature flag 切换显示 */
+.map-canvas {
+    width: 100%;
+    height: 100%;
+    min-height: 240px;
+    position: relative;
+}
+.map-canvas.hidden {
+    display: none;
+}
+/* 当新地图启用时, 容器要让出 align/justify 居中 (cy 自己负责定位) */
+.map-container.map-container--cy {
+    align-items: stretch;
+    justify-content: stretch;
+    overflow: hidden;
+    cursor: auto;
+}
+.map-container.map-container--cy #map-svg {
+    display: none;
+}
+
+/* v3.1.0 地图 tooltip (Cytoscape hover / long-press 用) */
+.map-tooltip {
+    position: absolute;
+    z-index: 9999;
+    pointer-events: none;
+    max-width: 240px;
+    padding: 8px 10px;
+    background: rgba(28, 24, 20, 0.96);
+    border: 1px solid rgba(212, 165, 116, 0.45);
+    border-radius: 6px;
+    color: #f3ecd8;
+    font-size: 12px;
+    line-height: 1.4;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    transition: opacity 120ms ease;
+}
+.map-tooltip.hidden {
+    opacity: 0;
+    visibility: hidden;
+}
+.map-tooltip-name {
+    font-weight: 700;
+    color: #ffe9c0;
+    margin-bottom: 2px;
+}
+.map-tooltip-floor {
+    font-size: 10px;
+    color: #a08868;
+    font-weight: 500;
+    margin-left: 4px;
+}
+.map-tooltip-status {
+    font-size: 11px;
+    color: #c8baa0;
+    margin-top: 2px;
+}
+.map-tooltip-tags {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.map-tooltip-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.map-tooltip-tag--danger {
+    background: rgba(212, 82, 58, 0.25);
+    border-color: rgba(212, 82, 58, 0.6);
+    color: #ffb8a0;
+}
+.map-tooltip-tag--npc {
+    background: rgba(122, 158, 192, 0.2);
+    border-color: rgba(122, 158, 192, 0.5);
+    color: #b8d4f0;
+}
+.map-tooltip-tag--micro {
+    background: rgba(154, 122, 196, 0.22);
+    border-color: rgba(154, 122, 196, 0.55);
+    color: #d8c0f0;
+}
+
+/* v3.1.0 新地图禁用 (结局 / 后日谈) */
+.map-container.map-container--cy.map-disabled {
+    opacity: 0.55;
+    pointer-events: none;
+    filter: grayscale(0.4);
+    transition: opacity 250ms ease, filter 250ms ease;
+}
+
+/* v3.1.0 新地图 map_corrupt 闪烁 (套用 #map-canvas) */
+.map-canvas.map-corrupt-flash {
+    animation: mapCorruptFlash 0.35s ease;
+}
+
 .map-help {
     margin-top: 10px;
 }
@@ -1499,15 +1625,6 @@ html, body {
         justify-content: flex-end;
         gap: 6px;
         flex-wrap: wrap;
-    }
-
-    #btn-custom-api {
-        max-width: 100%;
-        min-height: 36px;
-        height: auto;
-        white-space: normal;
-        line-height: 1.3;
-        text-align: center;
     }
 
     .side-panel {
@@ -1955,12 +2072,6 @@ html, body {
 .api-config-btn--primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 
 /* 顶栏按钮激活态 */
-#btn-custom-api {
-    width: auto;
-    padding: 0 10px;
-    font-size: 13px;
-    white-space: nowrap;
-}
 #btn-custom-api.api-active {
     color: var(--accent);
     background: var(--accent-bg);

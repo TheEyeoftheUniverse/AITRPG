@@ -8,7 +8,7 @@ import platform
 import re
 from datetime import datetime, timezone
 from collections import deque
-from quart import Quart, render_template, request, jsonify, make_response
+from quart import Quart, render_template, request, jsonify, make_response, send_from_directory
 
 from astrbot.api import logger
 from ..game_state.save_store import JsonSaveStore
@@ -142,6 +142,12 @@ def create_trpg_app(plugin):
     import os
     template_dir = os.path.join(os.path.dirname(__file__), "templates")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
+    # 模组编辑器目录: 位于插件根目录下的 tools/module-editor/, 作为纯静态资源对外暴露,
+    # 不调 LLM、不开 session, 主页通过新窗口跳转到 /trpg/module-editor/ 即可使用
+    module_editor_dir = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "tools", "module-editor"
+    )
 
     app = Quart(
         __name__,
@@ -244,6 +250,9 @@ def create_trpg_app(plugin):
             os.path.join(static_dir, "css", "workflow_override.css"),
             os.path.join(static_dir, "js", "app.js"),
             os.path.join(static_dir, "js", "workflow_override.js"),
+            # v3.1.1: 把地图视图也纳入缓存破坏，否则单独改 map_view.js 不会换 ?v= 值
+            os.path.join(static_dir, "js", "map_view.js"),
+            os.path.join(static_dir, "js", "character_card.js"),
         ]
         mtimes = []
         for file_path in static_files:
@@ -390,6 +399,18 @@ def create_trpg_app(plugin):
         if not request.cookies.get("trpg_session"):
             resp.set_cookie("trpg_session", str(uuid.uuid4()), max_age=86400 * 7)
         return resp
+
+    # ─── 模组编辑器（纯静态）───
+    # 把插件根的 tools/module-editor/ 作为静态文件托管, 主页有图标入口跳转过来。
+    # 不走任何 API、不调 LLM、不持久化, 仅提供本地工具页面所需的 HTML/CSS/JS/lib 文件。
+
+    @app.route("/trpg/module-editor/")
+    async def module_editor_index():
+        return await send_from_directory(module_editor_dir, "index.html")
+
+    @app.route("/trpg/module-editor/<path:filename>")
+    async def module_editor_static(filename):
+        return await send_from_directory(module_editor_dir, filename)
 
     @app.route("/trpg/api/modules", methods=["GET"])
     async def api_modules():

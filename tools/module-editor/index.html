@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模组编辑器 — AI驱动TRPG</title>
+    <link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+    <!-- 顶栏: 全局操作 -->
+    <header class="topbar">
+        <div class="topbar-left">
+            <span class="topbar-icon">🛠</span>
+            <span class="topbar-title">模组编辑器</span>
+            <span class="topbar-subtitle" id="module-name-display">未加载模组</span>
+        </div>
+        <div class="topbar-right">
+            <button class="topbar-btn" id="btn-import" title="导入模组 JSON">📂 导入</button>
+            <button class="topbar-btn" id="btn-export" title="导出当前模组 (含修改)" disabled>💾 导出</button>
+            <button class="topbar-btn" id="btn-reset" title="清空, 回到初始状态" disabled>♻ 重置</button>
+            <span class="topbar-spacer"></span>
+            <span class="topbar-hint">本地工具 · 不调 LLM · 自由拖拽 · 不吸附</span>
+        </div>
+    </header>
+
+    <!-- 隐藏的文件输入, 由 #btn-import 触发 -->
+    <input type="file" id="file-input" accept=".json,application/json" style="display: none;">
+
+    <!-- 整页拖放接收区, 拖文件进来就读 -->
+    <div id="drop-overlay" class="drop-overlay hidden">
+        <div class="drop-overlay-msg">松开鼠标导入 JSON</div>
+    </div>
+
+    <!-- 三栏主体 -->
+    <main class="main-grid">
+        <!-- 左栏: 模组管理 + 扩展位 (Phase 2: 结构树) -->
+        <aside class="panel panel-left" id="panel-left">
+            <section class="panel-section">
+                <h3 class="panel-section-title">模组信息</h3>
+                <div id="module-meta" class="panel-section-body">
+                    <p class="placeholder-text">请先导入一个模组 JSON</p>
+                </div>
+            </section>
+            <!-- Phase 2 扩展位: 模组结构树, 这里只放占位锚点 -->
+            <section class="panel-section panel-extension-slot" data-extension-slot="left-tools">
+                <!-- Phase 2: 结构树 / 字段编辑器会注册到这里 -->
+            </section>
+        </aside>
+
+        <!-- 中栏: 地图 (上) + 场景硬文本 (下) -->
+        <section class="panel panel-center" id="panel-center">
+            <div class="map-area">
+                <div class="map-toolbar">
+                    <span class="map-toolbar-hint" id="map-hint">导入模组后, 任意拖拽 (不吸附 / 不限楼层); 节点底部 [组名] 仅作分组提示; 点击节点走入</span>
+                    <span class="map-toolbar-spacer"></span>
+                    <button class="topbar-btn small" id="btn-fit" title="重新适配视窗">⤧ 适配</button>
+                </div>
+                <div id="map-canvas" class="map-canvas"></div>
+            </div>
+            <div class="scene-area" id="scene-panel">
+                <p class="placeholder-text">点击地图上的房间走入, 这里会显示场景的硬文本 (description / objects / exits 等), 不调 LLM</p>
+            </div>
+        </section>
+
+        <!-- 右栏: 调试器扩展位 (Phase 2: 加物品 / 测条件 / 模拟门锁等) -->
+        <aside class="panel panel-right" id="panel-right">
+            <section class="panel-section">
+                <h3 class="panel-section-title">调试工具</h3>
+                <div class="panel-section-body">
+                    <p class="placeholder-text">即将上线: 加物品 / 加 flag / 测试 reveal_conditions / 模拟门锁与守卫</p>
+                </div>
+            </section>
+            <section class="panel-section panel-extension-slot" data-extension-slot="right-tools">
+                <!-- Phase 2: 调试动作会注册到这里 -->
+            </section>
+        </aside>
+    </main>
+
+    <!-- ========================================
+         脚本加载顺序: 严格按依赖关系
+         lib → state → 各 panel → main 启动
+         ======================================== -->
+    <script src="lib/cytoscape.min.js"></script>
+    <script src="js/state.js"></script>
+    <script src="js/module-io.js"></script>
+    <script src="js/map-canvas.js"></script>
+    <script src="js/scene-panel.js"></script>
+    <script src="js/left-panel.js"></script>
+    <script src="js/right-panel.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

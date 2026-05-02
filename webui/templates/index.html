@@ -11,6 +11,19 @@
 <body>
     <!-- 模组选择遮罩层 -->
     <div id="module-overlay" class="overlay">
+        <!-- 顶部工具栏: 模组编辑器 / 源码 / 自定义API, 绝对定位贴 overlay 顶端居中,
+             不被 overlay-content 的 padding 和装饰线挤下去, 安卓窄屏也始终在最顶部 -->
+        <div class="overlay-toolbar">
+            <a href="/trpg/module-editor/" target="_blank" rel="noopener" class="btn-icon overlay-toolbar-btn" title="模组编辑器（本地工具，不调 LLM）">
+                <span class="mdi mdi-pencil-ruler"></span>
+            </a>
+            <a href="https://github.com/TheEyeoftheUniverse/AITRPG" target="_blank" rel="noopener" class="btn-icon overlay-toolbar-btn" title="让我康康你的源码！">
+                <span class="mdi mdi-source-branch"></span>
+            </a>
+            <button class="btn-icon overlay-toolbar-btn" onclick="openApiConfigModal()" title="换我的 API（这模型太磨叽了）">
+                <span class="mdi mdi-rocket-launch"></span>
+            </button>
+        </div>
         <div class="overlay-content">
             <h1 class="overlay-title">
                 <span class="mdi mdi-dice-d20"></span>
@@ -40,16 +53,23 @@
                 <button id="btn-retry" class="btn-icon btn-retry hidden" onclick="abortAndRetry()" title="中断并重试本轮">
                     <span class="mdi mdi-refresh"></span>
                 </button>
-                <a href="https://github.com/TheEyeoftheUniverse/AITRPG" target="_blank" rel="noopener" class="top-bar-source-link">让我康康你的源码！</a>
             </div>
             <div class="top-bar-right">
+                <a href="/trpg/module-editor/" target="_blank" rel="noopener" class="btn-icon" title="模组编辑器（本地工具，不调 LLM）">
+                    <span class="mdi mdi-pencil-ruler"></span>
+                </a>
+                <a href="https://github.com/TheEyeoftheUniverse/AITRPG" target="_blank" rel="noopener" class="btn-icon" title="让我康康你的源码！">
+                    <span class="mdi mdi-source-branch"></span>
+                </a>
                 <button id="btn-theme" class="btn-icon" title="切换主题" onclick="toggleTheme()">
                     <span class="mdi mdi-weather-night"></span>
                 </button>
                 <button id="btn-merge-mode" class="btn-icon" title="切换AI模式" onclick="toggleMergeMode()">
                     <span class="mdi mdi-layers-triple"></span>
                 </button>
-                <button id="btn-custom-api" class="btn-icon" title="配置自定义API" onclick="openApiConfigModal()">😓你这什么模型？太磨叽了，换我的！</button>
+                <button id="btn-custom-api" class="btn-icon" title="换我的 API（这模型太磨叽了）" onclick="openApiConfigModal()">
+                    <span class="mdi mdi-rocket-launch"></span>
+                </button>
                 <button id="btn-reset" class="btn-icon" title="重置游戏">
                     <span class="mdi mdi-restart"></span>
                 </button>
@@ -120,6 +140,7 @@
                             </div>
                             <div id="game-map" class="map-container">
                                 <svg id="map-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+                                <div id="map-canvas" class="map-canvas hidden"></div>
                             </div>
                         </div>
                     </div>
@@ -452,6 +473,10 @@
         </div>
     </div>
 
+    <script src="/trpg/static/lib/cytoscape.min.js?v={{ static_version }}"></script>
+    <script src="/trpg/static/lib/dagre.min.js?v={{ static_version }}"></script>
+    <script src="/trpg/static/lib/cytoscape-dagre.min.js?v={{ static_version }}"></script>
+    <script src="/trpg/static/js/map_view.js?v={{ static_version }}"></script>
     <script src="/trpg/static/js/app.js?v={{ static_version }}"></script>
     <script src="/trpg/static/js/character_card.js?v={{ static_version }}"></script>
     <script src="/trpg/static/js/workflow_override.js?v={{ static_version }}"></script>
