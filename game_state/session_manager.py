@@ -3436,6 +3436,26 @@ class SessionManager:
                 "visited": is_visited,
             }
 
+            # 可选：模组作者手画的地图坐标 (map_position). 编辑器现在允许浮点 (作者完全自由拖拽,
+            # 不再强制吸附到整数网格), 所以这里用 float 透传, 别再 int() 截断了.
+            raw_map_pos = loc_data.get("map_position")
+            if isinstance(raw_map_pos, dict):
+                col_val = raw_map_pos.get("col")
+                if isinstance(col_val, (int, float)) and not isinstance(col_val, bool):
+                    row_val = raw_map_pos.get("row", 0)
+                    if not isinstance(row_val, (int, float)) or isinstance(row_val, bool):
+                        row_val = 0
+                    visible_locations[key]["map_position"] = {
+                        "col": float(col_val),
+                        "row": float(row_val),
+                    }
+
+            # 可选：作者自定义的地图组名 (map_group, 字符串, 比如 "1F" / "中央大街"). 不填的话
+            # 前端会按 floor 数字自动派生 ("1F" / "B1" / "GF" / 等), 跟编辑器派生规则一致.
+            raw_map_group = loc_data.get("map_group")
+            if isinstance(raw_map_group, str) and raw_map_group.strip():
+                visible_locations[key]["map_group"] = raw_map_group.strip()
+
         # 将当前房间下可用的微场景挂入地图数据，供前端显式展示为特殊入口。
         for micro_scene_id, micro_scene_cfg in available_micro_scenes.items():
             parent_location = str(micro_scene_cfg.get("parent_location") or "").strip()
@@ -3449,6 +3469,10 @@ class SessionManager:
                 "is_micro_scene": True,
                 "parent_location": parent_location,
             }
+            # 微场景跟着 parent 的地图组走
+            parent_map_group = parent_loc.get("map_group")
+            if isinstance(parent_map_group, str) and parent_map_group.strip():
+                visible_locations[micro_scene_id]["map_group"] = parent_map_group.strip()
             reachable.add(micro_scene_id)
 
         # 应用持久化的地图腐蚀
@@ -3506,6 +3530,36 @@ class SessionManager:
             npc_states,
             current_location=state["current_location"],
         )
+
+        # v3.1.0 (W4): 给可见但不可达的节点附 unreachable_reason, 让前端 tooltip 能解释
+        # 给 locked edge 附 lock_reason (目前只有粗分类, 模组没显式给细节就用 generic)
+        current_loc = state["current_location"]
+        graph = self._get_adjacency_graph(module_data)
+        adjacent = set(graph.get(current_loc, []))
+        pursuer_restricted = self._is_player_movement_restricted_by_pursuer_state(state)
+        reach_set = set(reachable)
+        for key, loc_meta in visible_locations.items():
+            if key == current_loc or key in reach_set:
+                continue
+            if key in adjacent:
+                # 与当前位置邻接但不在 reachable: 多半是边锁了, 或被管家守, 或被追逐者限制
+                if pursuer_restricted:
+                    loc_meta["unreachable_reason"] = "pursuer_lock"
+                elif (current_loc, key) in locked_exits or (key, current_loc) in locked_exits:
+                    loc_meta["unreachable_reason"] = "locked_door"
+                else:
+                    loc_meta["unreachable_reason"] = "blocked"
+            else:
+                # 非邻接: 中间路径有断点 (锁/未访问/被守)
+                if pursuer_restricted:
+                    loc_meta["unreachable_reason"] = "pursuer_lock"
+                else:
+                    loc_meta["unreachable_reason"] = "needs_path"
+
+        # 给 locked edges 加 lock_reason (粗分类)
+        for edge in edges:
+            if edge.get("locked"):
+                edge["lock_reason"] = "locked_door"
 
         return {
             "locations": visible_locations,

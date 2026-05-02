@@ -46,6 +46,10 @@
                 "二楼走廊"
             ],
             "floor": 2,
+            "map_position": {
+                "col": 0.2107218643358119,
+                "row": 0.15914658285501923
+            },
             "npc_reactions": {
                 "艾米莉": {
                     "follow_arrival": "艾米莉会冷不丁地问起你想不想跳出窗外。",
@@ -68,6 +72,10 @@
                 "一楼走廊"
             ],
             "floor": 2,
+            "map_position": {
+                "col": 1.9847147013416357,
+                "row": 0.13010974180639387
+            },
             "npc_reactions": {
                 "艾米莉": {
                     "follow_arrival": "艾米莉不喜欢这个走廊，但她自己也说不清哪里不喜欢。",
@@ -95,6 +103,10 @@
                 "艾米莉标出的出口"
             ],
             "floor": 2,
+            "map_position": {
+                "col": 0.2088641531456011,
+                "row": -0.6286579733382902
+            },
             "npc_location": true,
             "atmosphere": 0.35,
             "npc_reactions": {
@@ -116,6 +128,10 @@
                 "二楼走廊"
             ],
             "floor": 2,
+            "map_position": {
+                "col": 3.7719793137329622,
+                "row": 0.164480440011152
+            },
             "atmosphere": 0.4,
             "npc_reactions": {
                 "艾米莉": {
@@ -144,6 +160,10 @@
                     "follow_arrival": "她会扶着扶梯下去，哪怕会扶一手的灰尘，毕竟这楼梯看上去是如此老旧了。",
                     "knowledge": "她能清晰地判断出管家上下楼的声音是如何区别于常人。"
                 }
+            },
+            "map_position": {
+                "col": 1.9635446449473355,
+                "row": -0.862043990464684
             }
         },
         "living_room": {
@@ -175,6 +195,10 @@
                     "follow_arrival": "艾米莉会说好久没来这里了，然后下意识地观察厨房那边是否还能作为退路。",
                     "knowledge": "艾米莉对这个客厅心有余悸——显然，她在很久以前也遇到过和你类似的情况。"
                 }
+            },
+            "map_position": {
+                "col": 0.8946390678320939,
+                "row": -0.8355195599888484
             }
         },
         "kitchen": {
@@ -199,6 +223,10 @@
                     "follow_arrival": "艾米莉很自然地去确认日历，思考着自己来这儿到底多久了，但她说不清楚到底是多久。",
                     "knowledge": "她知道厨房有刀具和火源，很合理不是吗。"
                 }
+            },
+            "map_position": {
+                "col": 3.0248745219969027,
+                "row": -0.8355195599888484
             }
         },
         "outside": {
@@ -227,6 +255,10 @@
                     "follow_arrival": "她想出门。",
                     "knowledge": "她对这里一无所知。"
                 }
+            },
+            "map_position": {
+                "col": 4.130235454164809,
+                "row": -0.8222573447509299
             }
         },
         "basement": {
@@ -249,6 +281,10 @@
                     "follow_arrival": "她的第一反应是好奇管家会如何爬下地下室，但转念一想觉得自己可能不会真的想知道。",
                     "knowledge": "一旦进入地下室就再也没有门可以阻拦管家了，从这里开始就没有回头路了。"
                 }
+            },
+            "map_position": {
+                "col": 3.030592510872368,
+                "row": -1.047715003795538
             }
         },
         "ritual_chamber": {
@@ -282,6 +318,10 @@
                     "follow_arrival": "艾米莉对这个场景会皱眉，但会保持理性回忆正确的破坏顺序。",
                     "knowledge": "如果没有按顺序破坏会怎么样？她也不知道，但她也有这么个疑问。"
                 }
+            },
+            "map_position": {
+                "col": 1.7318085362998759,
+                "row": -1.0477150037955392
             }
         },
         "black_pit": {
@@ -307,6 +347,10 @@
                     "follow_arrival": "她被困在这太久了，因此愿意一试。",
                     "knowledge": "既然除此之外已经没有别的像样的出口了，那么她宁可跳下去。"
                 }
+            },
+            "map_position": {
+                "col": 1.7336662474900892,
+                "row": -1.206861586650557
             }
         },
         "emily_exit": {
@@ -333,6 +377,10 @@
                     "follow_arrival": "她被困在这太久了，因此愿意一试。",
                     "knowledge": "比起打不开的大门和不可靠的厨房后门，她觉得这个与疑似是此地原因的仪式有直接关联的结果更像是出口。"
                 }
+            },
+            "map_position": {
+                "col": 0.21072186433581178,
+                "row": -1.0477150037955374
             }
         }
     },
@@ -913,28 +961,40 @@
                     "default": false,
                     "description": "是否成功逃离中间带",
                     "affects": "是否回到现实世界",
-                    "applicable_endings": ["escaped", "emily_escaped"]
+                    "applicable_endings": [
+                        "escaped",
+                        "emily_escaped"
+                    ]
                 },
                 "npc_together": {
                     "default": false,
                     "description": "艾米莉是否与玩家一同逃脱（companion_mode为follow且在同一地点）",
                     "affects": "艾米莉的命运与后日谈。艾米莉与玩家并非同一时代的人——她来自约50年前，被困在中间带至今。若一同逃脱回到现实，玩家会发现她已是一位老人；她找了主角很久却从未找到，直到主角如今找上她。AI应根据艾米莉的信任值（trust_level）决定后日谈中她对玩家的态度和两人重逢的氛围。",
                     "source": "npc_same_location",
-                    "applicable_endings": ["escaped", "emily_escaped"]
+                    "applicable_endings": [
+                        "escaped",
+                        "emily_escaped"
+                    ]
                 },
                 "san_remaining": {
                     "default": 65,
                     "description": "逃离时的理智值(0-65)",
                     "affects": "玩家的心理创伤程度",
                     "source": "player.san",
-                    "applicable_endings": ["escaped", "emily_escaped"]
+                    "applicable_endings": [
+                        "escaped",
+                        "emily_escaped"
+                    ]
                 },
                 "rounds_used": {
                     "default": 0,
                     "description": "使用了多少轮次",
                     "affects": "在中间带停留的时间对心理的影响",
                     "source": "round_count",
-                    "applicable_endings": ["escaped", "emily_escaped"]
+                    "applicable_endings": [
+                        "escaped",
+                        "emily_escaped"
+                    ]
                 },
                 "butler_gaze": {
                     "default": false,
@@ -943,14 +1003,20 @@
                     "equivalent_flags": [
                         "butler_gaze"
                     ],
-                    "applicable_endings": ["insane", "door_peek_gaze"]
+                    "applicable_endings": [
+                        "insane",
+                        "door_peek_gaze"
+                    ]
                 },
                 "emily_trust": {
                     "default": 0,
                     "description": "艾米莉的信任值",
                     "affects": "后日谈中艾米莉对玩家的态度和重逢氛围",
                     "source": "npc_runtime.艾米莉.trust_level",
-                    "applicable_endings": ["escaped", "emily_escaped"]
+                    "applicable_endings": [
+                        "escaped",
+                        "emily_escaped"
+                    ]
                 }
             }
         },

@@ -70,6 +70,27 @@
 | `objects` | string[] | 当前地点可交互物品名列表 |
 | `exits` | string[] | 相邻地点显示名列表 |
 | `floor` | number | 楼层，用于地图布局 |
+| `map_position` | object | 可选，地图上手画的坐标 `{ col: int, row?: int }`；缺省时按可达性自动排 |
+
+### map_position 用法
+
+`map_position` 是给前端地图视图的纯视觉提示，不影响 AI 与游戏逻辑。模组作者可以用它替系统决定房间在同楼层内的左右、上下位置；没标的房间继续按 BFS 自动排，会接在显式房间右侧。
+
+| 子字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `col` | int | 必填。同楼层内的列号，0 起步，可负 |
+| `row` | int | 选填，默认 0。同楼层内的子行偏移，可负；多行写法支持把 hub 房间分上下两边，避免"两个旁支房间贴在一起像直连" |
+
+举例：把走廊放正中，主卧搁左边，次卧朝上、书房朝下分两条岔路：
+
+```jsonc
+"second_floor_hallway": { "floor": 2, "map_position": { "col": 1, "row": 0 } }
+"master_bedroom":       { "floor": 2, "map_position": { "col": 0, "row": 0 } }
+"guest_bedroom":        { "floor": 2, "map_position": { "col": 2, "row": -1 } }  // 走廊右上
+"study":                { "floor": 2, "map_position": { "col": 2, "row": 1 } }   // 走廊右下
+```
+
+字段写错了（缺 `col`、`col` 不是数字、整体不是对象等）会被静默忽略，回退成自动布局，因此可以放心增量采用。
 
 ### 场景状态字段
 

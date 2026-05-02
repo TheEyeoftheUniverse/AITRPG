@@ -1736,6 +1736,11 @@ async function resetGame() {
             svg.style.pointerEvents = "";
             svg.style.opacity = "";
         }
+        // 新地图: 重新启用 + 清画布
+        if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+            window.MapView.enable();
+            window.MapView.clear();
+        }
 
         // 清空聊天
         document.getElementById("chat-messages").innerHTML = "";
@@ -1947,6 +1952,20 @@ async function effectEchoText(inlineId, phases) {
 // 6. map-corrupt — 地图节点批量污染（一次闪烁，全部替换）
 async function effectMapCorruptBatch(batch) {
     if (!currentMapData || !currentMapData.locations) return;
+    // 新地图: 闪烁容器 + 改名后 MapView.render 重画
+    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+        window.MapView.flashCorrupt();
+        await theatricalSleep(350);
+        for (const effect of batch) {
+            if (currentMapData.locations[effect.target]) {
+                currentMapData.locations[effect.target].display_name = effect.content;
+            }
+        }
+        renderMap(currentMapData);
+        await theatricalSleep(300);
+        return;
+    }
+    // 旧地图: 闪 #map-svg
     const svg = document.getElementById("map-svg");
     if (svg) {
         svg.classList.add("map-corrupt-flash");
@@ -1965,6 +1984,21 @@ async function effectMapCorruptBatch(batch) {
 // ─── 地图渲染与交互 ───
 
 function renderMap(mapData) {
+    // v3.1.0: feature flag 接入 Cytoscape.js 新地图; 失败/未启用回退到下方旧 SVG 逻辑
+    if (window.MapView && window.MapView.isEnabled()) {
+        try {
+            if (!window.MapView._getCy()) {
+                window.MapView.init();
+                // 把 cytoscape tap 事件桥接到现有的 onMapNodeClick (空白处 tap 会传 null)
+                window.MapView.setOnNodeTap((key) => {
+                    if (key) onMapNodeClick(key);
+                });
+            }
+            if (window.MapView.render(mapData)) return;
+        } catch (e) {
+            console.error("[MapView] render failed, fall back to legacy:", e);
+        }
+    }
     try {
         const svg = document.getElementById("map-svg");
         if (!svg) return;
@@ -2296,22 +2330,52 @@ function onMapNodeClick(locationKey) {
         return;
     }
 
-    // 点击不可达 → 无效果
-    if (!reachable.has(locationKey)) return;
+    // 点击不可达 → W4: 给玩家解释原因, 不再静默.
+    // v3.2.1: 新地图 (Cytoscape) 已经在 map_view.js::_bindInteractions 的 tap 监听里源头拦截了
+    // 不可达节点的选中流程 (改成显示 tooltip), 这里这一段实际只服务旧 SVG fallback. 但保留它
+    // 作为 SVG 模式下的"看清不可达原因"提示, 不重复给新地图弹 move-indicator.
+    if (!reachable.has(locationKey)) {
+        const loc = currentMapData.locations[locationKey] || {};
+        const reasonMap = {
+            locked_door: "门锁着，先想办法解锁",
+            pursuer_lock: "被追逐者激活，只能逐格移动到相邻场景",
+            blocked: "暂时无法直接到达",
+            needs_path: "需先到达中间的房间",
+        };
+        const reason = reasonMap[loc.unreachable_reason] || (loc.visited ? "暂时无法直接到达" : "尚未发现完整路径");
+        const locName = loc.display_name || locationKey;
+        const indicator = document.getElementById("move-indicator");
+        const indicatorText = document.getElementById("move-indicator-text");
+        indicatorText.textContent = `${locName}：${reason}`;
+        indicator.classList.remove("hidden");
+        // 2.5s 后自动消失 (不影响选中流程)
+        clearTimeout(window._mapReasonTimer);
+        window._mapReasonTimer = setTimeout(() => {
+            if (!selectedDestination) {
+                indicator.classList.add("hidden");
+            }
+        }, 2500);
+        return;
+    }
 
     // 设为选中目标
     selectedDestination = locationKey;
+    clearTimeout(window._mapReasonTimer);
 
-    // 更新移动提示
+    // 更新移动提示 (W4: 文案明确"待发送")
     const loc = currentMapData.locations[locationKey];
     const locName = loc ? loc.display_name : locationKey;
     const indicator = document.getElementById("move-indicator");
     const indicatorText = document.getElementById("move-indicator-text");
-    indicatorText.textContent = `即将移动到：${locName}`;
+    indicatorText.textContent = `已选：${locName} · 在聊天框输入任意行动并发送即可移动`;
     indicator.classList.remove("hidden");
 
-    // 重新渲染地图以更新选中样式
-    renderMap(currentMapData);
+    // 新地图: setSelectedTarget 会触发路径高亮; 旧地图: 重渲染
+    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+        window.MapView.setSelectedTarget(locationKey);
+    } else {
+        renderMap(currentMapData);
+    }
 }
 
 function cancelMoveSelection() {
@@ -2319,8 +2383,12 @@ function cancelMoveSelection() {
     const indicator = document.getElementById("move-indicator");
     indicator.classList.add("hidden");
 
-    // 重新渲染地图以清除选中样式
-    if (currentMapData) renderMap(currentMapData);
+    // 新地图: 清选中 (会自动清路径); 旧地图: 重渲染
+    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+        window.MapView.setSelectedTarget(null);
+    } else if (currentMapData) {
+        renderMap(currentMapData);
+    }
 }
 
 // ─── 结局阶段处理 ───
@@ -2379,6 +2447,11 @@ function hideEndingIndicator() {
 }
 
 function disableMapInteraction() {
+    // 新地图分支
+    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+        window.MapView.disable();
+        return;
+    }
     const svg = document.getElementById("map-svg");
     if (svg) {
         svg.style.pointerEvents = "none";
@@ -2400,16 +2473,25 @@ function applyMapZoom(zoom) {
 }
 
 function mapZoomIn() {
+    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+        return window.MapView.zoomIn();
+    }
     const next = Math.min((window._mapZoom || 1) * 1.2, 3);
     applyMapZoom(next);
 }
 
 function mapZoomOut() {
+    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+        return window.MapView.zoomOut();
+    }
     const next = Math.max((window._mapZoom || 1) / 1.2, 0.4);
     applyMapZoom(next);
 }
 
 function mapZoomReset() {
+    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+        return window.MapView.zoomReset();
+    }
     applyMapZoom(1);
 }
 

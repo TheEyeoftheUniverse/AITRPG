@@ -289,8 +289,9 @@
 }
 
 .chat-map-panel .map-container {
-    max-height: 120px;
-    min-height: 70px;
+    /* v3.1.1: 同 .scene-overview .map-container; 多层地图需要纵向空间放下楼层带 */
+    max-height: 210px;
+    min-height: 140px;
     overflow-y: auto;
     overflow-x: hidden;
     /* 隐藏滚动条本体与 gutter，避免与聊天区滚动条在同一 X 轴上并排出现；滚轮/触屏拖动/触摸板手势仍可滚动 */
@@ -315,8 +316,9 @@
     }
 
     .chat-map-panel .map-container {
-        max-height: 96px;
-        min-height: 60px;
+        /* v3.1.1: 移动端同样拉高一点, 让多层楼层带不至于被 fit-zoom 缩没 */
+        max-height: 168px;
+        min-height: 110px;
     }
 
     .chat-map-panel #map-svg {
@@ -464,8 +466,11 @@
 
 /* 桌面端：拆分后右侧地图区域比原全宽窄一半，把内部 SVG 放回较大显示比例避免缩太小 */
 .scene-overview .map-container {
-    max-height: 120px;
-    min-height: 70px;
+    /* v3.1.1: 多层地图 (F2 / F1 / B1 / B2) 用 floor-band preset 布局往下堆,
+       原来的 max-height: 120px 把 4 层挤在一起会被 fit-zoom 缩到几乎看不见;
+       这里把上限放宽到 ~210px (依然是横向矩形, 不影响"横框"基调), 同时保留下限. */
+    max-height: 210px;
+    min-height: 140px;
     overflow-y: auto;
     overflow-x: hidden;
 }

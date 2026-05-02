@@ -1,6 +1,6 @@
 name: aitrpg
 display_name: AI驱动TRPG跑团系统
 desc: 基于三层AI架构的COC跑团系统，支持开放探索和动态剧情生成
-version: v3.0.0
+version: v3.1.0
 author: TheEyeoftheUniverse
 repo: https://github.com/TheEyeoftheUniverse/AITRPG
