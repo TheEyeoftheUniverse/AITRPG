@@ -13,6 +13,7 @@ from quart import Quart, render_template, request, jsonify, make_response, send_
 from astrbot.api import logger
 from ..game_state.save_store import JsonSaveStore
 from ..game_state import character_card as character_card_module
+from ..game_state.placeholder_resolver import resolve_in
 from ..theatrical_parser import parse_theatrical_tags
 
 
@@ -506,6 +507,29 @@ def create_trpg_app(plugin):
                         if parsed_desc["effects"]:
                             location_theatrical[loc_key] = parsed_desc["effects"]
                             loc_data["description"] = parsed_desc["clean_text"]
+
+                # Phase 3: 开局时解析所有地点/物品/NPC 描述中的软 placeholder,
+                # 让后续 AI prompt + 前端展示都用已解析文本。模块数据在 session 内是
+                # 单例, 就地解析一次全局生效。
+                session_state = plugin.session_manager.get_session(session_id)
+                if session_state:
+                    card = session_state.get("character_card")
+                    player = session_state.get("player")
+                    for loc_key, loc_data in module_data.get("locations", {}).items():
+                        if isinstance(loc_data, dict) and loc_data.get("description"):
+                            loc_data["description"] = resolve_in(loc_data["description"], card, player)
+                        if isinstance(loc_data, dict) and loc_data.get("npc_present_description"):
+                            loc_data["npc_present_description"] = resolve_in(loc_data["npc_present_description"], card, player)
+                    for obj_key, obj_data in module_data.get("objects", {}).items():
+                        if isinstance(obj_data, dict):
+                            for field in ("description", "examine_text", "success_result", "failure_result"):
+                                if obj_data.get(field):
+                                    obj_data[field] = resolve_in(obj_data[field], card, player)
+                    for npc_key, npc_data in module_data.get("npcs", {}).items():
+                        if isinstance(npc_data, dict):
+                            for field in ("description", "dialogue"):
+                                if npc_data.get(field):
+                                    npc_data[field] = resolve_in(npc_data[field], card, player)
 
                 opening = selected["opening"]
                 parsed_opening = parse_theatrical_tags(opening)
