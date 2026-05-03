@@ -1994,7 +1994,10 @@ function renderMap(mapData) {
                     if (key) onMapNodeClick(key);
                 });
             }
-            if (window.MapView.render(mapData)) return;
+            if (window.MapView.render(mapData)) {
+                renderSceneNpcs(mapData);
+                return;
+            }
         } catch (e) {
             console.error("[MapView] render failed, fall back to legacy:", e);
         }

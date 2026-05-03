@@ -2009,9 +2009,11 @@ class AITRPGPlugin(Star):
             return {}
 
         quoted_segments = extract_quoted_dialogue_segments(player_input)
+        if not quoted_segments:
+            return {}
+
         round_count = int(game_state.get("round_count", 0) or 0)
         npc_updates = {}
-
         for npc_name, cross_info in cross_wall_targets.items():
             if not isinstance(cross_info, dict) or not cross_info.get("passive_overhear", True):
                 continue
@@ -2025,35 +2027,21 @@ class AITRPGPlugin(Star):
                 for segment in quoted_segments
                 if str(segment).strip()
             ]
+            if not overheard_entries:
+                continue
 
-            if overheard_entries:
-                npc_updates[npc_name] = {
-                    "memory": {
-                        "overheard_remote_dialogue": overheard_entries,
-                        "interaction_history": [
-                            {
-                                "type": "cross_wall_overhear",
-                                "source_round": round_count,
-                                "source_location": current_location,
-                            }
-                        ],
-                    }
+            npc_updates[npc_name] = {
+                "memory": {
+                    "overheard_remote_dialogue": overheard_entries,
+                    "interaction_history": [
+                        {
+                            "type": "cross_wall_overhear",
+                            "source_round": round_count,
+                            "source_location": current_location,
+                        }
+                    ],
                 }
-            else:
-                # 即使没有引号对话，只要触发了隔墙交流就记录接触历史，
-                # 否则 has_cross_wall_contact_history() 永远为 False，
-                # UI 上的 NPC 信息栏会一直不显示隔墙 NPC 的称谓卡片。
-                npc_updates[npc_name] = {
-                    "memory": {
-                        "interaction_history": [
-                            {
-                                "type": "cross_wall_contact",
-                                "source_round": round_count,
-                                "source_location": current_location,
-                            }
-                        ],
-                    }
-                }
+            }
 
         if not npc_updates:
             return {}
