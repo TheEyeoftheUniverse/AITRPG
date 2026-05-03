@@ -1,6 +1,6 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
-from ..game_state.character_card import build_identity_block
+from ..game_state.character_card import build_identity_block, get_check_value
 from ..game_state.placeholder_resolver import resolve_in
 from ..game_state.location_context import (
     build_adjacent_locations_context,
@@ -181,7 +181,7 @@ class RuleAI:
                 "result_description": "自动成功" if skill_name else "无需检定"
             }
 
-        player_skill = int(player_state.get("skills", {}).get(skill_name, 0))
+        player_skill = get_check_value(skill_name, player_state)
         threshold = self._get_threshold(player_skill, difficulty)
         roll = random.randint(1, 100)
         success = roll <= threshold

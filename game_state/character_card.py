@@ -33,6 +33,15 @@ LUCK_RANGE = (15, 90)
 AGE_RANGE = (22, 39)         # 推荐范围 (随机生成 + 模板默认)
 AGE_RANGE_HARD = (15, 90)    # 导入时的硬性允许范围 (放宽接受 v2)
 
+# COC7 "派生检定" — 中文技能名 → 属性 key 的映射, 用于 resolve_check 的取值降级。
+# COC7 规则书: 灵感 (Idea) = INT 检定; 幸运 (Luck) = 幸运值检定; 知识 (Know) = EDU 检定。
+# 模组作者 / 规则AI 写这些中文名作 skill 时, 应当读对应属性值而非到 skills 字典里查 (会查不到→ 0)。
+DERIVED_CHECK_ATTRIBUTE_ALIASES = {
+    "灵感": "INT",
+    "幸运": "LUCK",
+    "知识": "EDU",
+}
+
 ATTRIBUTE_DICE = {
     "STR": "3d6x5",
     "CON": "3d6x5",
@@ -556,6 +565,56 @@ def default_profile_fallback() -> Dict[str, Any]:
     """没有自定义卡时的 fallback。延迟 import 避免循环依赖。"""
     from .session_manager import PRESET_PLAYER_PROFILE
     return copy.deepcopy(PRESET_PLAYER_PROFILE)
+
+
+def get_check_value(skill_name: Any, player_state: Optional[Dict[str, Any]]) -> int:
+    """返回 skill_name 对应的检定阈值基础数值, 适用 COC7 三类检定:
+
+    1. 普通技能 (侦查 / 聆听 / 图书馆 / ...): 走 player_state.skills[name]
+    2. COC7 派生检定 (灵感 / 幸运 / 知识): 走 player_state.attributes[INT/LUCK/EDU]
+       - 这是规则书规定的 "属性即检定值" 用法; 模组 / 规则AI 写中文派生名时不应到 skills 里查
+    3. 8 大属性直接检定 (STR / CON / DEX / APP / POW / SIZ / INT / EDU / LUCK):
+       走 player_state.attributes[NAME]
+
+    全部命中失败返回 0 (与旧行为兼容; 调用方根据需要决定是否报错)。
+    PRESET_PLAYER_PROFILE 没有 attributes 字段, 但 LUCK 在顶层 luck — 单独兜底。
+
+    需求文档: 用户反馈 "灵感对照值 0, 应读 INT" — Phase 4 后置修复, 也为 Phase 5
+    {检定:灵感} / {检定:幸运} 等硬 placeholder 提供基础。
+    """
+    if not isinstance(skill_name, str) or not skill_name or not isinstance(player_state, dict):
+        return 0
+
+    # 1) 优先 skills (玩家技能投入决定的数值)
+    skills = player_state.get("skills") or {}
+    if skill_name in skills:
+        try:
+            return int(skills[skill_name] or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    # 2/3) 派生别名 → 属性 key; 或玩家直接写 8 大属性 / LUCK 名
+    attr_key = DERIVED_CHECK_ATTRIBUTE_ALIASES.get(skill_name)
+    if attr_key is None and skill_name in ATTRIBUTE_RANGES:
+        attr_key = skill_name
+    if attr_key is None and skill_name == "LUCK":
+        attr_key = "LUCK"
+
+    if attr_key:
+        attrs = player_state.get("attributes") or {}
+        if attr_key in attrs:
+            try:
+                return int(attrs[attr_key] or 0)
+            except (TypeError, ValueError):
+                pass
+        # PRESET 兼容: 顶层 luck 字段
+        if attr_key == "LUCK" and "luck" in player_state:
+            try:
+                return int(player_state["luck"] or 0)
+            except (TypeError, ValueError):
+                pass
+
+    return 0
 
 
 _BACKGROUND_LABEL_ZH = {
