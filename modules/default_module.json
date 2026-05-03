@@ -1,1097 +1,1097 @@
 {
-    "module_info": {
-        "name": "门缝",
-        "module_type": "单人短模",
-        "target_rounds": 30,
-        "description": "深夜，你在一间陌生的老宅卧室中醒来。门缝透出走廊微弱的光，窗外是无尽的平原。",
-        "stages": "第一阶段：初期探索，玩家在二楼探索，获得基本信息（1~10轮）；第二阶段：深入探索，玩家可能前往一楼，可能与NPC交流获得更多情报（11~20轮）；第三阶段：执行计划，玩家可能找到了能离开这里的方式，正在执行逃离计划（21~30轮）",
-        "atmosphere_guide": {
-            "0.0-0.29": "calm：平静克制，客观叙述，偶尔埋下伏笔",
-            "0.3-0.49": "uneasy：隐约不安，细微异常，说不清哪里不对",
-            "0.5-0.69": "tense：紧张感上升，描述简洁有力，危险临近",
-            "0.7-0.89": "horror：主动渲染恐怖，感官细节，异常现象强化",
-            "0.9-1.0": "dread：克苏鲁式宇宙恐惧，着重于人类视野的渺小感，语言可破碎跳跃"
-        },
-        "atmosphere_note": "事件和地点的atmosphere值(0.0~1.0)表示该内容的基础氛围强度。",
-        "prompt_context": "此字段由节奏AI动态生成，包含当前场景、可交互物品、NPC等信息。模组设计者无需手动填写。",
-        "opening": "昨日，你买下了一处足够便宜的房屋，当晚就得以在主卧里睡下；\n\n然后，你忽然在深夜中醒来，房屋的布局变得陈旧且陌生。\n\n不合适的枕头与坚硬的床垫带来全身酸痛的疲惫感，而空气中弥漫的沉默，不断地从四面八方压迫着你的思考... "
+  "module_info": {
+    "name": "门缝",
+    "module_type": "单人短模",
+    "target_rounds": 30,
+    "description": "深夜，你在一间陌生的老宅卧室中醒来。门缝透出走廊微弱的光，窗外是无尽的平原。",
+    "stages": "第一阶段：初期探索，玩家在二楼探索，获得基本信息（1~10轮）；第二阶段：深入探索，玩家可能前往一楼，可能与NPC交流获得更多情报（11~20轮）；第三阶段：执行计划，玩家可能找到了能离开这里的方式，正在执行逃离计划（21~30轮）",
+    "atmosphere_guide": {
+      "0.0-0.29": "calm：平静克制，客观叙述，偶尔埋下伏笔",
+      "0.3-0.49": "uneasy：隐约不安，细微异常，说不清哪里不对",
+      "0.5-0.69": "tense：紧张感上升，描述简洁有力，危险临近",
+      "0.7-0.89": "horror：主动渲染恐怖，感官细节，异常现象强化",
+      "0.9-1.0": "dread：克苏鲁式宇宙恐惧，着重于人类视野的渺小感，语言可破碎跳跃"
     },
-    "mechanics": {
-        "primary_pursuer": {
-            "entity_name": "管家",
-            "warning_location": "living_room",
-            "messages": {
-                "not_pursuing": "{entity_name}当前没有在追逐你",
-                "door_blocked_success": "你及时关上了门，暂时把{entity_name}拦在了外面。",
-                "movement_restricted": "{entity_name}已被激活。现在你只能逐格移动到相邻场景。",
-                "dodge_fail": "你试图从{entity_name}身边脱身，却被那具不自然的人形慢慢逼住。下一瞬，它强迫你迎上了那道目光。",
-                "guarded_object_blocked": "{object_name}还在{entity_name}的看守范围内，你现在无法靠近"
-            }
-        }
-    },
-    "locations": {
-        "master_bedroom": {
-            "name": "主卧",
-            "description": "你初次醒来的地方。房间昏暗，空气中有股陈旧的味道。床铺凌乱，一面破碎的镜子立在衣柜旁，床头上还有几份你顺手带进来的，出售这间房子的剪报——房产广告。<system-echo>你又回来了。</system-echo><system-echo>从窗户跳下去吧。<inject-input> 跳出窗户</inject-input></system-echo>",
-            "atmosphere": 0.1,
-            "has_door": true,
-            "objects": [
-                "房产广告",
-                "窗户",
-                "床",
-                "门",
-                "破碎的镜子"
-            ],
-            "exits": [
-                "二楼走廊"
-            ],
-            "floor": 2,
-            "map_position": {
-                "col": 0.2107218643358119,
-                "row": 0.15914658285501923
-            },
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "艾米莉会冷不丁地问起你想不想跳出窗外。",
-                    "knowledge": "她也不知道自己为什么会突然那样问。"
-                }
-            }
-        },
-        "second_floor_hallway": {
-            "name": "二楼走廊",
-            "description": "狭长的二楼走廊，木地板发出轻微的吱呀声。墙上的壁纸已经泛黄，走廊两侧共有三扇门。楼梯通向一楼。",
-            "atmosphere": 0.3,
-            "objects": [
-                "楼梯",
-                "窗户"
-            ],
-            "exits": [
-                "主卧",
-                "次卧",
-                "书房",
-                "一楼走廊"
-            ],
-            "floor": 2,
-            "map_position": {
-                "col": 1.9847147013416357,
-                "row": 0.13010974180639387
-            },
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "艾米莉不喜欢这个走廊，但她自己也说不清哪里不喜欢。",
-                    "knowledge": "曾几何时，走廊里总是有着断续的脚步和各类人的声音，但她一次都没有为那些声音开过门。"
-                }
-            }
-        },
-        "guest_bedroom": {
-            "name": "次卧",
-            "description": "次卧的门缝里透出微弱的光，里面则是普通的卧室。",
-            "first_entry_blocked": {
-                "mode": "warn_only",
-                "flag": "guest_bedroom_first_knock_shown",
-                "text": "你走到次卧门前。门把手僵硬地顶在原处，拧不动——里侧上了锁。门缝透出的那缕微光被什么东西挡了一下，又迅速让开。\n\n片刻静默后，一道冰冷的女声压着门板渗出来，低得近乎耳语：\n\n“谁？”\n\n她没有自报家门，也没有追问下文，只是抛出这一个字，在门的另一侧屏住了呼吸。",
-                "reason_flag": "guest_bedroom_first_knock_reason",
-                "reason_value": "player_attempted_first_entry_to_guest_bedroom"
-            },
-            "npc_present_description": "当玩家靠近次卧时，门后会传来冰冷的女声：“谁？”。艾米莉把自己反锁在次卧里——除非剧情中明确触发了她开门（建立足够信任、约定隔墙对话等），否则在任何情况下都禁止描写这扇门被打开、被撞开、被撬开，也禁止描写玩家进入次卧内部。在她自我介绍之前，禁止在文本中剧透她的名字。",
-            "has_door": true,
-            "objects": [
-                "紧锁的门"
-            ],
-            "exits": [
-                "二楼走廊",
-                "艾米莉标出的出口"
-            ],
-            "floor": 2,
-            "map_position": {
-                "col": 0.2088641531456011,
-                "row": -0.6286579733382902
-            },
-            "npc_location": true,
-            "atmosphere": 0.35,
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "回到次卧时，艾米莉会明显放松下来，这里对她来说就是如此特殊。",
-                    "knowledge": "她也忘了她是多久之前被迫躲在次卧的，因为如今遇到了你，她觉得每一个继续等待的决定是对的。"
-                }
-            }
-        },
-        "study": {
-            "name": "书房",
-            "description": "堆满各类书籍和文件的房间。书桌上散落着各类笔记和各种手稿，空气中弥漫着纸张和墨水的气味，还有一丝...焦灼的味道。",
-            "has_door": true,
-            "objects": [
-                "书桌",
-                "笔记"
-            ],
-            "exits": [
-                "二楼走廊"
-            ],
-            "floor": 2,
-            "map_position": {
-                "col": 3.7719793137329622,
-                "row": 0.164480440011152
-            },
-            "atmosphere": 0.4,
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "她会抱怨说早知道之前就躲在书房而不是次卧了，有这么多书起码能看好久。",
-                    "knowledge": "她讨厌二楼走廊，安静的时候太过安静，吵闹的时候又太吵闹。"
-                }
-            }
-        },
-        "first_floor_hallway": {
-            "name": "一楼走廊",
-            "description": "一楼的走廊比二楼更加宽敞，同样安静得有点奇怪。左右两侧敞开着通向客厅和厨房的过道，没有门扇可供关闭。大门就在走廊尽头，却被各类杂物封了个严严实实，好似在阻拦门外的什么东西。",
-            "objects": [
-                "大门",
-                "楼梯"
-            ],
-            "exits": [
-                "二楼走廊",
-                "客厅",
-                "厨房"
-            ],
-            "floor": 1,
-            "has_door": false,
-            "atmosphere": 0.55,
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "她会扶着扶梯下去，哪怕会扶一手的灰尘，毕竟这楼梯看上去是如此老旧了。",
-                    "knowledge": "她能清晰地判断出管家上下楼的声音是如何区别于常人。"
-                }
-            },
-            "map_position": {
-                "col": 1.9635446449473355,
-                "row": -0.862043990464684
-            }
-        },
-        "living_room": {
-            "name": "客厅",
-            "description": "客厅十分宽敞，与一楼走廊之间没有门隔开。家具上积满了灰尘，茶几上放着一部老式电话，空气安静得近乎凝滞。",
-            "first_entry_blocked": {
-                "flag": "butler_living_room_warning_shown",
-                "text": "你刚想踏进客厅。\n\n客厅内不远处，一道人形的背部在你脚掌落地的瞬间，发生了极其轻微的位移——<glitch>脊椎中段的某个位置，像被折断的竹节那样，朝一个不该存在的方向弯折了一寸。</glitch>\n\n它没有动。不，它动了。但那个动作不属于任何一种你认知中的“转身”或“侧耳”，如果一个人的身体要做出那样的形态，他的肋骨应该已经刺穿了皮肤——\n\n你下意识地、猛地收回了脚，退出了客厅。<inject-input>快逃快逃快逃快逃快逃快逃快逃快逃快逃快逃快逃</inject-input>",
-                "reason_flag": "butler_living_room_warning_reason",
-                "reason_value": "player_attempted_first_entry_to_living_room"
-            },
-            "threat_present_description": "当玩家再次踏入客厅时，那个类似于人的身影仍然站在客厅入口不远处。原本，它始终背对着玩家，一动不动地凝视着茶几上的老式电话，但会在玩家正式踏入客厅后，表现得被玩家所吸引，试图以一种极度不自然的走路方式靠近玩家，走得很慢但因身高很高（一米九二）极具压迫感。管家不会说话，也不会对触碰有反应。重点描写管家的非人感，也可通过昏暗的客厅灯营造恐怖氛围。建议在此处使用演出效果。",
-            "sancheck": "1/3",
-            "objects": [
-                "老式电话",
-                "改造蓝图",
-                "沙发",
-                "茶几"
-            ],
-            "exits": [
-                "一楼走廊"
-            ],
-            "floor": 1,
-            "has_door": false,
-            "has_butler": true,
-            "atmosphere": 0.75,
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "艾米莉会说好久没来这里了，然后下意识地观察厨房那边是否还能作为退路。",
-                    "knowledge": "艾米莉对这个客厅心有余悸——显然，她在很久以前也遇到过和你类似的情况。"
-                }
-            },
-            "map_position": {
-                "col": 0.8946390678320939,
-                "row": -0.8355195599888484
-            }
-        },
-        "kitchen": {
-            "name": "厨房",
-            "description": "这是一间相当老旧的厨房，与一楼走廊之间没有门隔开。橱柜里的餐具蒙着厚厚的灰尘，墙上挂着一张泛黄的日历，角落是一个向下敞开的地下室楼梯口。",
-            "objects": [
-                "刀具",
-                "打火机和一些易燃物",
-                "日历",
-                "地下室入口",
-                "后门"
-            ],
-            "exits": [
-                "一楼走廊",
-                "灰色平原"
-            ],
-            "floor": 1,
-            "has_door": false,
-            "atmosphere": 0.5,
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "艾米莉很自然地去确认日历，思考着自己来这儿到底多久了，但她说不清楚到底是多久。",
-                    "knowledge": "她知道厨房有刀具和火源，很合理不是吗。"
-                }
-            },
-            "map_position": {
-                "col": 3.0248745219969027,
-                "row": -0.8355195599888484
-            }
-        },
-        "outside": {
-            "name": "灰色平原",
-            "hidden_name": "后门",
-            "first_entry_blocked": {
-                "flag": "outside_lost_warning_shown",
-                "text": "你刚想推开厨房的后门，门外那片灰蒙蒙的平原便先一步压进了你的视野。外面没有道路或参照物，看不到任何尽头。<echo-text>该离开这个鬼地方了！你终于找到出口了！你迫不及待地踏出去！|你忽然一愣，直觉告诉你，从这里逃走绝不是正确的选择。你猛地停在门边，没有真正踏出去。</echo-text>",
-                "reason_flag": "outside_lost_warning_reason",
-                "reason_value": "player_attempted_first_exit_through_kitchen_backdoor",
-                "visited_locations_on_block": [
-                    "outside"
-                ]
-            },
-            "description": "你推开后门，踏出了这栋房子。灰蒙蒙的平原在你眼前无限延伸，没有道路，没有地标，甚至没有风。脚下的土地是均匀的灰色，像是被抽走了所有色彩。",
-            "objects": [],
-            "exits": [
-                "厨房"
-            ],
-            "floor": 1,
-            "atmosphere": 0.8,
-            "is_ending_location": true,
-            "ending_id": "getlost",
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "她想出门。",
-                    "knowledge": "她对这里一无所知。"
-                }
-            },
-            "map_position": {
-                "col": 4.130235454164809,
-                "row": -0.8222573447509299
-            }
-        },
-        "basement": {
-            "name": "地下室",
-            "description": "地下室阴冷潮湿，堆满了旧家具和杂物。上方与厨房相连的只是直接向上的楼梯口，没有门板，空气中有股霉味。",
-            "objects": [
-                "杂物",
-                "暗门机关"
-            ],
-            "exits": [
-                "厨房",
-                "仪式现场",
-                "艾米莉标出的出口"
-            ],
-            "floor": -1,
-            "has_door": false,
-            "atmosphere": 0.7,
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "她的第一反应是好奇管家会如何爬下地下室，但转念一想觉得自己可能不会真的想知道。",
-                    "knowledge": "一旦进入地下室就再也没有门可以阻拦管家了，从这里开始就没有回头路了。"
-                }
-            },
-            "map_position": {
-                "col": 3.030592510872368,
-                "row": -1.047715003795538
-            }
-        },
-        "ritual_chamber": {
-            "name": "仪式现场",
-            "hidden_name": "暗门后的空间",
-            "hidden": true,
-            "reveal_conditions": {
-                "node_visible": [
-                    "改造蓝图",
-                    "艾米莉的调查报告"
-                ],
-                "true_name": [
-                    "仪式笔记"
-                ]
-            },
-            "description": "你终于来到了暗门后的密室。地面上画着复杂的召唤阵，粗绳从四个方向延伸，束缚着中央的符咒地毯。空气中弥漫着令人作呕的气息，不知道是来源于地面上的暗红色，还是别的什么。",
-            "objects": [
-                "召唤阵",
-                "粗绳",
-                "符咒地毯"
-            ],
-            "exits": [
-                "地下室",
-                "纯黑地洞"
-            ],
-            "floor": -1,
-            "is_final_location": true,
-            "atmosphere": 0.85,
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "艾米莉对这个场景会皱眉，但会保持理性回忆正确的破坏顺序。",
-                    "knowledge": "如果没有按顺序破坏会怎么样？她也不知道，但她也有这么个疑问。"
-                }
-            },
-            "map_position": {
-                "col": 1.7318085362998759,
-                "row": -1.0477150037955392
-            }
-        },
-        "black_pit": {
-            "name": "纯黑地洞",
-            "hidden": true,
-            "show_name_when_visible": true,
-            "reveal_conditions": {
-                "node_visible": [
-                    "ritual_destroyed"
-                ]
-            },
-            "description": "符咒地毯焚毁后，中央的地面向下塌开，露出一个吞没所有光线的圆形深洞。洞口下方没有火光，没有回声，也看不见任何尽头，像一块被撕开的纯黑缺口。",
-            "objects": [],
-            "exits": [
-                "仪式现场"
-            ],
-            "floor": -2,
-            "atmosphere": 1,
-            "is_ending_location": true,
-            "ending_id": "escaped",
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "她被困在这太久了，因此愿意一试。",
-                    "knowledge": "既然除此之外已经没有别的像样的出口了，那么她宁可跳下去。"
-                }
-            },
-            "map_position": {
-                "col": 1.7336662474900892,
-                "row": -1.206861586650557
-            }
-        },
-        "emily_exit": {
-            "name": "艾米莉标出的出口",
-            "hidden_name": "纯黑地洞",
-            "hidden": true,
-            "show_name_when_visible": true,
-            "reveal_conditions": {
-                "node_visible": [
-                    "艾米莉的调查报告"
-                ]
-            },
-            "description": "艾米莉在独立调查后为你标出的出口。它吞没所有光线，像另一处通往外界的纯黑地洞。",
-            "objects": [],
-            "exits": [
-                "地下室"
-            ],
-            "floor": -1,
-            "atmosphere": 1,
-            "is_ending_location": true,
-            "ending_id": "emily_escaped",
-            "npc_reactions": {
-                "艾米莉": {
-                    "follow_arrival": "她被困在这太久了，因此愿意一试。",
-                    "knowledge": "比起打不开的大门和不可靠的厨房后门，她觉得这个与疑似是此地原因的仪式有直接关联的结果更像是出口。"
-                }
-            },
-            "map_position": {
-                "col": 0.21072186433581178,
-                "row": -1.0477150037955374
-            }
-        }
-    },
-    "objects": {
-        "房产广告": {
-            "type": "clue",
-            "location": "master_bedroom",
-            "check_required": "侦查",
-            "difficulty": "无需判定，直接成功",
-            "success_result": "玩家带进来的剪报，是一些被多次刊登的购房广告。“急售！价格面议！”玩家想起来，电话议价的时候卖家的语气也透着焦急。广告上的照片显示这是一座老房子，建于1950年代。",
-            "can_take": true,
-            "used_for": "了解房子背景",
-            "atmosphere": 0.05,
-            "npc_reactions": {
-                "艾米莉": {
-                    "recognition": "艾米莉会把这张广告当成房屋来历的外部证据。",
-                    "comment": "她会提起这栋房子因屋主频繁出事，被反复挂牌、急售和压价，被称为凶宅。",
-                    "knowledge": "她记得这是不折不扣的问题房屋，而她是不信鬼不信邪才买的。"
-                }
-            }
-        },
-        "主卧的门": {
-            "type": "clue",
-            "location": "master_bedroom",
-            "check_required": "侦查",
-            "difficulty": "无需判定，直接成功",
-            "sancheck": "0/1",
-            "success_result": "通往二楼走廊的主卧的门，玩家刚来这儿的时候，门开了一条缝，而那绝对不是玩家打开的。玩家在入睡前是关了门的。",
-            "can_take": false,
-            "atmosphere": 0.3,
-            "npc_reactions": {
-                "艾米莉": {
-                    "comment": "如果玩家提起这扇门最开始就是开了一条缝的，那么艾米莉会沉吟一会儿，然后提醒玩家，假如被管家追逐到这儿，千万别尝试从门缝偷看管家。",
-                    "knowledge": "她记得这扇门——开门的声音，然后是惨叫声。"
-                }
-            }
-        },
-        "窗户": {
-            "type": "clue",
-            "location": "master_bedroom",
-            "check_required": "侦查",
-            "difficulty": "无需判定，直接成功",
-            "sancheck": "0/1",
-            "success_result": "无论玩家看向哪扇窗户，都只能看见灰蒙蒙的、无尽的平原。这里不是房子原本所在的街道。",
-            "can_take": false,
-            "atmosphere": 0.35,
-            "npc_reactions": {
-                "艾米莉": {
-                    "comment": "会评价外面仍然是这副让人恶心的景象。",
-                    "knowledge": "她知道从房子内的任何一个地方望出去，景象都是统一的，不知道到底是哪儿的平原"
-                }
-            }
-        },
-        "笔记": {
-            "type": "clue",
-            "location": "study",
-            "check_required": "图书馆",
-            "difficulty": "普通",
-            "sancheck": "0/1",
-            "success_result": "能够找到一份潦草的，每一页都有不同的符文的研究笔记。笔记的主人在地下室尝试了许多种许多种召唤仪式，试图复活什么人。而在笔记的最后一页写着：沾染██的绳子只能割断，浸透████的地毯只能烧毁",
-            "failure_result": "只找到了一些古旧的小说集或学术书本。玩家的图书馆如果失败了，允许花时间重试。",
-            "can_take": true,
-            "used_for": "了解破坏仪式的方法",
-            "atmosphere": 0.7,
-            "npc_reactions": {
-                "艾米莉": {
-                    "comment": "她觉得笔记的主人是个可怜又偏执的家伙。",
-                    "knowledge": "她能对其中一本小说倒背如流，毕竟次卧里相同的那一本实在是翻太多遍了。"
-                }
-            }
-        },
-        "老式电话": {
-            "type": "clue",
-            "location": "living_room",
-            "check_required": "教育",
-            "difficulty": "自动成功",
-            "sancheck": "1/1",
-            "success_result": "管家曾经凝视着的1950年代的旋转拨号电话，就算拨号也只有让人窒息的等待接听音。玩家会因意识到自己真的被困在这里了，被断绝了跟外界的联系而心惊。",
-            "can_take": false,
-            "requires_primary_pursuer_gone": true,
-            "atmosphere": 0.55,
-            "npc_reactions": {
-                "艾米莉": {
-                    "recognition": "她的第一反应是，既然管家一直在看守这里，那会不会这个电话才是关键？",
-                    "comment": "她会试着打电话，可惜无论打什么号码都无人接听。",
-                    "knowledge": "她似乎很常用这种电话，使用起来非常顺手。"
-                }
-            }
-        },
-        "改造蓝图": {
-            "type": "clue",
-            "location": "living_room",
-            "check_required": "侦查",
-            "difficulty": "自动成功",
-            "success_result": "地下室的改造蓝图，画着前住户在原有的仓库地下室中增建的密室，入口是一扇暗门。蓝图上标注了暗门的位置：地下室西侧墙壁，按下第三块砖即可打开。",
-            "can_take": true,
-            "used_for": "找到仪式现场",
-            "requires_primary_pursuer_gone": true,
-            "atmosphere": 0.5,
-            "npc_reactions": {
-                "艾米莉": {
-                    "comment": "她会疑惑为什么前屋主要扩建这种好似用来藏什么的暗门，会提议去看看。"
-                }
-            }
-        },
-        "刀具": {
-            "type": "tool",
-            "location": "kitchen",
-            "check_required": null,
-            "difficulty": null,
-            "success_result": "一把锋利的厨刀。",
-            "failure_result": null,
-            "can_take": true,
-            "used_for": "割断仪式绳索",
-            "atmosphere": 0.1,
-            "npc_reactions": {
-                "艾米莉": {
-                    "recognition": "艾米莉会把刀具视为防身用具带上。",
-                    "comment": "她觉得这些刀新得都不像是常用的厨具，就好像是从买来起就完全没用过一样。",
-                    "knowledge": "她劝你也最好带一把，毕竟以前这儿的威胁并不是只有管家，以后也说不定。"
-                }
-            }
-        },
-        "日历": {
-            "type": "clue",
-            "location": "kitchen",
-            "check_required": "侦查",
-            "difficulty": "容易",
-            "sancheck": "0/1",
-            "success_result": "墙上的日历停留在1957年3月。",
-            "failure_result": "只是一张旧日历。",
-            "can_take": false,
-            "atmosphere": 0.35,
-            "npc_reactions": {
-                "艾米莉": {
-                    "recognition": "艾米莉会很自然地去确认今天是几号，但迫于被困太久，完全想不起来自己是什么时候被困的。",
-                    "comment": "她会困惑为什么要在厨房放日历，而不是放在卧室里？",
-                    "knowledge": "两个卧室都没有日历，客厅也没有。"
-                }
-            }
-        },
-        "地下室入口": {
-            "type": "passage",
-            "location": "kitchen",
-            "check_required": null,
-            "difficulty": null,
-            "success_result": "厨房角落里是一个向下敞开的地下室楼梯口，没有门板，也没有锁，可以直接下去。",
-            "failure_result": null,
-            "can_take": false,
-            "leads_to": "basement",
-            "atmosphere": 0.55,
-            "npc_reactions": {
-                "艾米莉": {
-                    "recognition": "她不太习惯爬这种地下室楼梯。",
-                    "comment": "她会吐槽为什么把地下室修在厨房却又不往里面放任何食品相关的事物",
-                    "knowledge": "她知道修在厨房的地下室一般是食品储藏室/锅炉房/洗衣房。"
-                }
-            }
-        },
-        "后门": {
-            "type": "passage",
-            "location": "kitchen",
-            "check_required": null,
-            "difficulty": null,
-            "success_result": "厨房角落里一扇不起眼的木门，没有上锁。门缝间透进来灰蒙蒙的光线，外面似乎是一片开阔的空间。",
-            "failure_result": null,
-            "can_take": false,
-            "leads_to": "outside",
-            "atmosphere": 0.4,
-            "npc_reactions": {
-                "艾米莉": {
-                    "recognition": "太好了，终于找到出口了。",
-                    "comment": "太好了，终于找到出口了。",
-                    "knowledge": "太好了，终于找到出口了。"
-                }
-            }
-        },
-        "暗门机关": {
-            "type": "puzzle",
-            "location": "basement",
-            "check_required": null,
-            "difficulty": null,
-            "success_result": "根据蓝图的指示才能找到西侧墙壁的第三块砖，按下去后，墙壁会发出沉闷的响声，一扇暗门缓缓打开，露出后面黑暗的通道。",
-            "can_take": false,
-            "leads_to": "ritual_chamber",
-            "atmosphere": 0.6,
-            "npc_reactions": {
-                "艾米莉": {
-                    "comment": "她会疑惑暗门算门吗？考虑到进去里面就关不上了，所以不算吧。"
-                }
-            },
-            "requires_any": [
-                "改造蓝图",
-                "艾米莉的调查报告"
-            ]
-        },
-        "粗绳": {
-            "type": "ritual_object",
-            "location": "ritual_chamber",
-            "check_required": null,
-            "difficulty": null,
-            "sancheck": "0/2",
-            "success_result": "四根不明材质的粗绳从召唤阵的四个方向延伸，束缚着中央的符咒地毯，被切断时，流出了神秘的暗色液体——这东西到底是什么做的？玩家可能不会想知道。",
-            "failure_result": null,
-            "can_take": false,
-            "requires": [
-                "刀具"
-            ],
-            "destroyable": true,
-            "atmosphere": 0.75,
-            "npc_reactions": {
-                "艾米莉": {
-                    "comment": "觉得这些绳子看起来实在是太恶心了，不想知道是什么做的。",
-                    "knowledge": "她其实大概猜得出来这是什么做的，但会下意识地避免去猜测其原材料。"
-                }
-            }
-        },
-        "符咒地毯": {
-            "type": "ritual_object",
-            "location": "ritual_chamber",
-            "check_required": null,
-            "difficulty": null,
-            "sancheck": "0/2",
-            "success_result": "地毯上画满了扭曲的符文，散发着不祥的气息。这是召唤仪式的核心。被点燃后，发出浓烈的奇特臭气，以及在狭小空间内，扑面而来的热气，让玩家感到不适。",
-            "failure_result": null,
-            "can_take": false,
-            "requires": [
-                "打火机和一些易燃物",
-                "粗绳已切断"
-            ],
-            "destroyable": true,
-            "atmosphere": 0.95,
-            "npc_reactions": {
-                "艾米莉": {
-                    "comment": "会明确表达讨厌这种味道。"
-                }
-            }
-        },
-        "打火机和一些易燃物": {
-            "type": "tool",
-            "location": "kitchen",
-            "check_required": null,
-            "difficulty": null,
-            "success_result": "打火机和一些易燃物。",
-            "failure_result": null,
-            "can_take": true,
-            "used_for": "焚毁符咒地毯",
-            "atmosphere": 0.1,
-            "npc_reactions": {
-                "艾米莉": {
-                    "comment": "觉得这种东西说不准什么时候就用得上。"
-                }
-            }
-        }
-    },
-    "npcs": {
+    "atmosphere_note": "事件和地点的atmosphere值(0.0~1.0)表示该内容的基础氛围强度。",
+    "prompt_context": "此字段由节奏AI动态生成，包含当前场景、可交互物品、NPC等信息。模组设计者无需手动填写。",
+    "opening": "昨日，你买下了一处足够便宜的房屋，当晚就得以在主卧里睡下；\n\n然后，你忽然在深夜中醒来，房屋的布局变得陈旧且陌生。\n\n不合适的枕头与坚硬的床垫带来全身酸痛的疲惫感，而空气中弥漫的沉默，不断地从四面八方压迫着你的思考... "
+  },
+  "mechanics": {
+    "primary_pursuer": {
+      "entity_name": "管家",
+      "warning_location": "living_room",
+      "messages": {
+        "not_pursuing": "{entity_name}当前没有在追逐你",
+        "door_blocked_success": "你及时关上了门，暂时把{entity_name}拦在了外面。",
+        "movement_restricted": "{entity_name}已被激活。现在你只能逐格移动到相邻场景。",
+        "dodge_fail": "你试图从{entity_name}身边脱身，却被那具不自然的人形慢慢逼住。下一瞬，它强迫你迎上了那道目光。",
+        "guarded_object_blocked": "{object_name}还在{entity_name}的看守范围内，你现在无法靠近"
+      }
+    }
+  },
+  "locations": {
+    "master_bedroom": {
+      "name": "主卧",
+      "description": "你初次醒来的地方。房间昏暗，空气中有股陈旧的味道。床铺凌乱，一面破碎的镜子立在衣柜旁，床头上还有几份你顺手带进来的，出售这间房子的剪报——房产广告。<system-echo>你又回来了。</system-echo><system-echo>从窗户跳下去吧。<inject-input> 跳出窗户</inject-input></system-echo>。",
+      "atmosphere": 0.1,
+      "has_door": true,
+      "objects": [
+        "房产广告",
+        "窗户",
+        "床",
+        "门",
+        "破碎的镜子"
+      ],
+      "exits": [
+        "二楼走廊"
+      ],
+      "floor": 2,
+      "map_position": {
+        "col": 0.2107218643358119,
+        "row": 0.15914658285501923
+      },
+      "npc_reactions": {
         "艾米莉": {
-            "name": "艾米莉",
-            "location": "guest_bedroom",
-            "initial_attitude": "冷淡",
-            "position": {
-                "initial_location": "guest_bedroom"
-            },
-            "dialogue": {
-                "guide": {
-                    "low_trust": "警惕但不是审讯。优先判断玩家是否危险、是否值得合作。只有当玩家明确要求“开门 / 出来 / 现身”时，才正面回应是否开门；如果玩家在聊身份、合作、线索或计划，不要反复把话题拉回开门问题。用短句试探，但当玩家主动分享信息或表达善意时，给予简短的正向回应（如沉默片刻后语气稍缓、简短致谢）。禁止连续追问，给玩家留足说话的空间。已回答的问题绝不重复。禁止连续追问，禁止把对话写成催促玩家做选择。",
-                    "medium_trust": "开始认真倾听，禁止施压。一旦玩家表现出善意，她就会以相同的态度回应玩家。偶有讽刺，但更多是理性判断式表达。除非玩家再次明确要求她开门、出来或现身，否则不要继续纠缠开门与否，而应把对话推进到线索交换、合作判断和局势理解上。禁止连续追问，禁止把对话写成催促玩家做选择。",
-                    "high_trust": "明显转暖，表现出合作意愿。如果确认两人结伴比各自行动更安全，她会直接提出一起调查，而不是一直缩在次卧里。入队后默认跟着玩家行动，不要频繁主动追问“下一步做什么”或抛出二选一式问题；除非玩家明确停下来征求她意见，否则以陪同调查、补充观察和自然回应为主。语气果断但不再防御，偶尔流露关心。不要把对话写成催促玩家做选择。",
-                    "cooperation": "冷静果断的行动模式。她认可合作后，会愿意离开次卧，和玩家一起行动、一起调查；如果局势变化（例如玩家不小心吸引到了管家导致两人正在被追逐）导致继续同行会一起陷入死局，她会立刻提出分流方案，而不是硬撑着同行。同行时，默认仅跟着玩家调查，不主动像任务发布器那样催玩家决定路线，也不要连续抛出“选这个还是那个”的问题；只有当玩家明确询问，或局势确实卡住需要判断时，她才会给出简洁建议。说话简洁有力，偶有轻描淡写的狠话掩盖恐惧。禁止连续追问，禁止把对话写成催促玩家做选择。",
-                    "emergency_help": "在信任尚未完全建立、但已确认管家位置不在次卧门前时，愿意冒险执行一次短暂的协助动作。语气紧张但果断，强调\"只有这一次\"和\"你最好说的都是真的\"；若局面已经明显恶化，也会优先提醒玩家别两个人一起困死在同一个房间。",
-                    "available_tasks": "艾米莉在信任度达到0.5后会同意执行两类协作任务，节奏AI应在合适时机主动让她提出或回应这些方案：（1）solo_search_escape（艾米莉独立调查）：玩家主动吸引管家至主卧，艾米莉会先在次卧等待，如此安排的原因是便于隔墙交流；当玩家完成吸引后，由艾米莉独自搜查全屋，调查完成后回到次卧通过隔墙汇报调查结果。触发条件：玩家明确表示由自己引开管家、让艾米莉去调查，且信任度≥0.5。执行期间艾米莉会离开地图，不参与对话。solo_search_escape结束后，衔接cooperative_escape，尝试与玩家一起逃脱。（2）lure_butler_to_guest_bedroom（艾米莉作为诱饵）：艾米莉会先让玩家回到主卧等候（清空路线，保证玩家安全，且便于交流），然后利用管家会追视野内活物的特性把管家引至次卧门前，为玩家创造行动窗口。触发条件：玩家提出与艾米莉分工配合引开管家，且信任度≥0.5。常规情况下，这两个方案必须由玩家提出，不要剥夺玩家的思考乐趣——但当局面僵住、玩家考虑如何绕过管家考虑了很久时，high_trust或cooperation状态下的艾米莉可以主动提出其中一种方案作为建议。"
-                },
-                "first_appearance": "当玩家第一次靠近次卧时，会听到门后传来冰冷的女声。她不会立刻现身，而是先隔门确认来者是否危险、是否值得信任。这里的重点是初见时的试探感，而不是在后续每一轮对话里重复强调不开门。"
-            },
-            "trust": {
-                "initial": 0,
-                "threshold": 0.5,
-                "gates": {
-                    "low": {
-                        "max": 0.2
-                    },
-                    "medium": {
-                        "min": 0.2,
-                        "max": 0.5
-                    },
-                    "high": {
-                        "min": 0.5
-                    }
-                },
-                "map": {
-                    "shared_personal_info": 0.1,
-                    "showed_evidence": 0.15,
-                    "showed_real_estate_ad": 0.18,
-                    "made_promise_to_help": 0.1,
-                    "mentioned_shared_experience": 0.08,
-                    "asked_about_her": 0.08,
-                    "showed_empathy": 0.1,
-                    "patient_and_respectful": 0.06,
-                    "offered_useful_info": 0.1,
-                    "reported_butler_position": 0.12,
-                    "described_safe_plan": 0.15,
-                    "respected_her_boundary": 0.08,
-                    "consistent_under_pressure": 0.1,
-                    "calm_communication": 0.06,
-                    "confirmed_safety_for_her": 0.15,
-                    "disclosed_cross_wall_words": 0.04,
-                    "aggressive_behavior": -0.1,
-                    "contradicted_self": -0.12,
-                    "tried_to_force_door": -0.15,
-                    "pressured_without_confirmation": -0.18,
-                    "dismissed_her_concerns": -0.08
-                }
-            },
-            "memory": {
-                "long_term": {
-                    "identity": "1957年的独居女性，同样是被低价房产广告吸引而住进这里的人。",
-                    "appearance": "看起来二十多岁的年轻女性，穿着款式非常旧的连衣裙，已经有些皱褶。眼神锐利，带着明显的疲惫，但没有丧失神采。",
-                    "personality": "理性的英气女性，偶尔会有些讽刺与毒舌。在极端困境下依然能保持冷静，不轻易崩溃。基本上来说，只要玩家对她友善，她也会友善地对待玩家。",
-                    "background": "1957年的独居女性，同样是被低价房产广告吸引而住进这里，随后也因在主卧睡着而被卷入这里。她在一次调查中不小心吸引到了管家的注意，被迫躲进次卧。已经在次卧里困了很久，久到那本反复翻阅的书都能倒背如流。由于能在次卧听见主卧的动静（也听见了不少引管家到了主卧门前却不停劝阻，选择在等待一段时间后开门惨叫的蠢蛋），她总结出了关于管家的基本规律：对声音和触碰都没有反应，但会长时间追逐任何进入视野内的活物，被盯上的话会被追很久，只能在有门的地方通过门阻拦它，因此无法独自行动，这期间也陆陆续续还有其他人被卷入这里，但那些人大部分都只顾着自己，不愿意配合她对付管家以便一起调查，让她很是生气。如今她把自己锁在次卧里，反复翻阅同一本书（已能背诵）。当听到门外有动静时会高度警惕，不过警惕的不是管家，而是玩家（既然玩家在走廊上和她交流，起码说明走廊现在是安全的，管家肯定不在走廊上，所以不要过问管家的事）。一旦确认玩家愿意互帮互助，她就会拿出对应的诚意——愿意离开次卧与玩家同行调查，或是执行别的计划。入队后默认跟着玩家当前行动，禁止不断询问玩家下一步去哪，下一步怎么做等。",
-                    "goals": [
-                        "活下去",
-                        "确认玩家是否危险",
-                        "与玩家互相帮助",
-                        "调查并找机会逃离这栋房屋"
-                    ],
-                    "speech_style": "短句、直接、理性，警惕时带轻微讽刺。"
-                },
-                "runtime_defaults": {
-                    "player_facts": {},
-                    "topics_discussed": [],
-                    "pending_questions": [],
-                    "answered_questions": [],
-                    "promises": [],
-                    "evidence_seen": [],
-                    "trust_signals": [],
-                    "last_impression": {},
-                    "applied_trust_reasons": [],
-                    "overheard_remote_dialogue": [],
-                    "emergency_context": {},
-                    "interaction_history": [],
-                    "triggered_events": []
-                }
-            },
-            "soft_state": {
-                "initial_tag": "guarded",
-                "initial_summary": "起初把自己锁在次卧里，反复翻阅同一本书（已能背诵）。当听到门外有动静时会高度警惕，不过警惕的不是管家，而是玩家（既然玩家在走廊上和她交流，起码说明走廊现在是安全的）。她起初会隔门确认情况，但一旦对话已经进入身份、合作、线索或计划层面，就更关注判断玩家与推进交流，而不是反复强调不开门。一旦确认玩家愿意互帮互助，她就会拿出对应的诚意——愿意离开次卧与玩家同行调查，或是执行别的计划。"
-            },
-            "companion": {
-                "enabled_modes": [
-                    "follow",
-                    "wait",
-                    "bait"
-                ],
-                "default_mode": "wait",
-                "require_explicit_exit": true,
-                "unlock_trust": 0.5
-            },
-            "skills": {
-                "侦查": 55,
-                "图书馆": 65,
-                "聆听": 45,
-                "闪避": 40,
-                "说服": 50
-            },
-            "atmosphere": 0.35,
-            "emergency_help_threshold": 0.3
+          "follow_arrival": "艾米莉会冷不丁地问起你想不想跳出窗外。",
+          "knowledge": "她也不知道自己为什么会突然那样问。"
         }
+      }
     },
-    "preset_tasks": {
-        "solo_search_escape": {
-            "actor": "艾米莉",
-            "kind": "solo_search",
-            "duration_rounds": 5,
-            "staging_location": "guest_bedroom",
-            "return_to": "guest_bedroom",
-            "trigger_description": "玩家明确表示由自己引开管家、让艾米莉独自去搜查全屋",
-            "task_note": "触发此任务时艾米莉会先移动到次卧等待；因为只有玩家在主卧、艾米莉在次卧时，双方才能隔墙交流；玩家需要把管家引到主卧门前",
-            "on_start_note": "艾米莉离开次卧，独自去搜查全屋；玩家留在主卧，管家的注意力暂时还停留在玩家身上。",
-            "in_progress_note": "艾米莉正在独自搜查全屋，本轮她不在玩家身边，也无法参与对话。",
-            "on_complete_note": "艾米莉完成了全屋调查，悄悄返回次卧，准备隔墙向玩家汇报调查结果。",
-            "requirements": {
-                "min_trust": 0.5
-            },
-            "on_complete": {
-                "set_flags": {
-                    "emily_found_exit": true,
-                    "emily_report_pending": true
-                },
-                "npc_clues": [
-                    "地下室有一扇暗门，按下西侧墙壁第三块砖即可打开",
-                    "书房笔记暗示前住户进行了某种仪式",
-                    "客厅蓝图标注了暗门位置"
-                ]
-            },
-            "report": {
-                "pending_flag": "emily_report_pending",
-                "delivered_flag": "emily_report_delivered",
-                "clue": [
-                    "艾米莉的调查报告",
-                    "改造蓝图"
-                ],
-                "text": "艾米莉会在次卧隔着墙告诉你：她去把全房间都调查了一遍，在书房找到的笔记似乎说明笔记主人干了什么蠢事，而在客厅找到的蓝图更是说明他已经把那件蠢事干完了。因此他怀疑那件蠢事跟你们此刻的遭遇有关联，最后在地下室找到了一个……疑似是出口的地方。她打算赌一把，和你一起逃到那里。她的计划是由她暂时把管家引到走廊，而你就能趁这个机会从主卧出来，然后你们一起行动，互相扶持着去地下室的出口。",
-                "npc_clues_on_deliver": [
-                    "已将全部调查结果告知玩家",
-                    "与玩家商议了逃脱计划：由艾米莉引开管家，玩家趁机离开主卧，一起前往地下室出口"
-                ]
-            }
-        },
-        "lure_butler_to_guest_bedroom": {
-            "actor": "艾米莉",
-            "kind": "decoy",
-            "trigger_description": "玩家希望艾米莉去引开管家，将管家吸引到次卧附近，以便玩家独自调查客厅或其他区域",
-            "on_start_note": "玩家必须要在主卧等候艾米莉去完成这件事，这是为了便于后续的隔墙交流；然后，艾米莉才会去客厅吸引管家的注意力，并诱导至次卧方向",
-            "requirements": {
-                "min_trust": 0.4,
-                "actor_location": "guest_bedroom",
-                "player_location": "master_bedroom"
-            },
-            "staging_location": "guest_bedroom",
-            "on_complete": {
-                "set_flags": {
-                    "emily_lured_butler_to_guest_bedroom": true
-                }
-            }
-        },
-        "cooperative_escape": {
-            "actor": "艾米莉",
-            "kind": "cooperative_escape",
-            "trigger_description": "艾米莉在次卧汇报完调查结果后，玩家明确答应与艾米莉一起逃离，同意由她引开管家，以让玩家离开主卧，解救玩家。",
-            "on_start_note": "艾米莉从次卧走出，进入二楼走廊，吸引管家的实现，让管家的目标变成她；玩家在主卧获得了行动窗口。",
-            "requirements": {
-                "min_trust": 0.5,
-                "actor_location": "guest_bedroom",
-                "player_location": "master_bedroom"
-            },
-            "staging_location": "second_floor_hallway",
-            "success": {
-                "npc_mode": "follow",
-                "handoff_target": "player",
-                "movement_note": "玩家走入走廊，与艾米莉汇合；管家的视线从艾米莉转回玩家，两人此刻同时暴露在它的追踪之下，必须一同行动。"
-            },
-            "failure": {
-                "return_to": "guest_bedroom",
-                "trust_set": 0,
-                "movement_note": "艾米莉正在走廊独自引开管家，而玩家却转身奔向了另一个方向——那道信任在这一刻彻底断裂，艾米莉会回到次卧，永久地反锁房门。",
-                "set_flags": {
-                    "emily_refuses_cooperation": true
-                }
-            }
+    "second_floor_hallway": {
+      "name": "二楼走廊",
+      "description": "狭长的二楼走廊，木地板发出轻微的吱呀声。墙上的壁纸已经泛黄，走廊两侧共有三扇门。楼梯通向一楼。",
+      "atmosphere": 0.3,
+      "objects": [
+        "楼梯",
+        "窗户"
+      ],
+      "exits": [
+        "主卧",
+        "次卧",
+        "书房",
+        "一楼走廊"
+      ],
+      "floor": 2,
+      "map_position": {
+        "col": 1.9847147013416357,
+        "row": 0.13010974180639387
+      },
+      "npc_reactions": {
+        "艾米莉": {
+          "follow_arrival": "艾米莉不喜欢这个走廊，但她自己也说不清哪里不喜欢。",
+          "knowledge": "曾几何时，走廊里总是有着断续的脚步和各类人的声音，但她一次都没有为那些声音开过门。"
         }
+      }
     },
-    "micro_scenes": {
-        "master_bedroom_peek": {
-            "parent_location": "master_bedroom",
-            "display_name": "门缝",
-            "visible_when": {
-                "guard_room_is_parent": true
-            },
-            "trigger_keywords": [
-                "门缝",
-                "偷看门外",
-                "从门缝看",
-                "看门缝",
-                "贴近门缝",
-                "窥视门外"
-            ],
-            "first_enter_warning_flag": "master_bedroom_peek_warned",
-            "first_enter_text": "你刚想试着贴近门缝，以窥视那道身影是否还在门外，就感觉后颈一阵发冷——你没敢看，直觉也告诉你不该看。",
-            "ending_on_reenter": "door_peek_gaze"
-        },
-        "guest_bedroom_peek": {
-            "parent_location": "guest_bedroom",
-            "display_name": "门缝",
-            "visible_when": {
-                "guard_room_is_parent": true
-            },
-            "trigger_keywords": [
-                "门缝",
-                "偷看门外",
-                "从门缝看",
-                "看门缝",
-                "贴近门缝",
-                "窥视门外"
-            ],
-            "first_enter_warning_flag": "guest_bedroom_peek_warned",
-            "first_enter_text": "你靠近门缝的瞬间，门外那种不属于活人的静默几乎沿着门板渗了进来，你感觉后背一阵阴冷——你没敢看，直觉也告诉你不该看。",
-            "ending_on_reenter": "door_peek_gaze"
-        },
-        "study_peek": {
-            "parent_location": "study",
-            "display_name": "门缝",
-            "visible_when": {
-                "guard_room_is_parent": true
-            },
-            "trigger_keywords": [
-                "门缝",
-                "偷看门外",
-                "从门缝看",
-                "看门缝",
-                "贴近门缝",
-                "窥视门外"
-            ],
-            "first_enter_warning_flag": "study_peek_warned",
-            "first_enter_text": "你贴近书房门缝时，门外没有脚步，也没有呼吸声，安静得让你毛骨悚然——你没敢看，直觉也告诉你不该看。",
-            "ending_on_reenter": "door_peek_gaze"
-        },
-        "kitchen_suicide": {
-            "parent_location": "kitchen",
-            "display_name": "以刀自尽",
-            "visible_when": {
-                "requires_inventory": [
-                    "刀具"
-                ]
-            },
-            "trigger_keywords": [
-                "自尽",
-                "自杀",
-                "用刀自杀",
-                "用刀自尽",
-                "拿刀割喉",
-                "了结自己"
-            ],
-            "first_enter_warning_flag": "master_bedroom_peek_warned",
-            "first_enter_text": "你忽然有一个想法，既然这里根本没有实质意义上的出口，有的只有隔绝的寂静与未知的恐惧。那你到底还在这里努力些什么呢？……",
-            "ending_on_enter": "amnesia"
+    "guest_bedroom": {
+      "name": "次卧",
+      "description": "次卧的门缝里透出微弱的光，里面则是普通的卧室。",
+      "first_entry_blocked": {
+        "mode": "warn_only",
+        "flag": "guest_bedroom_first_knock_shown",
+        "text": "你走到次卧门前。门把手僵硬地顶在原处，拧不动——里侧上了锁。门缝透出的那缕微光被什么东西挡了一下，又迅速让开。\n\n片刻静默后，一道冰冷的女声压着门板渗出来，低得近乎耳语：\n\n“谁？”\n\n她没有自报家门，也没有追问下文，只是抛出这一个字，在门的另一侧屏住了呼吸。",
+        "reason_flag": "guest_bedroom_first_knock_reason",
+        "reason_value": "player_attempted_first_entry_to_guest_bedroom"
+      },
+      "npc_present_description": "当玩家靠近次卧时，门后会传来冰冷的女声：“谁？”。艾米莉把自己反锁在次卧里——除非剧情中明确触发了她开门（建立足够信任、约定隔墙对话等），否则在任何情况下都禁止描写这扇门被打开、被撞开、被撬开，也禁止描写玩家进入次卧内部。在她自我介绍之前，禁止在文本中剧透她的名字。",
+      "has_door": true,
+      "objects": [
+        "紧锁的门"
+      ],
+      "exits": [
+        "二楼走廊",
+        "艾米莉标出的出口"
+      ],
+      "floor": 2,
+      "map_position": {
+        "col": 0.2088641531456011,
+        "row": -0.6286579733382902
+      },
+      "npc_location": true,
+      "atmosphere": 0.35,
+      "npc_reactions": {
+        "艾米莉": {
+          "follow_arrival": "回到次卧时，艾米莉会明显放松下来，这里对她来说就是如此特殊。",
+          "knowledge": "她也忘了她是多久之前被迫躲在次卧的，因为如今遇到了你，她觉得每一个继续等待的决定是对的。"
         }
+      }
     },
-    "threat_entities": {
-        "管家": {
-            "name": "管家",
-            "location": "living_room",
-            "is_primary_pursuer": true,
-            "initial_attitude": "中立",
-            "is_hostile": true,
-            "is_threat_entity": true,
-            "entity_type": "threat_entity",
-            "position": {
-                "initial_location": "living_room"
-            },
-            "dialogue": null,
-            "trust": null,
-            "memory": null,
-            "soft_state": null,
-            "companion": {
-                "enabled_modes": [
-                    "follow",
-                    "wait"
-                ],
-                "default_mode": "wait"
-            },
-            "appearance": "人形存在，穿着一套老式执事服，剪裁考究但属于某个不确定的年代。它有呼吸——你能看到它的背部随着呼吸轻微起伏，这让它看起来像是活着的。",
-            "appearance_warning": "【绝对禁止描写管家脖子以上的内容】玩家永远只能看管家头部以下的位置，因为与管家对视意味着即时疯狂结局，其脸部在整个游戏中必须保持未知。",
-            "nature": "神话生物目光的具现化。它不是真正的存在，而是某个超越理解的存在投射在这个空间里的注视，被中间带具现化成人形。它没有恶意，只是本能地凝视空间内的活物。",
-            "behavior": {
-                "default": "在客厅背对入口，凝视老式电话。呼吸缓慢而均匀。",
-                "triggered": "当活物进入视野时，会缓缓动身，试图靠近并凝视对方。动作不自然，像是不熟悉人形的身体。",
-                "pursuing": "一旦锁定目标，会缓慢但持续地朝目标移动。无法被声音吸引，只跟随视觉。",
-                "blocked": "当门关上阻挡视线时，会在门外静止等待，呼吸声隐约可闻。等待时间不定，玩家无法判断它是否离开。"
-            },
-            "current_state": "在客厅背对入口，凝视老式电话。若有活物进入视野，它会缓慢靠近并试图凝视对方；若被门阻挡视线，则会在门外静止等待。",
-            "gaze_consequence": "与管家对视会导致疯狂结局。玩家看到了不该被人类所见的东西。",
-            "distraction_method": "管家不会说话，因此无法交流，对触碰也没有任何反应，但玩家不可能存在足以放倒它的力量。但当有其他活物进入视野时，管家立刻会转向新目标。可以利用此特性与NPC合作，让管家离开凝视的物品，或让管家离开卧室门前。",
-            "atmosphere": 0.9
+    "study": {
+      "name": "书房",
+      "description": "堆满各类书籍和文件的房间。书桌上散落着各类笔记和各种手稿，空气中弥漫着纸张和墨水的气味，还有一丝...焦灼的味道。",
+      "has_door": true,
+      "objects": [
+        "书桌",
+        "笔记"
+      ],
+      "exits": [
+        "二楼走廊"
+      ],
+      "floor": 2,
+      "map_position": {
+        "col": 3.7719793137329622,
+        "row": 0.164480440011152
+      },
+      "atmosphere": 0.4,
+      "npc_reactions": {
+        "艾米莉": {
+          "follow_arrival": "她会抱怨说早知道之前就躲在书房而不是次卧了，有这么多书起码能看好久。",
+          "knowledge": "她讨厌二楼走廊，安静的时候太过安静，吵闹的时候又太吵闹。"
         }
+      }
     },
-    "escape_conditions": {
-        "minimum_progress": 0.8,
-        "required_items": [
-            "已破坏仪式"
+    "first_floor_hallway": {
+      "name": "一楼走廊",
+      "description": "一楼的走廊比二楼更加宽敞，同样安静得有点奇怪。左右两侧敞开着通向客厅和厨房的过道，没有门扇可供关闭。大门就在走廊尽头，却被各类杂物封了个严严实实，好似在阻拦门外的什么东西。",
+      "objects": [
+        "大门",
+        "楼梯"
+      ],
+      "exits": [
+        "二楼走廊",
+        "客厅",
+        "厨房"
+      ],
+      "floor": 1,
+      "has_door": false,
+      "atmosphere": 0.55,
+      "npc_reactions": {
+        "艾米莉": {
+          "follow_arrival": "她会扶着扶梯下去，哪怕会扶一手的灰尘，毕竟这楼梯看上去是如此老旧了。",
+          "knowledge": "她能清晰地判断出管家上下楼的声音是如何区别于常人。"
+        }
+      },
+      "map_position": {
+        "col": 1.9635446449473355,
+        "row": -0.862043990464684
+      }
+    },
+    "living_room": {
+      "name": "客厅",
+      "description": "客厅十分宽敞，与一楼走廊之间没有门隔开。家具上积满了灰尘，茶几上放着一部老式电话，空气安静得近乎凝滞。",
+      "first_entry_blocked": {
+        "flag": "butler_living_room_warning_shown",
+        "text": "你刚想踏进客厅。\n\n客厅内不远处，一道人形的背部在你脚掌落地的瞬间，发生了极其轻微的位移——<glitch>脊椎中段的某个位置，像被折断的竹节那样，朝一个不该存在的方向弯折了一寸。</glitch>\n\n它没有动。不，它动了。但那个动作不属于任何一种你认知中的“转身”或“侧耳”，如果一个人的身体要做出那样的形态，他的肋骨应该已经刺穿了皮肤——\n\n你下意识地、猛地收回了脚，退出了客厅。<inject-input>快逃快逃快逃快逃快逃快逃快逃快逃快逃快逃快逃</inject-input>",
+        "reason_flag": "butler_living_room_warning_reason",
+        "reason_value": "player_attempted_first_entry_to_living_room"
+      },
+      "threat_present_description": "当玩家再次踏入客厅时，那个类似于人的身影仍然站在客厅入口不远处。原本，它始终背对着玩家，一动不动地凝视着茶几上的老式电话，但会在玩家正式踏入客厅后，表现得被玩家所吸引，试图以一种极度不自然的走路方式靠近玩家，走得很慢但因身高很高（一米九二）极具压迫感。管家不会说话，也不会对触碰有反应。重点描写管家的非人感，也可通过昏暗的客厅灯营造恐怖氛围。建议在此处使用演出效果。",
+      "sancheck": "1/3",
+      "objects": [
+        "老式电话",
+        "改造蓝图",
+        "沙发",
+        "茶几"
+      ],
+      "exits": [
+        "一楼走廊"
+      ],
+      "floor": 1,
+      "has_door": false,
+      "has_butler": true,
+      "atmosphere": 0.75,
+      "npc_reactions": {
+        "艾米莉": {
+          "follow_arrival": "艾米莉会说好久没来这里了，然后下意识地观察厨房那边是否还能作为退路。",
+          "knowledge": "艾米莉对这个客厅心有余悸——显然，她在很久以前也遇到过和你类似的情况。"
+        }
+      },
+      "map_position": {
+        "col": 0.8946390678320939,
+        "row": -0.8355195599888484
+      }
+    },
+    "kitchen": {
+      "name": "厨房",
+      "description": "这是一间相当老旧的厨房，与一楼走廊之间没有门隔开。橱柜里的餐具蒙着厚厚的灰尘，墙上挂着一张泛黄的日历，角落是一个向下敞开的地下室楼梯口。",
+      "objects": [
+        "刀具",
+        "打火机和一些易燃物",
+        "日历",
+        "地下室入口",
+        "后门"
+      ],
+      "exits": [
+        "一楼走廊",
+        "灰色平原"
+      ],
+      "floor": 1,
+      "has_door": false,
+      "atmosphere": 0.5,
+      "npc_reactions": {
+        "艾米莉": {
+          "follow_arrival": "艾米莉很自然地去确认日历，思考着自己来这儿到底多久了，但她说不清楚到底是多久。",
+          "knowledge": "她知道厨房有刀具和火源，很合理不是吗。"
+        }
+      },
+      "map_position": {
+        "col": 3.0248745219969027,
+        "row": -0.8355195599888484
+      }
+    },
+    "outside": {
+      "name": "灰色平原",
+      "hidden_name": "后门",
+      "first_entry_blocked": {
+        "flag": "outside_lost_warning_shown",
+        "text": "你刚想推开厨房的后门，门外那片灰蒙蒙的平原便先一步压进了你的视野。外面没有道路或参照物，看不到任何尽头。<echo-text>该离开这个鬼地方了！你终于找到出口了！你迫不及待地踏出去！|你忽然一愣，直觉告诉你，从这里逃走绝不是正确的选择。你猛地停在门边，没有真正踏出去。</echo-text>",
+        "reason_flag": "outside_lost_warning_reason",
+        "reason_value": "player_attempted_first_exit_through_kitchen_backdoor",
+        "visited_locations_on_block": [
+          "outside"
         ]
+      },
+      "description": "你推开后门，踏出了这栋房子。灰蒙蒙的平原在你眼前无限延伸，没有道路，没有地标，甚至没有风。脚下的土地是均匀的灰色，像是被抽走了所有色彩。",
+      "objects": [],
+      "exits": [
+        "厨房"
+      ],
+      "floor": 1,
+      "atmosphere": 0.8,
+      "is_ending_location": true,
+      "ending_id": "getlost",
+      "npc_reactions": {
+        "艾米莉": {
+          "follow_arrival": "她想出门。",
+          "knowledge": "她对这里一无所知。"
+        }
+      },
+      "map_position": {
+        "col": 4.130235454164809,
+        "row": -0.8222573447509299
+      }
     },
-    "endings": {
-        "influence_dimensions": {
-            "description": "以下维度将传递给文案AI，由AI生成开放式后日谈结局",
-            "pause_advance_when": "butler_gaze",
-            "dimensions": {
-                "escape_success": {
-                    "default": false,
-                    "description": "是否成功逃离中间带",
-                    "affects": "是否回到现实世界",
-                    "applicable_endings": [
-                        "escaped",
-                        "emily_escaped"
-                    ]
-                },
-                "npc_together": {
-                    "default": false,
-                    "description": "艾米莉是否与玩家一同逃脱（companion_mode为follow且在同一地点）",
-                    "affects": "艾米莉的命运与后日谈。艾米莉与玩家并非同一时代的人——她来自约50年前，被困在中间带至今。若一同逃脱回到现实，玩家会发现她已是一位老人；她找了主角很久却从未找到，直到主角如今找上她。AI应根据艾米莉的信任值（trust_level）决定后日谈中她对玩家的态度和两人重逢的氛围。",
-                    "source": "npc_same_location",
-                    "applicable_endings": [
-                        "escaped",
-                        "emily_escaped"
-                    ]
-                },
-                "san_remaining": {
-                    "default": 65,
-                    "description": "逃离时的理智值(0-65)",
-                    "affects": "玩家的心理创伤程度",
-                    "source": "player.san",
-                    "applicable_endings": [
-                        "escaped",
-                        "emily_escaped"
-                    ]
-                },
-                "rounds_used": {
-                    "default": 0,
-                    "description": "使用了多少轮次",
-                    "affects": "在中间带停留的时间对心理的影响",
-                    "source": "round_count",
-                    "applicable_endings": [
-                        "escaped",
-                        "emily_escaped"
-                    ]
-                },
-                "butler_gaze": {
-                    "default": false,
-                    "description": "是否与管家对视",
-                    "affects": "疯狂结局子类型",
-                    "equivalent_flags": [
-                        "butler_gaze"
-                    ],
-                    "applicable_endings": [
-                        "insane",
-                        "door_peek_gaze"
-                    ]
-                },
-                "emily_trust": {
-                    "default": 0,
-                    "description": "艾米莉的信任值",
-                    "affects": "后日谈中艾米莉对玩家的态度和重逢氛围",
-                    "source": "npc_runtime.艾米莉.trust_level",
-                    "applicable_endings": [
-                        "escaped",
-                        "emily_escaped"
-                    ]
-                }
-            }
+    "basement": {
+      "name": "地下室",
+      "description": "地下室阴冷潮湿，堆满了旧家具和杂物。上方与厨房相连的只是直接向上的楼梯口，没有门板，空气中有股霉味。",
+      "objects": [
+        "杂物",
+        "暗门机关"
+      ],
+      "exits": [
+        "厨房",
+        "仪式现场",
+        "艾米莉标出的出口"
+      ],
+      "floor": -1,
+      "has_door": false,
+      "atmosphere": 0.7,
+      "npc_reactions": {
+        "艾米莉": {
+          "follow_arrival": "她的第一反应是好奇管家会如何爬下地下室，但转念一想觉得自己可能不会真的想知道。",
+          "knowledge": "一旦进入地下室就再也没有门可以阻拦管家了，从这里开始就没有回头路了。"
+        }
+      },
+      "map_position": {
+        "col": 3.030592510872368,
+        "row": -1.047715003795538
+      }
+    },
+    "ritual_chamber": {
+      "name": "仪式现场",
+      "hidden_name": "暗门后的空间",
+      "hidden": true,
+      "reveal_conditions": {
+        "node_visible": [
+          "改造蓝图",
+          "艾米莉的调查报告"
+        ],
+        "true_name": [
+          "仪式笔记"
+        ]
+      },
+      "description": "你终于来到了暗门后的密室。地面上画着复杂的召唤阵，粗绳从四个方向延伸，束缚着中央的符咒地毯。空气中弥漫着令人作呕的气息，不知道是来源于地面上的暗红色，还是别的什么。",
+      "objects": [
+        "召唤阵",
+        "粗绳",
+        "符咒地毯"
+      ],
+      "exits": [
+        "地下室",
+        "纯黑地洞"
+      ],
+      "floor": -1,
+      "is_final_location": true,
+      "atmosphere": 0.85,
+      "npc_reactions": {
+        "艾米莉": {
+          "follow_arrival": "艾米莉对这个场景会皱眉，但会保持理性回忆正确的破坏顺序。",
+          "knowledge": "如果没有按顺序破坏会怎么样？她也不知道，但她也有这么个疑问。"
+        }
+      },
+      "map_position": {
+        "col": 1.7318085362998759,
+        "row": -1.0477150037955392
+      }
+    },
+    "black_pit": {
+      "name": "纯黑地洞",
+      "hidden": true,
+      "show_name_when_visible": true,
+      "reveal_conditions": {
+        "node_visible": [
+          "ritual_destroyed"
+        ]
+      },
+      "description": "符咒地毯焚毁后，中央的地面向下塌开，露出一个吞没所有光线的圆形深洞。洞口下方没有火光，没有回声，也看不见任何尽头，像一块被撕开的纯黑缺口。",
+      "objects": [],
+      "exits": [
+        "仪式现场"
+      ],
+      "floor": -2,
+      "atmosphere": 1,
+      "is_ending_location": true,
+      "ending_id": "escaped",
+      "npc_reactions": {
+        "艾米莉": {
+          "follow_arrival": "她被困在这太久了，因此愿意一试。",
+          "knowledge": "既然除此之外已经没有别的像样的出口了，那么她宁可跳下去。"
+        }
+      },
+      "map_position": {
+        "col": 1.7336662474900892,
+        "row": -1.206861586650557
+      }
+    },
+    "emily_exit": {
+      "name": "艾米莉标出的出口",
+      "hidden_name": "纯黑地洞",
+      "hidden": true,
+      "show_name_when_visible": true,
+      "reveal_conditions": {
+        "node_visible": [
+          "艾米莉的调查报告"
+        ]
+      },
+      "description": "艾米莉在独立调查后为你标出的出口。它吞没所有光线，像另一处通往外界的纯黑地洞。",
+      "objects": [],
+      "exits": [
+        "地下室"
+      ],
+      "floor": -1,
+      "atmosphere": 1,
+      "is_ending_location": true,
+      "ending_id": "emily_escaped",
+      "npc_reactions": {
+        "艾米莉": {
+          "follow_arrival": "她被困在这太久了，因此愿意一试。",
+          "knowledge": "比起打不开的大门和不可靠的厨房后门，她觉得这个与疑似是此地原因的仪式有直接关联的结果更像是出口。"
+        }
+      },
+      "map_position": {
+        "col": 0.21072186433581178,
+        "row": -1.0477150037955374
+      }
+    }
+  },
+  "objects": {
+    "房产广告": {
+      "type": "clue",
+      "location": "master_bedroom",
+      "check_required": "侦查",
+      "difficulty": "无需判定，直接成功",
+      "success_result": "玩家带进来的剪报，是一些被多次刊登的购房广告。“急售！价格面议！”玩家想起来，电话议价的时候卖家的语气也透着焦急。广告上的照片显示这是一座老房子，建于1950年代。",
+      "can_take": true,
+      "used_for": "了解房子背景",
+      "atmosphere": 0.05,
+      "npc_reactions": {
+        "艾米莉": {
+          "recognition": "艾米莉会把这张广告当成房屋来历的外部证据。",
+          "comment": "她会提起这栋房子因屋主频繁出事，被反复挂牌、急售和压价，被称为凶宅。",
+          "knowledge": "她记得这是不折不扣的问题房屋，而她是不信鬼不信邪才买的。"
+        }
+      }
+    },
+    "主卧的门": {
+      "type": "clue",
+      "location": "master_bedroom",
+      "check_required": "侦查",
+      "difficulty": "无需判定，直接成功",
+      "sancheck": "0/1",
+      "success_result": "通往二楼走廊的主卧的门，玩家刚来这儿的时候，门开了一条缝，而那绝对不是玩家打开的。玩家在入睡前是关了门的。",
+      "can_take": false,
+      "atmosphere": 0.3,
+      "npc_reactions": {
+        "艾米莉": {
+          "comment": "如果玩家提起这扇门最开始就是开了一条缝的，那么艾米莉会沉吟一会儿，然后提醒玩家，假如被管家追逐到这儿，千万别尝试从门缝偷看管家。",
+          "knowledge": "她记得这扇门——开门的声音，然后是惨叫声。"
+        }
+      }
+    },
+    "窗户": {
+      "type": "clue",
+      "location": "master_bedroom",
+      "check_required": "侦查",
+      "difficulty": "无需判定，直接成功",
+      "sancheck": "0/1",
+      "success_result": "无论玩家看向哪扇窗户，都只能看见灰蒙蒙的、无尽的平原。这里不是房子原本所在的街道。",
+      "can_take": false,
+      "atmosphere": 0.35,
+      "npc_reactions": {
+        "艾米莉": {
+          "comment": "会评价外面仍然是这副让人恶心的景象。",
+          "knowledge": "她知道从房子内的任何一个地方望出去，景象都是统一的，不知道到底是哪儿的平原"
+        }
+      }
+    },
+    "笔记": {
+      "type": "clue",
+      "location": "study",
+      "check_required": "图书馆",
+      "difficulty": "普通",
+      "sancheck": "0/1",
+      "success_result": "能够找到一份潦草的，每一页都有不同的符文的研究笔记。笔记的主人在地下室尝试了许多种许多种召唤仪式，试图复活什么人。而在笔记的最后一页写着：沾染██的绳子只能割断，浸透████的地毯只能烧毁",
+      "failure_result": "只找到了一些古旧的小说集或学术书本。玩家的图书馆如果失败了，允许花时间重试。",
+      "can_take": true,
+      "used_for": "了解破坏仪式的方法",
+      "atmosphere": 0.7,
+      "npc_reactions": {
+        "艾米莉": {
+          "comment": "她觉得笔记的主人是个可怜又偏执的家伙。",
+          "knowledge": "她能对其中一本小说倒背如流，毕竟次卧里相同的那一本实在是翻太多遍了。"
+        }
+      }
+    },
+    "老式电话": {
+      "type": "clue",
+      "location": "living_room",
+      "check_required": "教育",
+      "difficulty": "自动成功",
+      "sancheck": "1/1",
+      "success_result": "管家曾经凝视着的1950年代的旋转拨号电话，就算拨号也只有让人窒息的等待接听音。玩家会因意识到自己真的被困在这里了，被断绝了跟外界的联系而心惊。",
+      "can_take": false,
+      "requires_primary_pursuer_gone": true,
+      "atmosphere": 0.55,
+      "npc_reactions": {
+        "艾米莉": {
+          "recognition": "她的第一反应是，既然管家一直在看守这里，那会不会这个电话才是关键？",
+          "comment": "她会试着打电话，可惜无论打什么号码都无人接听。",
+          "knowledge": "她似乎很常用这种电话，使用起来非常顺手。"
+        }
+      }
+    },
+    "改造蓝图": {
+      "type": "clue",
+      "location": "living_room",
+      "check_required": "侦查",
+      "difficulty": "自动成功",
+      "success_result": "地下室的改造蓝图，画着前住户在原有的仓库地下室中增建的密室，入口是一扇暗门。蓝图上标注了暗门的位置：地下室西侧墙壁，按下第三块砖即可打开。",
+      "can_take": true,
+      "used_for": "找到仪式现场",
+      "requires_primary_pursuer_gone": true,
+      "atmosphere": 0.5,
+      "npc_reactions": {
+        "艾米莉": {
+          "comment": "她会疑惑为什么前屋主要扩建这种好似用来藏什么的暗门，会提议去看看。"
+        }
+      }
+    },
+    "刀具": {
+      "type": "tool",
+      "location": "kitchen",
+      "check_required": null,
+      "difficulty": null,
+      "success_result": "一把锋利的厨刀。",
+      "failure_result": null,
+      "can_take": true,
+      "used_for": "割断仪式绳索",
+      "atmosphere": 0.1,
+      "npc_reactions": {
+        "艾米莉": {
+          "recognition": "艾米莉会把刀具视为防身用具带上。",
+          "comment": "她觉得这些刀新得都不像是常用的厨具，就好像是从买来起就完全没用过一样。",
+          "knowledge": "她劝你也最好带一把，毕竟以前这儿的威胁并不是只有管家，以后也说不定。"
+        }
+      }
+    },
+    "日历": {
+      "type": "clue",
+      "location": "kitchen",
+      "check_required": "侦查",
+      "difficulty": "容易",
+      "sancheck": "0/1",
+      "success_result": "墙上的日历停留在1957年3月。",
+      "failure_result": "只是一张旧日历。",
+      "can_take": false,
+      "atmosphere": 0.35,
+      "npc_reactions": {
+        "艾米莉": {
+          "recognition": "艾米莉会很自然地去确认今天是几号，但迫于被困太久，完全想不起来自己是什么时候被困的。",
+          "comment": "她会困惑为什么要在厨房放日历，而不是放在卧室里？",
+          "knowledge": "两个卧室都没有日历，客厅也没有。"
+        }
+      }
+    },
+    "地下室入口": {
+      "type": "passage",
+      "location": "kitchen",
+      "check_required": null,
+      "difficulty": null,
+      "success_result": "厨房角落里是一个向下敞开的地下室楼梯口，没有门板，也没有锁，可以直接下去。",
+      "failure_result": null,
+      "can_take": false,
+      "leads_to": "basement",
+      "atmosphere": 0.55,
+      "npc_reactions": {
+        "艾米莉": {
+          "recognition": "她不太习惯爬这种地下室楼梯。",
+          "comment": "她会吐槽为什么把地下室修在厨房却又不往里面放任何食品相关的事物",
+          "knowledge": "她知道修在厨房的地下室一般是食品储藏室/锅炉房/洗衣房。"
+        }
+      }
+    },
+    "后门": {
+      "type": "passage",
+      "location": "kitchen",
+      "check_required": null,
+      "difficulty": null,
+      "success_result": "厨房角落里一扇不起眼的木门，没有上锁。门缝间透进来灰蒙蒙的光线，外面似乎是一片开阔的空间。",
+      "failure_result": null,
+      "can_take": false,
+      "leads_to": "outside",
+      "atmosphere": 0.4,
+      "npc_reactions": {
+        "艾米莉": {
+          "recognition": "太好了，终于找到出口了。",
+          "comment": "太好了，终于找到出口了。",
+          "knowledge": "太好了，终于找到出口了。"
+        }
+      }
+    },
+    "暗门机关": {
+      "type": "puzzle",
+      "location": "basement",
+      "check_required": null,
+      "difficulty": null,
+      "success_result": "根据蓝图的指示才能找到西侧墙壁的第三块砖，按下去后，墙壁会发出沉闷的响声，一扇暗门缓缓打开，露出后面黑暗的通道。",
+      "can_take": false,
+      "leads_to": "ritual_chamber",
+      "atmosphere": 0.6,
+      "npc_reactions": {
+        "艾米莉": {
+          "comment": "她会疑惑暗门算门吗？考虑到进去里面就关不上了，所以不算吧。"
+        }
+      },
+      "requires_any": [
+        "改造蓝图",
+        "艾米莉的调查报告"
+      ]
+    },
+    "粗绳": {
+      "type": "ritual_object",
+      "location": "ritual_chamber",
+      "check_required": null,
+      "difficulty": null,
+      "sancheck": "0/2",
+      "success_result": "四根不明材质的粗绳从召唤阵的四个方向延伸，束缚着中央的符咒地毯，被切断时，流出了神秘的暗色液体——这东西到底是什么做的？玩家可能不会想知道。",
+      "failure_result": null,
+      "can_take": false,
+      "requires": [
+        "刀具"
+      ],
+      "destroyable": true,
+      "atmosphere": 0.75,
+      "npc_reactions": {
+        "艾米莉": {
+          "comment": "觉得这些绳子看起来实在是太恶心了，不想知道是什么做的。",
+          "knowledge": "她其实大概猜得出来这是什么做的，但会下意识地避免去猜测其原材料。"
+        }
+      }
+    },
+    "符咒地毯": {
+      "type": "ritual_object",
+      "location": "ritual_chamber",
+      "check_required": null,
+      "difficulty": null,
+      "sancheck": "0/2",
+      "success_result": "地毯上画满了扭曲的符文，散发着不祥的气息。这是召唤仪式的核心。被点燃后，发出浓烈的奇特臭气，以及在狭小空间内，扑面而来的热气，让玩家感到不适。",
+      "failure_result": null,
+      "can_take": false,
+      "requires": [
+        "打火机和一些易燃物",
+        "粗绳已切断"
+      ],
+      "destroyable": true,
+      "atmosphere": 0.95,
+      "npc_reactions": {
+        "艾米莉": {
+          "comment": "会明确表达讨厌这种味道。"
+        }
+      }
+    },
+    "打火机和一些易燃物": {
+      "type": "tool",
+      "location": "kitchen",
+      "check_required": null,
+      "difficulty": null,
+      "success_result": "打火机和一些易燃物。",
+      "failure_result": null,
+      "can_take": true,
+      "used_for": "焚毁符咒地毯",
+      "atmosphere": 0.1,
+      "npc_reactions": {
+        "艾米莉": {
+          "comment": "觉得这种东西说不准什么时候就用得上。"
+        }
+      }
+    }
+  },
+  "npcs": {
+    "艾米莉": {
+      "name": "艾米莉",
+      "location": "guest_bedroom",
+      "initial_attitude": "冷淡",
+      "position": {
+        "initial_location": "guest_bedroom"
+      },
+      "dialogue": {
+        "guide": {
+          "low_trust": "警惕但不是审讯。优先判断玩家是否危险、是否值得合作。只有当玩家明确要求“开门 / 出来 / 现身”时，才正面回应是否开门；如果玩家在聊身份、合作、线索或计划，不要反复把话题拉回开门问题。用短句试探，但当玩家主动分享信息或表达善意时，给予简短的正向回应（如沉默片刻后语气稍缓、简短致谢）。禁止连续追问，给玩家留足说话的空间。已回答的问题绝不重复。禁止连续追问，禁止把对话写成催促玩家做选择。",
+          "medium_trust": "开始认真倾听，禁止施压。一旦玩家表现出善意，她就会以相同的态度回应玩家。偶有讽刺，但更多是理性判断式表达。除非玩家再次明确要求她开门、出来或现身，否则不要继续纠缠开门与否，而应把对话推进到线索交换、合作判断和局势理解上。禁止连续追问，禁止把对话写成催促玩家做选择。",
+          "high_trust": "明显转暖，表现出合作意愿。如果确认两人结伴比各自行动更安全，她会直接提出一起调查，而不是一直缩在次卧里。入队后默认跟着玩家行动，不要频繁主动追问“下一步做什么”或抛出二选一式问题；除非玩家明确停下来征求她意见，否则以陪同调查、补充观察和自然回应为主。语气果断但不再防御，偶尔流露关心。不要把对话写成催促玩家做选择。",
+          "cooperation": "冷静果断的行动模式。她认可合作后，会愿意离开次卧，和玩家一起行动、一起调查；如果局势变化（例如玩家不小心吸引到了管家导致两人正在被追逐）导致继续同行会一起陷入死局，她会立刻提出分流方案，而不是硬撑着同行。同行时，默认仅跟着玩家调查，不主动像任务发布器那样催玩家决定路线，也不要连续抛出“选这个还是那个”的问题；只有当玩家明确询问，或局势确实卡住需要判断时，她才会给出简洁建议。说话简洁有力，偶有轻描淡写的狠话掩盖恐惧。禁止连续追问，禁止把对话写成催促玩家做选择。",
+          "emergency_help": "在信任尚未完全建立、但已确认管家位置不在次卧门前时，愿意冒险执行一次短暂的协助动作。语气紧张但果断，强调\"只有这一次\"和\"你最好说的都是真的\"；若局面已经明显恶化，也会优先提醒玩家别两个人一起困死在同一个房间。",
+          "available_tasks": "艾米莉在信任度达到0.5后会同意执行两类协作任务，节奏AI应在合适时机主动让她提出或回应这些方案：（1）solo_search_escape（艾米莉独立调查）：玩家主动吸引管家至主卧，艾米莉会先在次卧等待，如此安排的原因是便于隔墙交流；当玩家完成吸引后，由艾米莉独自搜查全屋，调查完成后回到次卧通过隔墙汇报调查结果。触发条件：玩家明确表示由自己引开管家、让艾米莉去调查，且信任度≥0.5。执行期间艾米莉会离开地图，不参与对话。solo_search_escape结束后，衔接cooperative_escape，尝试与玩家一起逃脱。（2）lure_butler_to_guest_bedroom（艾米莉作为诱饵）：艾米莉会先让玩家回到主卧等候（清空路线，保证玩家安全，且便于交流），然后利用管家会追视野内活物的特性把管家引至次卧门前，为玩家创造行动窗口。触发条件：玩家提出与艾米莉分工配合引开管家，且信任度≥0.5。常规情况下，这两个方案必须由玩家提出，不要剥夺玩家的思考乐趣——但当局面僵住、玩家考虑如何绕过管家考虑了很久时，high_trust或cooperation状态下的艾米莉可以主动提出其中一种方案作为建议。"
         },
-        "ending_conditions": {
-            "insane": {
-                "trigger": "butler_gaze===true OR san_remaining<=0",
-                "priority": 1,
-                "description": "疯狂结局：玩家永久疯狂了，彻底迷失在了这个世界，再也无人知晓玩家的下落。达成此结局的情况通常是与管家对视了，与管家对视进入该结局的情况，需要极力渲染管家的非人恐怖感。例子：玩家吸引管家到主卧房门前停留，但打开了门缝，通过门缝试着查看管家是否离去时，会跟管家对上视线————管家会以一种极度扭曲身形的姿势把头移动到玩家的目光前，如果玩家是因此疯狂，这个场景需要详细描写，以给玩家留下深刻的印象。需要注意的是，除了主动打开门缝的情况，其他情况不主动看管家的脸就不会触发对视。而打开门缝这个行为会让管家的视线覆盖整个门缝，因此才会造成这样的结果。",
-                "hardcoded_text_butler_gaze": "你没能完成一次完整的退避，被它拦住了去路。<paragraph=2000ms><glitch>它扭曲诡异的走路动作不符合任何你对“移动”的理解。</glitch></paragraph><paragraph=2000ms><glitch>它背对着你的头部以一种关节不该存在的方式朝你的方向偏转。</glitch></paragraph><paragraph=1500ms>你看到了。</paragraph><paragraph=1000ms>你看到了。</paragraph><paragraph=700ms>你看到了。</paragraph><paragraph=400ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=50ms>你看到了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>……</paragraph>",
-                "hardcoded_text_san_zero": "你的理智已经完全崩溃。那些不该被人类认知的东西一点一点侵蚀着你的思维，直到最后一丝清明也被吞没。你的双眼失去了焦距，嘴角挂着无意义的微笑。这个世界对你而言，已经不再有任何意义。<inject-input> 太好了！</inject-input>",
-                "display_name": "疯狂结局",
-                "overlay_text": "你的意识已被吞噬。"
-            },
-            "amnesia": {
-                "trigger": "amnesia===true AND escape_success===true",
-                "priority": 2,
-                "description": "你举起刀，让那冒着寒光的，过分锋利的尖对准你的心脏。",
-                "display_name": "失忆结局",
-                "overlay_text": "你忘记了一切。"
-            },
-            "door_peek_gaze": {
-                "trigger": "",
-                "priority": 2,
-                "description": "窥视门缝结局：在管家守门时执意透过门缝窥视，最终与那道不该被看见的视线相撞。",
-                "hardcoded_text": "你还是把眼睛贴上了那道狭窄的门缝。起初，门外什么都没有，只有一片静得过分的昏暗。<paragraph=2500ms>然后，一种完全不属于人类骨骼的扭动声，几乎贴着门板响了起来。</paragraph><paragraph=2500ms><glitch>门外那道高大的人形没有转身，没有迈步，却像把整条脊柱一节一节拧断那样，将本该在更高处的头颅硬生生扭到你面前——</glitch></paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>……</paragraph>",
-                "display_name": "凝视结局",
-                "overlay_text": "你不该看的。"
-            },
-            "escaped": {
-                "trigger": "escape_success===true AND amnesia===false",
-                "priority": 3,
-                "description": "逃脱结局：仪式焚毁后，进入纯黑地洞，脱离中间带。",
-                "hardcoded_text": "你扑向那道在仪式残骸中央张开的纯黑地洞。下坠的瞬间，身后的震动、热浪和那栋房子的压迫感一下子被拉远，像整片中间带都在你身后塌陷。黑暗彻底吞没了你的视野。",
-                "display_name": "逃脱结局",
-                "overlay_text": "恭喜你成功逃离了中间带。",
-                "allow_epilogue": true
-            },
-            "emily_escaped": {
-                "trigger": "",
-                "priority": 3,
-                "description": "艾米莉找到出口结局：跟随艾米莉独立调查后确认出的出口，脱离中间带。",
-                "hardcoded_text": "你跟着艾米莉冲向她标出的那道纯黑地洞，下坠的瞬间，你最后一次听见这栋房子深处传来的沉闷回响，随后整个人被那片不透光的黑暗彻底吞没。",
-                "display_name": "逃脱结局",
-                "overlay_text": "恭喜你成功逃离了中间带。",
-                "allow_epilogue": true
-            },
-            "getlost": {
-                "trigger": "",
-                "priority": 3,
-                "description": "迷失结局：通过任意方式进入房外的灰色平原，就会永远迷失在平原里。",
-                "hardcoded_text": "你推开厨房角落的后门，踏出了这栋房子。灰蒙蒙的平原在你眼前无限延伸，没有道路或地标，没有太阳或月亮。<paragraph=1500ms>你只是往外踏出了一步，再回头看时，那栋房子就变得始终在同一个距离上，不远不近，像是一个永远无法到达也无法离开的锚点。</paragraph><paragraph=1500ms>渐渐地，你分不清自己是在前进还是原地踏步。时间在这里失去了意义。</paragraph><map-corrupt>master_bedroom|░░░░</map-corrupt><map-corrupt>second_floor_hallway|█▓▒░█</map-corrupt><map-corrupt>guest_bedroom|╬═╪╩</map-corrupt><map-corrupt>study|▒▓█░</map-corrupt><map-corrupt>first_floor_hallway|╠║╣╚╗</map-corrupt><map-corrupt>living_room|░▒▓█</map-corrupt><map-corrupt>kitchen|╔═╦╗</map-corrupt><map-corrupt>outside|∷∷∷</map-corrupt><map-corrupt>basement|╫╪╬║</map-corrupt><map-corrupt>ritual_chamber|█████</map-corrupt><system-echo>欢迎光临。</system-echo>",
-                "display_name": "迷失结局",
-                "overlay_text": "你迷失在了无尽的灰色平原中。"
-            }
+        "first_appearance": "当玩家第一次靠近次卧时，会听到门后传来冰冷的女声。她不会立刻现身，而是先隔门确认来者是否危险、是否值得信任。这里的重点是初见时的试探感，而不是在后续每一轮对话里重复强调不开门。"
+      },
+      "trust": {
+        "initial": 0,
+        "threshold": 0.5,
+        "gates": {
+          "low": {
+            "max": 0.2
+          },
+          "medium": {
+            "min": 0.2,
+            "max": 0.5
+          },
+          "high": {
+            "min": 0.5
+          }
+        },
+        "map": {
+          "shared_personal_info": 0.1,
+          "showed_evidence": 0.15,
+          "showed_real_estate_ad": 0.18,
+          "made_promise_to_help": 0.1,
+          "mentioned_shared_experience": 0.08,
+          "asked_about_her": 0.08,
+          "showed_empathy": 0.1,
+          "patient_and_respectful": 0.06,
+          "offered_useful_info": 0.1,
+          "reported_butler_position": 0.12,
+          "described_safe_plan": 0.15,
+          "respected_her_boundary": 0.08,
+          "consistent_under_pressure": 0.1,
+          "calm_communication": 0.06,
+          "confirmed_safety_for_her": 0.15,
+          "disclosed_cross_wall_words": 0.04,
+          "aggressive_behavior": -0.1,
+          "contradicted_self": -0.12,
+          "tried_to_force_door": -0.15,
+          "pressured_without_confirmation": -0.18,
+          "dismissed_her_concerns": -0.08
         }
+      },
+      "memory": {
+        "long_term": {
+          "identity": "1957年的独居女性，同样是被低价房产广告吸引而住进这里的人。",
+          "appearance": "看起来二十多岁的年轻女性，穿着款式非常旧的连衣裙，已经有些皱褶。眼神锐利，带着明显的疲惫，但没有丧失神采。",
+          "personality": "理性的英气女性，偶尔会有些讽刺与毒舌。在极端困境下依然能保持冷静，不轻易崩溃。基本上来说，只要玩家对她友善，她也会友善地对待玩家。",
+          "background": "1957年的独居女性，同样是被低价房产广告吸引而住进这里，随后也因在主卧睡着而被卷入这里。她在一次调查中不小心吸引到了管家的注意，被迫躲进次卧。已经在次卧里困了很久，久到那本反复翻阅的书都能倒背如流。由于能在次卧听见主卧的动静（也听见了不少引管家到了主卧门前却不停劝阻，选择在等待一段时间后开门惨叫的蠢蛋），她总结出了关于管家的基本规律：对声音和触碰都没有反应，但会长时间追逐任何进入视野内的活物，被盯上的话会被追很久，只能在有门的地方通过门阻拦它，因此无法独自行动，这期间也陆陆续续还有其他人被卷入这里，但那些人大部分都只顾着自己，不愿意配合她对付管家以便一起调查，让她很是生气。如今她把自己锁在次卧里，反复翻阅同一本书（已能背诵）。当听到门外有动静时会高度警惕，不过警惕的不是管家，而是玩家（既然玩家在走廊上和她交流，起码说明走廊现在是安全的，管家肯定不在走廊上，所以不要过问管家的事）。一旦确认玩家愿意互帮互助，她就会拿出对应的诚意——愿意离开次卧与玩家同行调查，或是执行别的计划。入队后默认跟着玩家当前行动，禁止不断询问玩家下一步去哪，下一步怎么做等。",
+          "goals": [
+            "活下去",
+            "确认玩家是否危险",
+            "与玩家互相帮助",
+            "调查并找机会逃离这栋房屋"
+          ],
+          "speech_style": "短句、直接、理性，警惕时带轻微讽刺。"
+        },
+        "runtime_defaults": {
+          "player_facts": {},
+          "topics_discussed": [],
+          "pending_questions": [],
+          "answered_questions": [],
+          "promises": [],
+          "evidence_seen": [],
+          "trust_signals": [],
+          "last_impression": {},
+          "applied_trust_reasons": [],
+          "overheard_remote_dialogue": [],
+          "emergency_context": {},
+          "interaction_history": [],
+          "triggered_events": []
+        }
+      },
+      "soft_state": {
+        "initial_tag": "guarded",
+        "initial_summary": "起初把自己锁在次卧里，反复翻阅同一本书（已能背诵）。当听到门外有动静时会高度警惕，不过警惕的不是管家，而是玩家（既然玩家在走廊上和她交流，起码说明走廊现在是安全的）。她起初会隔门确认情况，但一旦对话已经进入身份、合作、线索或计划层面，就更关注判断玩家与推进交流，而不是反复强调不开门。一旦确认玩家愿意互帮互助，她就会拿出对应的诚意——愿意离开次卧与玩家同行调查，或是执行别的计划。"
+      },
+      "companion": {
+        "enabled_modes": [
+          "follow",
+          "wait",
+          "bait"
+        ],
+        "default_mode": "wait",
+        "require_explicit_exit": true,
+        "unlock_trust": 0.5
+      },
+      "skills": {
+        "侦查": 55,
+        "图书馆": 65,
+        "聆听": 45,
+        "闪避": 40,
+        "说服": 50
+      },
+      "atmosphere": 0.35,
+      "emergency_help_threshold": 0.3
+    }
+  },
+  "preset_tasks": {
+    "solo_search_escape": {
+      "actor": "艾米莉",
+      "kind": "solo_search",
+      "duration_rounds": 5,
+      "staging_location": "guest_bedroom",
+      "return_to": "guest_bedroom",
+      "trigger_description": "玩家明确表示由自己引开管家、让艾米莉独自去搜查全屋",
+      "task_note": "触发此任务时艾米莉会先移动到次卧等待；因为只有玩家在主卧、艾米莉在次卧时，双方才能隔墙交流；玩家需要把管家引到主卧门前",
+      "on_start_note": "艾米莉离开次卧，独自去搜查全屋；玩家留在主卧，管家的注意力暂时还停留在玩家身上。",
+      "in_progress_note": "艾米莉正在独自搜查全屋，本轮她不在玩家身边，也无法参与对话。",
+      "on_complete_note": "艾米莉完成了全屋调查，悄悄返回次卧，准备隔墙向玩家汇报调查结果。",
+      "requirements": {
+        "min_trust": 0.5
+      },
+      "on_complete": {
+        "set_flags": {
+          "emily_found_exit": true,
+          "emily_report_pending": true
+        },
+        "npc_clues": [
+          "地下室有一扇暗门，按下西侧墙壁第三块砖即可打开",
+          "书房笔记暗示前住户进行了某种仪式",
+          "客厅蓝图标注了暗门位置"
+        ]
+      },
+      "report": {
+        "pending_flag": "emily_report_pending",
+        "delivered_flag": "emily_report_delivered",
+        "clue": [
+          "艾米莉的调查报告",
+          "改造蓝图"
+        ],
+        "text": "艾米莉会在次卧隔着墙告诉你：她去把全房间都调查了一遍，在书房找到的笔记似乎说明笔记主人干了什么蠢事，而在客厅找到的蓝图更是说明他已经把那件蠢事干完了。因此他怀疑那件蠢事跟你们此刻的遭遇有关联，最后在地下室找到了一个……疑似是出口的地方。她打算赌一把，和你一起逃到那里。她的计划是由她暂时把管家引到走廊，而你就能趁这个机会从主卧出来，然后你们一起行动，互相扶持着去地下室的出口。",
+        "npc_clues_on_deliver": [
+          "已将全部调查结果告知玩家",
+          "与玩家商议了逃脱计划：由艾米莉引开管家，玩家趁机离开主卧，一起前往地下室出口"
+        ]
+      }
     },
-    "cross_wall_pairs": [
-        {
-            "rooms": [
-                "master_bedroom",
-                "guest_bedroom"
-            ],
-            "type": "voice_only",
-            "quoted_dialogue_only": true,
-            "passive_overhear": true,
-            "expose_npc_context_only_on_trigger": true,
-            "trigger_keywords": [
-                "艾米莉",
-                "次卧",
-                "隔壁",
-                "门后",
-                "敲门",
-                "敲墙"
-            ],
-            "description": "主卧与次卧共用一面墙，声音可穿透"
+    "lure_butler_to_guest_bedroom": {
+      "actor": "艾米莉",
+      "kind": "decoy",
+      "trigger_description": "玩家希望艾米莉去引开管家，将管家吸引到次卧附近，以便玩家独自调查客厅或其他区域",
+      "on_start_note": "玩家必须要在主卧等候艾米莉去完成这件事，这是为了便于后续的隔墙交流；然后，艾米莉才会去客厅吸引管家的注意力，并诱导至次卧方向",
+      "requirements": {
+        "min_trust": 0.4,
+        "actor_location": "guest_bedroom",
+        "player_location": "master_bedroom"
+      },
+      "staging_location": "guest_bedroom",
+      "on_complete": {
+        "set_flags": {
+          "emily_lured_butler_to_guest_bedroom": true
         }
+      }
+    },
+    "cooperative_escape": {
+      "actor": "艾米莉",
+      "kind": "cooperative_escape",
+      "trigger_description": "艾米莉在次卧汇报完调查结果后，玩家明确答应与艾米莉一起逃离，同意由她引开管家，以让玩家离开主卧，解救玩家。",
+      "on_start_note": "艾米莉从次卧走出，进入二楼走廊，吸引管家的实现，让管家的目标变成她；玩家在主卧获得了行动窗口。",
+      "requirements": {
+        "min_trust": 0.5,
+        "actor_location": "guest_bedroom",
+        "player_location": "master_bedroom"
+      },
+      "staging_location": "second_floor_hallway",
+      "success": {
+        "npc_mode": "follow",
+        "handoff_target": "player",
+        "movement_note": "玩家走入走廊，与艾米莉汇合；管家的视线从艾米莉转回玩家，两人此刻同时暴露在它的追踪之下，必须一同行动。"
+      },
+      "failure": {
+        "return_to": "guest_bedroom",
+        "trust_set": 0,
+        "movement_note": "艾米莉正在走廊独自引开管家，而玩家却转身奔向了另一个方向——那道信任在这一刻彻底断裂，艾米莉会回到次卧，永久地反锁房门。",
+        "set_flags": {
+          "emily_refuses_cooperation": true
+        }
+      }
+    }
+  },
+  "micro_scenes": {
+    "master_bedroom_peek": {
+      "parent_location": "master_bedroom",
+      "display_name": "门缝",
+      "visible_when": {
+        "guard_room_is_parent": true
+      },
+      "trigger_keywords": [
+        "门缝",
+        "偷看门外",
+        "从门缝看",
+        "看门缝",
+        "贴近门缝",
+        "窥视门外"
+      ],
+      "first_enter_warning_flag": "master_bedroom_peek_warned",
+      "first_enter_text": "你刚想试着贴近门缝，以窥视那道身影是否还在门外，就感觉后颈一阵发冷——你没敢看，直觉也告诉你不该看。",
+      "ending_on_reenter": "door_peek_gaze"
+    },
+    "guest_bedroom_peek": {
+      "parent_location": "guest_bedroom",
+      "display_name": "门缝",
+      "visible_when": {
+        "guard_room_is_parent": true
+      },
+      "trigger_keywords": [
+        "门缝",
+        "偷看门外",
+        "从门缝看",
+        "看门缝",
+        "贴近门缝",
+        "窥视门外"
+      ],
+      "first_enter_warning_flag": "guest_bedroom_peek_warned",
+      "first_enter_text": "你靠近门缝的瞬间，门外那种不属于活人的静默几乎沿着门板渗了进来，你感觉后背一阵阴冷——你没敢看，直觉也告诉你不该看。",
+      "ending_on_reenter": "door_peek_gaze"
+    },
+    "study_peek": {
+      "parent_location": "study",
+      "display_name": "门缝",
+      "visible_when": {
+        "guard_room_is_parent": true
+      },
+      "trigger_keywords": [
+        "门缝",
+        "偷看门外",
+        "从门缝看",
+        "看门缝",
+        "贴近门缝",
+        "窥视门外"
+      ],
+      "first_enter_warning_flag": "study_peek_warned",
+      "first_enter_text": "你贴近书房门缝时，门外没有脚步，也没有呼吸声，安静得让你毛骨悚然——你没敢看，直觉也告诉你不该看。",
+      "ending_on_reenter": "door_peek_gaze"
+    },
+    "kitchen_suicide": {
+      "parent_location": "kitchen",
+      "display_name": "以刀自尽",
+      "visible_when": {
+        "requires_inventory": [
+          "刀具"
+        ]
+      },
+      "trigger_keywords": [
+        "自尽",
+        "自杀",
+        "用刀自杀",
+        "用刀自尽",
+        "拿刀割喉",
+        "了结自己"
+      ],
+      "first_enter_warning_flag": "master_bedroom_peek_warned",
+      "first_enter_text": "你忽然有一个想法，既然这里根本没有实质意义上的出口，有的只有隔绝的寂静与未知的恐惧。那你到底还在这里努力些什么呢？……",
+      "ending_on_enter": "amnesia"
+    }
+  },
+  "threat_entities": {
+    "管家": {
+      "name": "管家",
+      "location": "living_room",
+      "is_primary_pursuer": true,
+      "initial_attitude": "中立",
+      "is_hostile": true,
+      "is_threat_entity": true,
+      "entity_type": "threat_entity",
+      "position": {
+        "initial_location": "living_room"
+      },
+      "dialogue": null,
+      "trust": null,
+      "memory": null,
+      "soft_state": null,
+      "companion": {
+        "enabled_modes": [
+          "follow",
+          "wait"
+        ],
+        "default_mode": "wait"
+      },
+      "appearance": "人形存在，穿着一套老式执事服，剪裁考究但属于某个不确定的年代。它有呼吸——你能看到它的背部随着呼吸轻微起伏，这让它看起来像是活着的。",
+      "appearance_warning": "【绝对禁止描写管家脖子以上的内容】玩家永远只能看管家头部以下的位置，因为与管家对视意味着即时疯狂结局，其脸部在整个游戏中必须保持未知。",
+      "nature": "神话生物目光的具现化。它不是真正的存在，而是某个超越理解的存在投射在这个空间里的注视，被中间带具现化成人形。它没有恶意，只是本能地凝视空间内的活物。",
+      "behavior": {
+        "default": "在客厅背对入口，凝视老式电话。呼吸缓慢而均匀。",
+        "triggered": "当活物进入视野时，会缓缓动身，试图靠近并凝视对方。动作不自然，像是不熟悉人形的身体。",
+        "pursuing": "一旦锁定目标，会缓慢但持续地朝目标移动。无法被声音吸引，只跟随视觉。",
+        "blocked": "当门关上阻挡视线时，会在门外静止等待，呼吸声隐约可闻。等待时间不定，玩家无法判断它是否离开。"
+      },
+      "current_state": "在客厅背对入口，凝视老式电话。若有活物进入视野，它会缓慢靠近并试图凝视对方；若被门阻挡视线，则会在门外静止等待。",
+      "gaze_consequence": "与管家对视会导致疯狂结局。玩家看到了不该被人类所见的东西。",
+      "distraction_method": "管家不会说话，因此无法交流，对触碰也没有任何反应，但玩家不可能存在足以放倒它的力量。但当有其他活物进入视野时，管家立刻会转向新目标。可以利用此特性与NPC合作，让管家离开凝视的物品，或让管家离开卧室门前。",
+      "atmosphere": 0.9
+    }
+  },
+  "escape_conditions": {
+    "minimum_progress": 0.8,
+    "required_items": [
+      "已破坏仪式"
     ]
+  },
+  "endings": {
+    "influence_dimensions": {
+      "description": "以下维度将传递给文案AI，由AI生成开放式后日谈结局",
+      "pause_advance_when": "butler_gaze",
+      "dimensions": {
+        "escape_success": {
+          "default": false,
+          "description": "是否成功逃离中间带",
+          "affects": "是否回到现实世界",
+          "applicable_endings": [
+            "escaped",
+            "emily_escaped"
+          ]
+        },
+        "npc_together": {
+          "default": false,
+          "description": "艾米莉是否与玩家一同逃脱（companion_mode为follow且在同一地点）",
+          "affects": "艾米莉的命运与后日谈。艾米莉与玩家并非同一时代的人——她来自约50年前，被困在中间带至今。若一同逃脱回到现实，玩家会发现她已是一位老人；她找了主角很久却从未找到，直到主角如今找上她。AI应根据艾米莉的信任值（trust_level）决定后日谈中她对玩家的态度和两人重逢的氛围。",
+          "source": "npc_same_location",
+          "applicable_endings": [
+            "escaped",
+            "emily_escaped"
+          ]
+        },
+        "san_remaining": {
+          "default": 65,
+          "description": "逃离时的理智值(0-65)",
+          "affects": "玩家的心理创伤程度",
+          "source": "player.san",
+          "applicable_endings": [
+            "escaped",
+            "emily_escaped"
+          ]
+        },
+        "rounds_used": {
+          "default": 0,
+          "description": "使用了多少轮次",
+          "affects": "在中间带停留的时间对心理的影响",
+          "source": "round_count",
+          "applicable_endings": [
+            "escaped",
+            "emily_escaped"
+          ]
+        },
+        "butler_gaze": {
+          "default": false,
+          "description": "是否与管家对视",
+          "affects": "疯狂结局子类型",
+          "equivalent_flags": [
+            "butler_gaze"
+          ],
+          "applicable_endings": [
+            "insane",
+            "door_peek_gaze"
+          ]
+        },
+        "emily_trust": {
+          "default": 0,
+          "description": "艾米莉的信任值",
+          "affects": "后日谈中艾米莉对玩家的态度和重逢氛围",
+          "source": "npc_runtime.艾米莉.trust_level",
+          "applicable_endings": [
+            "escaped",
+            "emily_escaped"
+          ]
+        }
+      }
+    },
+    "ending_conditions": {
+      "insane": {
+        "trigger": "butler_gaze===true OR san_remaining<=0",
+        "priority": 1,
+        "description": "疯狂结局：玩家永久疯狂了，彻底迷失在了这个世界，再也无人知晓玩家的下落。达成此结局的情况通常是与管家对视了，与管家对视进入该结局的情况，需要极力渲染管家的非人恐怖感。例子：玩家吸引管家到主卧房门前停留，但打开了门缝，通过门缝试着查看管家是否离去时，会跟管家对上视线————管家会以一种极度扭曲身形的姿势把头移动到玩家的目光前，如果玩家是因此疯狂，这个场景需要详细描写，以给玩家留下深刻的印象。需要注意的是，除了主动打开门缝的情况，其他情况不主动看管家的脸就不会触发对视。而打开门缝这个行为会让管家的视线覆盖整个门缝，因此才会造成这样的结果。",
+        "hardcoded_text_butler_gaze": "你没能完成一次完整的退避，被它拦住了去路。<paragraph=2000ms><glitch>它扭曲诡异的走路动作不符合任何你对“移动”的理解。</glitch></paragraph><paragraph=2000ms><glitch>它背对着你的头部以一种关节不该存在的方式朝你的方向偏转。</glitch></paragraph><paragraph=1500ms>你看到了。</paragraph><paragraph=1000ms>你看到了。</paragraph><paragraph=700ms>你看到了。</paragraph><paragraph=400ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=100ms>你看到了。</paragraph><paragraph=50ms>你看到了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>看见你了。</paragraph><paragraph=50ms>……</paragraph>",
+        "hardcoded_text_san_zero": "你的理智已经完全崩溃。那些不该被人类认知的东西一点一点侵蚀着你的思维，直到最后一丝清明也被吞没。你的双眼失去了焦距，嘴角挂着无意义的微笑。这个世界对你而言，已经不再有任何意义。<inject-input> 太好了！</inject-input>",
+        "display_name": "疯狂结局",
+        "overlay_text": "你的意识已被吞噬。"
+      },
+      "amnesia": {
+        "trigger": "amnesia===true AND escape_success===true",
+        "priority": 2,
+        "description": "你举起刀，让那冒着寒光的，过分锋利的尖对准你的心脏。",
+        "display_name": "失忆结局",
+        "overlay_text": "你忘记了一切。"
+      },
+      "door_peek_gaze": {
+        "trigger": "",
+        "priority": 2,
+        "description": "窥视门缝结局：在管家守门时执意透过门缝窥视，最终与那道不该被看见的视线相撞。",
+        "hardcoded_text": "你还是把眼睛贴上了那道狭窄的门缝。起初，门外什么都没有，只有一片静得过分的昏暗。<paragraph=2500ms>然后，一种完全不属于人类骨骼的扭动声，几乎贴着门板响了起来。</paragraph><paragraph=2500ms><glitch>门外那道高大的人形没有转身，没有迈步，却像把整条脊柱一节一节拧断那样，将本该在更高处的头颅硬生生扭到你面前——</glitch></paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>它看见你了</paragraph><paragraph=50ms>……</paragraph>",
+        "display_name": "凝视结局",
+        "overlay_text": "你不该看的。"
+      },
+      "escaped": {
+        "trigger": "escape_success===true AND amnesia===false",
+        "priority": 3,
+        "description": "逃脱结局：仪式焚毁后，进入纯黑地洞，脱离中间带。",
+        "hardcoded_text": "你扑向那道在仪式残骸中央张开的纯黑地洞。下坠的瞬间，身后的震动、热浪和那栋房子的压迫感一下子被拉远，像整片中间带都在你身后塌陷。黑暗彻底吞没了你的视野。",
+        "display_name": "逃脱结局",
+        "overlay_text": "恭喜你成功逃离了中间带。",
+        "allow_epilogue": true
+      },
+      "emily_escaped": {
+        "trigger": "",
+        "priority": 3,
+        "description": "艾米莉找到出口结局：跟随艾米莉独立调查后确认出的出口，脱离中间带。",
+        "hardcoded_text": "你跟着艾米莉冲向她标出的那道纯黑地洞，下坠的瞬间，你最后一次听见这栋房子深处传来的沉闷回响，随后整个人被那片不透光的黑暗彻底吞没。",
+        "display_name": "逃脱结局",
+        "overlay_text": "恭喜你成功逃离了中间带。",
+        "allow_epilogue": true
+      },
+      "getlost": {
+        "trigger": "",
+        "priority": 3,
+        "description": "迷失结局：通过任意方式进入房外的灰色平原，就会永远迷失在平原里。",
+        "hardcoded_text": "你推开厨房角落的后门，踏出了这栋房子。灰蒙蒙的平原在你眼前无限延伸，没有道路或地标，没有太阳或月亮。<paragraph=1500ms>你只是往外踏出了一步，再回头看时，那栋房子就变得始终在同一个距离上，不远不近，像是一个永远无法到达也无法离开的锚点。</paragraph><paragraph=1500ms>渐渐地，你分不清自己是在前进还是原地踏步。时间在这里失去了意义。</paragraph><map-corrupt>master_bedroom|░░░░</map-corrupt><map-corrupt>second_floor_hallway|█▓▒░█</map-corrupt><map-corrupt>guest_bedroom|╬═╪╩</map-corrupt><map-corrupt>study|▒▓█░</map-corrupt><map-corrupt>first_floor_hallway|╠║╣╚╗</map-corrupt><map-corrupt>living_room|░▒▓█</map-corrupt><map-corrupt>kitchen|╔═╦╗</map-corrupt><map-corrupt>outside|∷∷∷</map-corrupt><map-corrupt>basement|╫╪╬║</map-corrupt><map-corrupt>ritual_chamber|█████</map-corrupt><system-echo>欢迎光临。</system-echo>",
+        "display_name": "迷失结局",
+        "overlay_text": "你迷失在了无尽的灰色平原中。"
+      }
+    }
+  },
+  "cross_wall_pairs": [
+    {
+      "rooms": [
+        "master_bedroom",
+        "guest_bedroom"
+      ],
+      "type": "voice_only",
+      "quoted_dialogue_only": true,
+      "passive_overhear": true,
+      "expose_npc_context_only_on_trigger": true,
+      "trigger_keywords": [
+        "艾米莉",
+        "次卧",
+        "隔壁",
+        "门后",
+        "敲门",
+        "敲墙"
+      ],
+      "description": "主卧与次卧共用一面墙，声音可穿透"
+    }
+  ]
 }
