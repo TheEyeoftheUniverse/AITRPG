@@ -16,6 +16,7 @@ from ..game_state import character_card as character_card_module
 from ..game_state.placeholder_resolver import (
     resolve_in,
     resolve_hard_in,
+    resolve_hard_placeholders,
     get_and_clear_pending_checks,
 )
 from ..theatrical_parser import parse_theatrical_tags
