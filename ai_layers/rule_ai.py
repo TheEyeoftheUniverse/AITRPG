@@ -594,7 +594,7 @@ class RuleAI:
              and not self._requirements_met(normalized["object_context"].get("requires"), game_state))
             or self._get_object_access_block_reason(normalized["object_context"], game_state)
         ):
-            normalized["check"] = self._build_object_check(normalized["object_context"])
+            normalized["check"] = {"required": False, "skill": None, "difficulty": "无需判定"}
 
         self._apply_close_door_override(normalized, player_input, game_state, module_data)
         normalized["location_context"] = location_context if isinstance(location_context, dict) else {}
@@ -761,7 +761,7 @@ class RuleAI:
             plan["normalized_action"]["target_kind"] = "object"
             plan["normalized_action"]["target_key"] = object_key
             plan["object_context"] = object_context
-            plan["check"] = self._build_object_check(object_context)
+            plan["check"] = {"required": False, "skill": None, "difficulty": "无需判定"}
 
             requires = object_data.get("requires")
             if requires and not self._requirements_met(requires, game_state):
@@ -1349,14 +1349,6 @@ class RuleAI:
         return len(text) >= 4 and not any(
             keyword in text for keyword in ["调查", "查看", "观察", "搜索", "拿", "取", "使用", "烧", "破坏"]
         )
-
-    def _build_object_check(self, object_context: dict) -> dict:
-        object_context = object_context if isinstance(object_context, dict) else {}
-        return {
-            "required": bool(object_context.get("check_required")),
-            "skill": object_context.get("check_required"),
-            "difficulty": self._normalize_difficulty(object_context.get("difficulty")),
-        }
 
     def _merge_nested_dict(self, base: dict, incoming: dict) -> dict:
         merged = dict(base or {})

@@ -388,9 +388,6 @@
     "房产广告": {
       "type": "clue",
       "location": "master_bedroom",
-      "check_required": "侦查",
-      "difficulty": "无需判定，直接成功",
-      "success_result": "玩家带进来的剪报，是一些被多次刊登的购房广告。“急售！价格面议！”玩家想起来，电话议价的时候卖家的语气也透着焦急。广告上的照片显示这是一座老房子，建于1950年代。",
       "can_take": true,
       "used_for": "了解房子背景",
       "atmosphere": 0.05,
@@ -400,15 +397,14 @@
           "comment": "她会提起这栋房子因屋主频繁出事，被反复挂牌、急售和压价，被称为凶宅。",
           "knowledge": "她记得这是不折不扣的问题房屋，而她是不信鬼不信邪才买的。"
         }
-      }
+      },
+      "description": "{自动:侦查>=1}",
+      "examine_text": "玩家带进来的剪报，是一些被多次刊登的购房广告。“急售！价格面议！”玩家想起来，电话议价的时候卖家的语气也透着焦急。广告上的照片显示这是一座老房子，建于1950年代。"
     },
     "主卧的门": {
       "type": "clue",
       "location": "master_bedroom",
-      "check_required": "侦查",
-      "difficulty": "无需判定，直接成功",
       "sancheck": "0/1",
-      "success_result": "通往二楼走廊的主卧的门，玩家刚来这儿的时候，门开了一条缝，而那绝对不是玩家打开的。玩家在入睡前是关了门的。",
       "can_take": false,
       "atmosphere": 0.3,
       "npc_reactions": {
@@ -416,15 +412,14 @@
           "comment": "如果玩家提起这扇门最开始就是开了一条缝的，那么艾米莉会沉吟一会儿，然后提醒玩家，假如被管家追逐到这儿，千万别尝试从门缝偷看管家。",
           "knowledge": "她记得这扇门——开门的声音，然后是惨叫声。"
         }
-      }
+      },
+      "description": "{自动:侦查>=1}",
+      "examine_text": "通往二楼走廊的主卧的门，玩家刚来这儿的时候，门开了一条缝，而那绝对不是玩家打开的。玩家在入睡前是关了门的。"
     },
     "窗户": {
       "type": "clue",
       "location": "master_bedroom",
-      "check_required": "侦查",
-      "difficulty": "无需判定，直接成功",
       "sancheck": "0/1",
-      "success_result": "无论玩家看向哪扇窗户，都只能看见灰蒙蒙的、无尽的平原。这里不是房子原本所在的街道。",
       "can_take": false,
       "atmosphere": 0.35,
       "npc_reactions": {
@@ -432,16 +427,14 @@
           "comment": "会评价外面仍然是这副让人恶心的景象。",
           "knowledge": "她知道从房子内的任何一个地方望出去，景象都是统一的，不知道到底是哪儿的平原"
         }
-      }
+      },
+      "description": "{自动:侦查>=1}",
+      "examine_text": "无论玩家看向哪扇窗户，都只能看见灰蒙蒙的、无尽的平原。这里不是房子原本所在的街道。"
     },
     "笔记": {
       "type": "clue",
       "location": "study",
-      "check_required": "图书馆",
-      "difficulty": "普通",
       "sancheck": "0/1",
-      "success_result": "能够找到一份潦草的，每一页都有不同的符文的研究笔记。笔记的主人在地下室尝试了许多种许多种召唤仪式，试图复活什么人。而在笔记的最后一页写着：沾染██的绳子只能割断，浸透████的地毯只能烧毁",
-      "failure_result": "只找到了一些古旧的小说集或学术书本。玩家的图书馆如果失败了，允许花时间重试。",
       "can_take": true,
       "used_for": "了解破坏仪式的方法",
       "atmosphere": 0.7,
@@ -450,15 +443,14 @@
           "comment": "她觉得笔记的主人是个可怜又偏执的家伙。",
           "knowledge": "她能对其中一本小说倒背如流，毕竟次卧里相同的那一本实在是翻太多遍了。"
         }
-      }
+      },
+      "description": "{检定:图书馆}",
+      "examine_text": "能够找到一份潦草的，每一页都有不同的符文的研究笔记。笔记的主人在地下室尝试了许多种许多种召唤仪式，试图复活什么人。而在笔记的最后一页写着：沾染██的绳子只能割断，浸透████的地毯只能烧毁"
     },
     "老式电话": {
       "type": "clue",
       "location": "living_room",
-      "check_required": "教育",
-      "difficulty": "自动成功",
       "sancheck": "1/1",
-      "success_result": "管家曾经凝视着的1950年代的旋转拨号电话，就算拨号也只有让人窒息的等待接听音。玩家会因意识到自己真的被困在这里了，被断绝了跟外界的联系而心惊。",
       "can_take": false,
       "requires_primary_pursuer_gone": true,
       "atmosphere": 0.55,
@@ -468,14 +460,13 @@
           "comment": "她会试着打电话，可惜无论打什么号码都无人接听。",
           "knowledge": "她似乎很常用这种电话，使用起来非常顺手。"
         }
-      }
+      },
+      "description": "{自动:教育>=1}",
+      "examine_text": "管家曾经凝视着的1950年代的旋转拨号电话，就算拨号也只有让人窒息的等待接听音。玩家会因意识到自己真的被困在这里了，被断绝了跟外界的联系而心惊。"
     },
     "改造蓝图": {
       "type": "clue",
       "location": "living_room",
-      "check_required": "侦查",
-      "difficulty": "自动成功",
-      "success_result": "地下室的改造蓝图，画着前住户在原有的仓库地下室中增建的密室，入口是一扇暗门。蓝图上标注了暗门的位置：地下室西侧墙壁，按下第三块砖即可打开。",
       "can_take": true,
       "used_for": "找到仪式现场",
       "requires_primary_pursuer_gone": true,
@@ -484,15 +475,13 @@
         "艾米莉": {
           "comment": "她会疑惑为什么前屋主要扩建这种好似用来藏什么的暗门，会提议去看看。"
         }
-      }
+      },
+      "description": "{自动:侦查>=1}",
+      "examine_text": "地下室的改造蓝图，画着前住户在原有的仓库地下室中增建的密室，入口是一扇暗门。蓝图上标注了暗门的位置：地下室西侧墙壁，按下第三块砖即可打开。"
     },
     "刀具": {
       "type": "tool",
       "location": "kitchen",
-      "check_required": null,
-      "difficulty": null,
-      "success_result": "一把锋利的厨刀。",
-      "failure_result": null,
       "can_take": true,
       "used_for": "割断仪式绳索",
       "atmosphere": 0.1,
@@ -502,16 +491,13 @@
           "comment": "她觉得这些刀新得都不像是常用的厨具，就好像是从买来起就完全没用过一样。",
           "knowledge": "她劝你也最好带一把，毕竟以前这儿的威胁并不是只有管家，以后也说不定。"
         }
-      }
+      },
+      "examine_text": "一把锋利的厨刀。"
     },
     "日历": {
       "type": "clue",
       "location": "kitchen",
-      "check_required": "侦查",
-      "difficulty": "容易",
       "sancheck": "0/1",
-      "success_result": "墙上的日历停留在1957年3月。",
-      "failure_result": "只是一张旧日历。",
       "can_take": false,
       "atmosphere": 0.35,
       "npc_reactions": {
@@ -520,15 +506,13 @@
           "comment": "她会困惑为什么要在厨房放日历，而不是放在卧室里？",
           "knowledge": "两个卧室都没有日历，客厅也没有。"
         }
-      }
+      },
+      "description": "{检定:侦查}",
+      "examine_text": "墙上的日历停留在1957年3月。"
     },
     "地下室入口": {
       "type": "passage",
       "location": "kitchen",
-      "check_required": null,
-      "difficulty": null,
-      "success_result": "厨房角落里是一个向下敞开的地下室楼梯口，没有门板，也没有锁，可以直接下去。",
-      "failure_result": null,
       "can_take": false,
       "leads_to": "basement",
       "atmosphere": 0.55,
@@ -538,15 +522,12 @@
           "comment": "她会吐槽为什么把地下室修在厨房却又不往里面放任何食品相关的事物",
           "knowledge": "她知道修在厨房的地下室一般是食品储藏室/锅炉房/洗衣房。"
         }
-      }
+      },
+      "examine_text": "厨房角落里是一个向下敞开的地下室楼梯口，没有门板，也没有锁，可以直接下去。"
     },
     "后门": {
       "type": "passage",
       "location": "kitchen",
-      "check_required": null,
-      "difficulty": null,
-      "success_result": "厨房角落里一扇不起眼的木门，没有上锁。门缝间透进来灰蒙蒙的光线，外面似乎是一片开阔的空间。",
-      "failure_result": null,
       "can_take": false,
       "leads_to": "outside",
       "atmosphere": 0.4,
@@ -556,14 +537,12 @@
           "comment": "太好了，终于找到出口了。",
           "knowledge": "太好了，终于找到出口了。"
         }
-      }
+      },
+      "examine_text": "厨房角落里一扇不起眼的木门，没有上锁。门缝间透进来灰蒙蒙的光线，外面似乎是一片开阔的空间。"
     },
     "暗门机关": {
       "type": "puzzle",
       "location": "basement",
-      "check_required": null,
-      "difficulty": null,
-      "success_result": "根据蓝图的指示才能找到西侧墙壁的第三块砖，按下去后，墙壁会发出沉闷的响声，一扇暗门缓缓打开，露出后面黑暗的通道。",
       "can_take": false,
       "leads_to": "ritual_chamber",
       "atmosphere": 0.6,
@@ -575,16 +554,13 @@
       "requires_any": [
         "改造蓝图",
         "艾米莉的调查报告"
-      ]
+      ],
+      "examine_text": "根据蓝图的指示才能找到西侧墙壁的第三块砖，按下去后，墙壁会发出沉闷的响声，一扇暗门缓缓打开，露出后面黑暗的通道。"
     },
     "粗绳": {
       "type": "ritual_object",
       "location": "ritual_chamber",
-      "check_required": null,
-      "difficulty": null,
       "sancheck": "0/2",
-      "success_result": "四根不明材质的粗绳从召唤阵的四个方向延伸，束缚着中央的符咒地毯，被切断时，流出了神秘的暗色液体——这东西到底是什么做的？玩家可能不会想知道。",
-      "failure_result": null,
       "can_take": false,
       "requires": [
         "刀具"
@@ -596,16 +572,13 @@
           "comment": "觉得这些绳子看起来实在是太恶心了，不想知道是什么做的。",
           "knowledge": "她其实大概猜得出来这是什么做的，但会下意识地避免去猜测其原材料。"
         }
-      }
+      },
+      "examine_text": "四根不明材质的粗绳从召唤阵的四个方向延伸，束缚着中央的符咒地毯，被切断时，流出了神秘的暗色液体——这东西到底是什么做的？玩家可能不会想知道。"
     },
     "符咒地毯": {
       "type": "ritual_object",
       "location": "ritual_chamber",
-      "check_required": null,
-      "difficulty": null,
       "sancheck": "0/2",
-      "success_result": "地毯上画满了扭曲的符文，散发着不祥的气息。这是召唤仪式的核心。被点燃后，发出浓烈的奇特臭气，以及在狭小空间内，扑面而来的热气，让玩家感到不适。",
-      "failure_result": null,
       "can_take": false,
       "requires": [
         "打火机和一些易燃物",
@@ -617,15 +590,12 @@
         "艾米莉": {
           "comment": "会明确表达讨厌这种味道。"
         }
-      }
+      },
+      "examine_text": "地毯上画满了扭曲的符文，散发着不祥的气息。这是召唤仪式的核心。被点燃后，发出浓烈的奇特臭气，以及在狭小空间内，扑面而来的热气，让玩家感到不适。"
     },
     "打火机和一些易燃物": {
       "type": "tool",
       "location": "kitchen",
-      "check_required": null,
-      "difficulty": null,
-      "success_result": "打火机和一些易燃物。",
-      "failure_result": null,
       "can_take": true,
       "used_for": "焚毁符咒地毯",
       "atmosphere": 0.1,
@@ -633,7 +603,8 @@
         "艾米莉": {
           "comment": "觉得这种东西说不准什么时候就用得上。"
         }
-      }
+      },
+      "examine_text": "打火机和一些易燃物。"
     }
   },
   "npcs": {
