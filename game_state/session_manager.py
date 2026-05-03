@@ -2819,6 +2819,25 @@ class SessionManager:
         if session_id in self.sessions:
             del self.sessions[session_id]
 
+    def _normalize_string_item(self, raw: Any) -> str:
+        """把 LLM 输出里的 clue / inventory item 统一归一为 str, 防止 dict / list 等
+        非 hashable 类型污染 set() 调用 (如 _get_locked_exits)。
+
+        - str 直接 strip
+        - dict 取 name / clue / id / key / title 字段; LLM 偶尔会写 {"name": "...", "description": "..."}
+        - 其他类型返回空串 (调用方据此跳过)
+
+        v3.2.0 新增: 用户实测 _get_locked_exits 抛 unhashable type: 'dict' 后修复。
+        """
+        if isinstance(raw, str):
+            return raw.strip()
+        if isinstance(raw, dict):
+            for k in ("name", "clue", "id", "key", "title"):
+                v = raw.get(k)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+        return ""
+
     def update_state(self, session_id: str, rhythm_result: Dict[str, Any]):
         """根据节奏AI的结果更新游戏状态"""
         if session_id not in self.sessions:
@@ -2834,8 +2853,9 @@ class SessionManager:
         if "world_changes" in rhythm_result:
             changes = rhythm_result["world_changes"]
             if "clues" in changes:
-                for clue in changes["clues"]:
-                    if clue not in state["world_state"]["clues_found"]:
+                for clue_raw in changes["clues"]:
+                    clue = self._normalize_string_item(clue_raw)
+                    if clue and clue not in state["world_state"]["clues_found"]:
                         state["world_state"]["clues_found"].append(clue)
 
             if "san_delta" in changes:
@@ -2844,14 +2864,16 @@ class SessionManager:
 
             if "inventory_add" in changes:
                 inventory = state["player"].setdefault("inventory", [])
-                for item in changes["inventory_add"]:
+                for item_raw in changes["inventory_add"]:
+                    item = self._normalize_string_item(item_raw)
                     if item and item not in inventory:
                         inventory.append(item)
 
             if "inventory_remove" in changes:
                 inventory = state["player"].setdefault("inventory", [])
-                for item in changes["inventory_remove"]:
-                    if item in inventory:
+                for item_raw in changes["inventory_remove"]:
+                    item = self._normalize_string_item(item_raw)
+                    if item and item in inventory:
                         inventory.remove(item)
 
             if "flags" in changes and isinstance(changes["flags"], dict):
@@ -3022,7 +3044,13 @@ class SessionManager:
         objects = module_data.get("objects", {})
         inventory = state.get("player", {}).get("inventory", [])
         clues_found = state.get("world_state", {}).get("clues_found", [])
-        all_items = set(inventory) | set(clues_found)
+        # 防御性过滤: 历史 session 可能已污染 (LLM 写过 dict 形式 clue), set() 会抛
+        # unhashable; 跳过非 str 元素而不是崩。日志一行让管理员可见。
+        all_items = set(item for item in inventory if isinstance(item, str))
+        all_items |= set(c for c in clues_found if isinstance(c, str))
+        non_str = [c for c in clues_found if not isinstance(c, str)]
+        if non_str:
+            print(f"[SessionManager] WARN: clues_found 含 {len(non_str)} 个非 str 元素已忽略 (session={session_id})")
 
         locked = set()
         for obj_name, obj_data in objects.items():
@@ -3051,7 +3079,8 @@ class SessionManager:
 
         inventory = state.get("player", {}).get("inventory", [])
         clues_found = state.get("world_state", {}).get("clues_found", [])
-        all_items = set(inventory) | set(clues_found)
+        all_items = set(item for item in inventory if isinstance(item, str))
+        all_items |= set(c for c in clues_found if isinstance(c, str))
 
         for cond in conditions:
             if cond in all_items:
