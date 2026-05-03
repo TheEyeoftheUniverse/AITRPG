@@ -33,13 +33,26 @@ LUCK_RANGE = (15, 90)
 AGE_RANGE = (22, 39)         # 推荐范围 (随机生成 + 模板默认)
 AGE_RANGE_HARD = (15, 90)    # 导入时的硬性允许范围 (放宽接受 v2)
 
-# COC7 "派生检定" — 中文技能名 → 属性 key 的映射, 用于 resolve_check 的取值降级。
-# COC7 规则书: 灵感 (Idea) = INT 检定; 幸运 (Luck) = 幸运值检定; 知识 (Know) = EDU 检定。
+# COC7 检定中文名 → 属性 key 的映射, 用于 resolve_check 的取值降级。
+# 包含两类:
+#   (a) 派生检定 (规则书的 "属性即检定值"): 灵感=INT, 幸运=LUCK, 知识=EDU
+#   (b) 8 大属性的中文别名: 模组作者 / 规则AI 在 check.skill 里写中文属性名时,
+#       不应到 skills 字典里查 (会查不到→0), 而应直接读 attributes[英文 key]。
 # 模组作者 / 规则AI 写这些中文名作 skill 时, 应当读对应属性值而非到 skills 字典里查 (会查不到→ 0)。
 DERIVED_CHECK_ATTRIBUTE_ALIASES = {
+    # 派生检定 (Idea/Luck/Know)
     "灵感": "INT",
     "幸运": "LUCK",
     "知识": "EDU",
+    # 8 大属性中文名 → 英文 key (POW 在 COC7 中文规则书里作 "意志")
+    "力量": "STR",
+    "体质": "CON",
+    "敏捷": "DEX",
+    "外貌": "APP",
+    "意志": "POW",
+    "体型": "SIZ",
+    "智力": "INT",
+    "教育": "EDU",
 }
 
 ATTRIBUTE_DICE = {
@@ -573,19 +586,21 @@ def get_check_value(skill_name: Any, player_state: Optional[Dict[str, Any]]) -> 
     1. 普通技能 (侦查 / 聆听 / 图书馆 / ...): 走 player_state.skills[name]
     2. COC7 派生检定 (灵感 / 幸运 / 知识): 走 player_state.attributes[INT/LUCK/EDU]
        - 这是规则书规定的 "属性即检定值" 用法; 模组 / 规则AI 写中文派生名时不应到 skills 里查
-    3. 8 大属性直接检定 (STR / CON / DEX / APP / POW / SIZ / INT / EDU / LUCK):
-       走 player_state.attributes[NAME]
+    3. 属性直接检定 (中英文都接受):
+       - 英文 key (STR/CON/DEX/APP/POW/SIZ/INT/EDU/LUCK)
+       - 中文别名 (力量/体质/敏捷/外貌/意志/体型/智力/教育/幸运) — 规则AI 倾向写中文
+       全部走 player_state.attributes[英文 key]
 
     全部命中失败返回 0 (与旧行为兼容; 调用方根据需要决定是否报错)。
     PRESET_PLAYER_PROFILE 没有 attributes 字段, 但 LUCK 在顶层 luck — 单独兜底。
 
-    需求文档: 用户反馈 "灵感对照值 0, 应读 INT" — Phase 4 后置修复, 也为 Phase 5
-    {检定:灵感} / {检定:幸运} 等硬 placeholder 提供基础。
+    需求文档: 用户反馈 "灵感/力量 对照值 0" — 后置修复, 也为 Phase 5
+    {检定:灵感} / {检定:力量} 等硬 placeholder 提供取值基础。
     """
     if not isinstance(skill_name, str) or not skill_name or not isinstance(player_state, dict):
         return 0
 
-    # 1) 优先 skills (玩家技能投入决定的数值)
+    # 1) 优先 skills (玩家技能投入决定的数值; 内置技能 / 自定义技能都在这)
     skills = player_state.get("skills") or {}
     if skill_name in skills:
         try:
@@ -593,7 +608,7 @@ def get_check_value(skill_name: Any, player_state: Optional[Dict[str, Any]]) -> 
         except (TypeError, ValueError):
             return 0
 
-    # 2/3) 派生别名 → 属性 key; 或玩家直接写 8 大属性 / LUCK 名
+    # 2/3) 中文派生检定 / 中文属性别名 / 英文属性 → 属性 key
     attr_key = DERIVED_CHECK_ATTRIBUTE_ALIASES.get(skill_name)
     if attr_key is None and skill_name in ATTRIBUTE_RANGES:
         attr_key = skill_name
