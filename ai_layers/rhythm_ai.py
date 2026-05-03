@@ -452,18 +452,16 @@ class RhythmAI:
         hint = normalized.get("hint")
         normalized["hint"] = str(hint) if hint else None
 
-        if not isinstance(normalized.get("location_context"), dict):
-            normalized["location_context"] = base_result["location_context"]
-        if normalized.get("object_context") is not None and not isinstance(normalized.get("object_context"), dict):
+        # Phase 3/4 后 location_context 经过 resolve_in, LLM 输出不该盖掉它。
+        # 用 base_result 的已解析版本无条件覆盖; 其他系统生成的 context 同理。
+        normalized["location_context"] = base_result["location_context"]
+        normalized["threat_entity_context"] = base_result["threat_entity_context"]
+        normalized["npc_context"] = base_result["npc_context"]
+        normalized["atmosphere_guide"] = base_result["atmosphere_guide"]
+        if not isinstance(normalized.get("object_context"), dict):
             normalized["object_context"] = base_result["object_context"]
-        if normalized.get("threat_entity_context") is not None and not isinstance(normalized.get("threat_entity_context"), dict):
-            normalized["threat_entity_context"] = base_result["threat_entity_context"]
-        if not isinstance(normalized.get("npc_context"), dict):
-            normalized["npc_context"] = base_result["npc_context"]
         if not isinstance(normalized.get("npc_action_guide"), dict):
             normalized["npc_action_guide"] = base_result["npc_action_guide"]
-        if not isinstance(normalized.get("atmosphere_guide"), dict):
-            normalized["atmosphere_guide"] = base_result["atmosphere_guide"]
         if not isinstance(normalized.get("follow_arrival_reaction_context"), dict):
             normalized["follow_arrival_reaction_context"] = base_result.get("follow_arrival_reaction_context", {})
         if not isinstance(normalized.get("stage_assessment"), str):
