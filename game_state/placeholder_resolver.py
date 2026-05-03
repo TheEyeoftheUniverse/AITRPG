@@ -23,13 +23,15 @@
 """
 
 import logging
+import random
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from .character_card import (
     ATTRIBUTE_RANGES,
     BACKGROUND_FIELDS,
     _BACKGROUND_LABEL_ZH,
+    get_check_value,
 )
 
 
@@ -186,3 +188,202 @@ def resolve_in(obj: Any,
     if isinstance(obj, tuple):
         return tuple(resolve_in(v, card, player_state) for v in obj)
     return obj
+
+
+# ============================================================================
+# Phase 5: 硬 placeholder ({检定:X} / {自动:X>=N})
+# 在开局时解析, 骰子结果回灌到 module_data 文本 + 累积 pending_checks 供前端
+# 骰点动画管线。d100+threshold 逻辑内联实现, 复用 get_check_value 做取值;
+# 不 import rule_ai 以避免 game_state -> ai_layers 循环依赖。
+# 需求文档: docs/requirements/2026-05-03-placeholder-and-background-routing.md §3.2.2
+# ============================================================================
+
+# {检定:侦查}, {检定:侦查/困难}, {检定:STR/极难} — 允许中英文 skill/attribute 名
+_HARD_CHECK_RE = re.compile(r"\{检定:([^}/]+?)(?:/([^}/]+?))?\}")
+
+# {自动:STR>=60} — 仅允许属性名 (中英文)
+_HARD_AUTO_RE = re.compile(r"\{自动:([A-Za-z一-鿿]+?)>=(\d+)\}")
+
+# 模块级 accumulator, 由 resolve_hard_placeholders 内部的 _replace 闭包写入;
+# 调用方通过 get_and_clear_pending_checks() 消费。
+_pending_checks: List[dict] = []
+
+
+# ---- 内联 d100 辅助 (公式与 rule_ai 完全一致, 仅 5 行) ----
+
+def _compute_threshold(player_skill: int, difficulty: str) -> int:
+    if not isinstance(player_skill, int) or player_skill < 0:
+        return 0
+    if difficulty == "困难":
+        return max(1, player_skill // 2)
+    if difficulty == "极难":
+        return max(1, player_skill // 5)
+    return max(1, player_skill)
+
+
+def _describe_result(success: bool, critical_success: bool, critical_failure: bool) -> str:
+    if critical_success:
+        return "大成功"
+    if critical_failure:
+        return "大失败"
+    return "成功" if success else "失败"
+
+
+def _normalize_hard_difficulty(raw: Optional[str]) -> str:
+    """把 / 后面的难度文本归一为 '普通'/'困难'/'极难'。"""
+    if not isinstance(raw, str) or not raw.strip():
+        return "普通"
+    d = raw.strip()
+    if "极难" in d:
+        return "极难"
+    if "困难" in d:
+        return "困难"
+    return "普通"
+
+
+# ---- public API ----
+
+def get_and_clear_pending_checks() -> list:
+    """返回并清空累积的 pending_checks, 供调用方注入前端 dice_rolls 管线。"""
+    result = list(_pending_checks)
+    _pending_checks.clear()
+    return result
+
+
+def resolve_hard_placeholders(
+    text: Any,
+    card: Optional[Dict[str, Any]] = None,
+    player_state: Optional[Dict[str, Any]] = None,
+) -> str:
+    """解析单个字符串中的 {检定:X} / {自动:X>=N}, 原地骰 d100 并替换为结果文本。
+    累积 structured pending_checks 到 _pending_checks。
+
+    非字符串输入 / 空串 / 无匹配 均原样返回。
+    软 placeholder ({属性:X} 等) 不处理 — 留给 resolve_placeholders。
+    """
+    if not isinstance(text, str) or not text:
+        return text if isinstance(text, str) else ""
+    return _resolve_hard_placeholders_impl(text, card, player_state)
+
+
+def resolve_hard_in(
+    obj: Any,
+    card: Optional[Dict[str, Any]] = None,
+    player_state: Optional[Dict[str, Any]] = None,
+) -> Any:
+    """递归在 dict / list / str 中解析硬 placeholder, 返回新结构 (不 mutate 输入)。"""
+    if isinstance(obj, str):
+        return resolve_hard_placeholders(obj, card, player_state)
+    if isinstance(obj, dict):
+        return {k: resolve_hard_in(v, card, player_state) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [resolve_hard_in(v, card, player_state) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(resolve_hard_in(v, card, player_state) for v in obj)
+    return obj
+
+
+def _resolve_hard_placeholders_impl(text: str, card, player_state) -> str:
+    """内部实现: 在 resolve_hard_placeholders 的作用域内定义闭包。"""
+    def _replace_check(match):
+        original = match.group(0)
+        skill_name = match.group(1).strip()
+        raw_diff = match.group(2)
+        difficulty = _normalize_hard_difficulty(raw_diff)
+
+        if not skill_name:
+            return original
+
+        # card 有完整 attributes + skills; 优先用它, 降级到 player_state
+        lookup = card if isinstance(card, dict) and (card.get("attributes") or card.get("skills")) else player_state
+        player_value = get_check_value(skill_name, lookup)
+        threshold = _compute_threshold(player_value, difficulty)
+        roll = random.randint(1, 100)
+        success = roll <= threshold
+        critical_success = roll <= 5
+        critical_failure = roll >= 96
+        desc = _describe_result(success, critical_success, critical_failure)
+
+        # 人类可读的替换文本
+        diff_label = f"（{difficulty}）" if difficulty != "普通" else ""
+        result_text = f"[检定: {skill_name}{diff_label} d100={roll}/{threshold} {desc}]"
+
+        _pending_checks.append({
+            "type": "skill_check",
+            "label": f"{skill_name}检定{diff_label}",
+            "skill": skill_name,
+            "difficulty": difficulty,
+            "player_skill": player_value,
+            "roll": roll,
+            "threshold": threshold,
+            "success": success,
+            "critical_success": critical_success,
+            "critical_failure": critical_failure,
+            "description": desc,
+        })
+        return result_text
+
+    def _replace_auto(match):
+        original = match.group(0)
+        attr_name = match.group(1).strip()
+        threshold_str = match.group(2)
+        try:
+            required = int(threshold_str)
+        except (TypeError, ValueError):
+            return original
+
+        if not attr_name:
+            return original
+
+        lookup = card if isinstance(card, dict) and (card.get("attributes") or card.get("skills")) else player_state
+        player_value = get_check_value(attr_name, lookup)
+
+        if player_value >= required:
+            result_text = f"自动通过（{attr_name}={player_value}≥{required}）"
+            _pending_checks.append({
+                "type": "skill_check",
+                "label": f"{attr_name}自动判定",
+                "skill": attr_name,
+                "difficulty": "自动",
+                "player_skill": player_value,
+                "roll": None,
+                "threshold": required,
+                "success": True,
+                "critical_success": False,
+                "critical_failure": False,
+                "description": f"自动通过（{attr_name}={player_value}≥{required}）",
+            })
+            return result_text
+
+        # 未达标 -> 退化为普通检定
+        difficulty = "普通"
+        threshold = _compute_threshold(player_value, difficulty)
+        roll = random.randint(1, 100)
+        success = roll <= threshold
+        critical_success = roll <= 5
+        critical_failure = roll >= 96
+        desc = _describe_result(success, critical_success, critical_failure)
+
+        result_text = (
+            f"[未达标: {attr_name}={player_value}<{required}, "
+            f"退化为{attr_name}检定 d100={roll}/{threshold} {desc}]"
+        )
+
+        _pending_checks.append({
+            "type": "skill_check",
+            "label": f"{attr_name}检定（自动退化）",
+            "skill": attr_name,
+            "difficulty": difficulty,
+            "player_skill": player_value,
+            "roll": roll,
+            "threshold": threshold,
+            "success": success,
+            "critical_success": critical_success,
+            "critical_failure": critical_failure,
+            "description": desc,
+        })
+        return result_text
+
+    text = _HARD_CHECK_RE.sub(_replace_check, text)
+    text = _HARD_AUTO_RE.sub(_replace_auto, text)
+    return text

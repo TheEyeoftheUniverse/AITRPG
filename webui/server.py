@@ -13,7 +13,11 @@ from quart import Quart, render_template, request, jsonify, make_response, send_
 from astrbot.api import logger
 from ..game_state.save_store import JsonSaveStore
 from ..game_state import character_card as character_card_module
-from ..game_state.placeholder_resolver import resolve_in
+from ..game_state.placeholder_resolver import (
+    resolve_in,
+    resolve_hard_in,
+    get_and_clear_pending_checks,
+)
 from ..theatrical_parser import parse_theatrical_tags
 
 
@@ -531,9 +535,30 @@ def create_trpg_app(plugin):
                                 if npc_data.get(field):
                                     npc_data[field] = resolve_in(npc_data[field], card, player)
 
+                # Phase 5: 硬 placeholder ({检定:X} / {自动:X>=N}) 在开局时解析,
+                # 骰子结果回灌到 module_data + opening 文本; pending_checks 累积供前端。
+                for loc_key, loc_data in module_data.get("locations", {}).items():
+                    if isinstance(loc_data, dict) and loc_data.get("description"):
+                        loc_data["description"] = resolve_hard_in(loc_data["description"], card, player)
+                    if isinstance(loc_data, dict) and loc_data.get("npc_present_description"):
+                        loc_data["npc_present_description"] = resolve_hard_in(loc_data["npc_present_description"], card, player)
+                for obj_key, obj_data in module_data.get("objects", {}).items():
+                    if isinstance(obj_data, dict):
+                        for field in ("description", "examine_text", "success_result", "failure_result"):
+                            if obj_data.get(field):
+                                obj_data[field] = resolve_hard_in(obj_data[field], card, player)
+                for npc_key, npc_data in module_data.get("npcs", {}).items():
+                    if isinstance(npc_data, dict):
+                        for field in ("description", "dialogue"):
+                            if npc_data.get(field):
+                                npc_data[field] = resolve_hard_in(npc_data[field], card, player)
+                opening_pending_checks = get_and_clear_pending_checks()
+
                 opening = selected["opening"]
                 parsed_opening = parse_theatrical_tags(opening)
                 opening = parsed_opening["clean_text"]
+                # 硬 placeholder 也解析 opening 文本 (可能含 {检定:X} 等)
+                opening = resolve_hard_placeholders(opening, card, player)
                 opening_effects = parsed_opening["effects"]
                 opening_user_message, opening_assistant_message = plugin._build_opening_history_pair(opening)
 
@@ -571,6 +596,7 @@ def create_trpg_app(plugin):
                     "success": True,
                     "opening": opening,
                     "theatrical_effects": opening_effects,
+                    "dice_rolls": opening_pending_checks,
                     "module_name": selected["name"],
                     "game_state": _serialize_state(state),
                     "map_data": map_data
