@@ -377,8 +377,15 @@ async function startGame(moduleIndex, forceNew = false) {
         clearProcessingStatus();
         clearRetryState();
 
-        showGameUI(() => {
+        showGameUI(async () => {
             try {
+                // Phase 5: 开局硬 placeholder 骰点动画 (与行动骰点同管线)
+                if (data.dice_rolls && data.dice_rolls.length > 0) {
+                    for (const diceRoll of data.dice_rolls) {
+                        await showDiceRollPanel(diceRoll);
+                    }
+                    await theatricalSleep(3000);
+                }
                 addMessage("assistant", data.opening || "");
                 // 处理内联标记 (glitch/echo-text → span)
                 const lastMsg = document.getElementById("chat-messages").lastElementChild;

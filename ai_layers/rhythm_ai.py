@@ -1058,13 +1058,13 @@ class RhythmAI:
             "- 如果你判断本轮没有任何感知通道升级，且已有 player_descriptor 仍然准确，可以原样重复输出（保持 UI 文案稳定），或者省略该 NPC 条目（此时系统保留旧值）。\n\n"
             "## 谁应当被输出\n"
             "- 同场景且玩家能看见 → 必出（visual 或 name_known）\n"
-            "- npc_context 中存在 interaction_mode=cross_wall_voice_only 的隔墙 NPC → 必出（voice_only，descriptor 仅描述声音特征），无论本轮该 NPC 是否已经回应。玩家对门后喊话本身就能听到回音/动静/呼吸，这些也是声音特征。\n"
+            "- npc_context 中存在 interaction_mode=cross_wall_voice_only 的隔墙 NPC，且 runtime_state.memory 中已有 overheard_remote_dialogue / interaction_history 等接触证据 → 必出（voice_only 或更高，descriptor 必须仅描述声音）\n"
             "- 同场景但玩家完全未察觉（如 NPC 藏在暗处、玩家入场时模组叙述还没引入她）→ 不要输出该 NPC，不要在卡片上提前曝光「她在这里」\n"
             "- npc_context 中没有的 NPC，不要凭空输出\n\n"
             "## 反例（禁止）\n"
+            "- 玩家只在隔壁说了一句话、对方还没回应 → 不要输出 voice_only 称谓（玩家此刻还没听到对方声音）\n"
             "- 玩家只听到声音 → 不要写「穿黑衣的女人」（混入了视觉信息）\n"
             "- NPC 还没报名字、玩家也没从证物得知 → 不要写真名\n"
-            "- 隔墙 NPC 已出现在 npc_context 中但本轮未说话 → 仍应输出 voice_only，不要因为「没说话」就省略整条卡片（卡片是玩家感知面板，不是对话记录）\n"
         )
 
     def _sanitize_player_visible_npcs(self, raw, npc_context: dict) -> dict:
