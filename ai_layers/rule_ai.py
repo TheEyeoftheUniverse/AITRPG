@@ -1,6 +1,7 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
 from ..game_state.character_card import build_identity_block
+from ..game_state.placeholder_resolver import resolve_in
 from ..game_state.location_context import (
     build_adjacent_locations_context,
     build_runtime_location_context,
@@ -371,11 +372,14 @@ class RuleAI:
         prompt = prompt.replace("{player_identity_block}", build_identity_block(game_state.get("character_card")))
         prompt = prompt.replace("{current_location}", current_location)
         prompt = prompt.replace("{history_summaries}", history_summaries)
-        prompt = prompt.replace("{location_context}", json.dumps(location_context, ensure_ascii=False, indent=2))
-        prompt = prompt.replace("{scene_objects}", json.dumps(scene_objects, ensure_ascii=False, indent=2))
-        prompt = prompt.replace("{scene_npcs}", json.dumps(prompt_scene_npcs, ensure_ascii=False, indent=2))
+        # Phase 3: 模组占位符在 dump 进 prompt 前展开 (需求 §3.5)
+        card = game_state.get("character_card")
+        player_state = game_state.get("player")
+        prompt = prompt.replace("{location_context}", json.dumps(resolve_in(location_context, card, player_state), ensure_ascii=False, indent=2))
+        prompt = prompt.replace("{scene_objects}", json.dumps(resolve_in(scene_objects, card, player_state), ensure_ascii=False, indent=2))
+        prompt = prompt.replace("{scene_npcs}", json.dumps(resolve_in(prompt_scene_npcs, card, player_state), ensure_ascii=False, indent=2))
         adjacent_context = build_adjacent_locations_context(game_state, module_data, current_location)
-        prompt = prompt.replace("{adjacent_locations}", json.dumps(adjacent_context, ensure_ascii=False, indent=2))
+        prompt = prompt.replace("{adjacent_locations}", json.dumps(resolve_in(adjacent_context, card, player_state), ensure_ascii=False, indent=2))
         prompt = prompt.replace("{inventory}", json.dumps(inventory, ensure_ascii=False))
         prompt = prompt.replace("{clues_found}", json.dumps(clues_found, ensure_ascii=False))
         prompt = prompt.replace("{reachable_locations}", json.dumps(reachable, ensure_ascii=False))

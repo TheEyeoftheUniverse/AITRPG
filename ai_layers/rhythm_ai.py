@@ -1,6 +1,7 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
 from ..game_state.character_card import build_identity_block
+from ..game_state.placeholder_resolver import resolve_in
 from ..game_state.location_context import (
     build_adjacent_locations_context,
     build_runtime_location_context,
@@ -536,6 +537,15 @@ class RhythmAI:
             else {}
         )
 
+        # Phase 3: 软 placeholder 在 dump 进 prompt 前展开 (需求 §3.5)
+        card = game_state.get("character_card")
+        player_state = game_state.get("player")
+        location_context = resolve_in(location_context, card, player_state)
+        npc_context = resolve_in(npc_context, card, player_state)
+        threat_entity_context = resolve_in(threat_entity_context, card, player_state)
+        object_context = resolve_in(object_context, card, player_state)
+        follow_arrival_reaction_context = resolve_in(follow_arrival_reaction_context, card, player_state)
+
         parts = [
             "Current location context:",
             json.dumps({current_location: location_context}, ensure_ascii=False, indent=2),
@@ -577,6 +587,7 @@ class RhythmAI:
                 json.dumps(threat_chase, ensure_ascii=False, indent=2),
             ])
         adjacent_context = build_adjacent_locations_context(game_state, module_data, current_location)
+        adjacent_context = resolve_in(adjacent_context, card, player_state)  # Phase 3
         if adjacent_context:
             parts.extend([
                 "",
@@ -587,7 +598,7 @@ class RhythmAI:
             parts.extend([
                 "",
                 "Atmosphere guide:",
-                json.dumps(atmosphere_guide, ensure_ascii=False, indent=2),
+                json.dumps(resolve_in(atmosphere_guide, card, player_state), ensure_ascii=False, indent=2),
             ])
         return "\n".join(parts)
 
@@ -734,15 +745,26 @@ class RhythmAI:
         if follow_arrival_reaction_context and isinstance(location_context, dict):
             location_context["follow_arrival_reaction_context"] = copy.deepcopy(follow_arrival_reaction_context)
 
+        # Phase 3: 把 4 个传给下游 narrative_ai 的 context 字段做 placeholder 解析,
+        # 让 narrative_ai 不必再重做一次 (compact_* 仅截断不再解析)。需求 §3.5
+        card = game_state.get("character_card")
+        player_state = game_state.get("player")
+        location_context = resolve_in(location_context, card, player_state) if isinstance(location_context, dict) else {}
+        npc_context = resolve_in(npc_context, card, player_state)
+        threat_entity_context = resolve_in(threat_entity_context, card, player_state)
+        object_context = resolve_in((rule_plan or {}).get("object_context"), card, player_state)
+        atmosphere_guide_resolved = resolve_in(atmosphere_guide, card, player_state) if isinstance(atmosphere_guide, dict) else {}
+        follow_arrival_reaction_context = resolve_in(follow_arrival_reaction_context, card, player_state)
+
         return {
             "feasible": bool(feasibility.get("ok", True)),
             "hint": feasibility.get("reason"),
-            "location_context": location_context if isinstance(location_context, dict) else {},
-            "object_context": (rule_plan or {}).get("object_context"),
+            "location_context": location_context,
+            "object_context": object_context,
             "threat_entity_context": threat_entity_context,
             "npc_context": npc_context,
             "npc_action_guide": npc_action_guide,
-            "atmosphere_guide": atmosphere_guide if isinstance(atmosphere_guide, dict) else {},
+            "atmosphere_guide": atmosphere_guide_resolved,
             "stage_assessment": "Stable pacing",
             "world_changes": {},
             "creative_additions": {},
