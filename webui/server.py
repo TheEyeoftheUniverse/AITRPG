@@ -536,24 +536,33 @@ def create_trpg_app(plugin):
                                 if npc_data.get(field):
                                     npc_data[field] = resolve_in(npc_data[field], card, player)
 
-                # Phase 5: 硬 placeholder ({检定:X} / {自动:X>=N}) 在开局时解析,
-                # 骰子结果回灌到 module_data + opening 文本; pending_checks 累积供前端。
+                # Phase 5: 硬 placeholder ({检定:X} / {自动:X>=N}) 分三类解析:
+                #   1. Location 描述 — 预掷, 结果加入开局 dice_rolls
+                #   2. Object 描述 — 预掷, 结果缓存到 web_session["object_dice"],
+                #      玩家 inspect 该物品时从缓存取出注入行动响应的 dice_rolls
+                #   3. NPC 描述 — 预掷, 暂不单独触发动画
+                opening_checks = []
+                object_dice = {}      # {obj_name: [dice_roll, ...]}
                 for loc_key, loc_data in module_data.get("locations", {}).items():
                     if isinstance(loc_data, dict) and loc_data.get("description"):
                         loc_data["description"] = resolve_hard_in(loc_data["description"], card, player)
                     if isinstance(loc_data, dict) and loc_data.get("npc_present_description"):
                         loc_data["npc_present_description"] = resolve_hard_in(loc_data["npc_present_description"], card, player)
+                    opening_checks.extend(get_and_clear_pending_checks())
                 for obj_key, obj_data in module_data.get("objects", {}).items():
                     if isinstance(obj_data, dict):
-                        for field in ("description", "examine_text", "success_result", "failure_result"):
+                        for field in ("description", "examine_text"):
                             if obj_data.get(field):
                                 obj_data[field] = resolve_hard_in(obj_data[field], card, player)
+                        checks = get_and_clear_pending_checks()
+                        if checks:
+                            object_dice[obj_key] = checks
                 for npc_key, npc_data in module_data.get("npcs", {}).items():
                     if isinstance(npc_data, dict):
                         for field in ("description", "dialogue"):
                             if npc_data.get(field):
                                 npc_data[field] = resolve_hard_in(npc_data[field], card, player)
-                opening_pending_checks = get_and_clear_pending_checks()
+                    get_and_clear_pending_checks()  # NPC checks 暂不触发动画
 
                 opening = selected["opening"]
                 parsed_opening = parse_theatrical_tags(opening)
@@ -561,6 +570,7 @@ def create_trpg_app(plugin):
                 # 硬 placeholder 也解析 opening 文本 (可能含 {检定:X} 等)
                 opening = resolve_hard_placeholders(opening, card, player)
                 opening_effects = parsed_opening["effects"]
+                opening_checks.extend(get_and_clear_pending_checks())
                 opening_user_message, opening_assistant_message = plugin._build_opening_history_pair(opening)
 
                 # 尝试在 AstrBot 中创建新对话并写入开场白；失败时降级为仅Web会话
@@ -583,6 +593,7 @@ def create_trpg_app(plugin):
                 web_session["conv_id"] = conv_id
                 web_session["location_theatrical"] = location_theatrical
                 web_session["theatrical_played_locations"] = []
+                web_session["object_dice"] = object_dice  # Phase 5: object→骰子缓存
                 web_session["history"] = [opening_user_message, opening_assistant_message]
                 web_session["chat_messages"] = [
                     {"role": "assistant", "content": opening}
@@ -597,7 +608,7 @@ def create_trpg_app(plugin):
                     "success": True,
                     "opening": opening,
                     "theatrical_effects": opening_effects,
-                    "dice_rolls": opening_pending_checks,
+                    "dice_rolls": opening_checks,
                     "module_name": selected["name"],
                     "game_state": _serialize_state(state),
                     "map_data": map_data
@@ -760,6 +771,18 @@ def create_trpg_app(plugin):
                             "san_loss": sancheck_data["san_loss"],
                             "description": f"{'成功' if sancheck_data['success'] else '失败'}, SAN {'不变' if sancheck_data['san_loss'] == 0 else str(sancheck_data['san_loss'])}",
                         })
+
+                    # Phase 5: 注入交互对象预设的硬 placeholder 骰子 (开局预掷, 缓存于此)
+                    rule_plan = result.get("rule_plan", {})
+                    target_kind = (rule_plan.get("normalized_action") or {}).get("target_kind")
+                    target_key = (rule_plan.get("normalized_action") or {}).get("target_key")
+                    if target_kind == "object" and target_key:
+                        obj_dice = web_session.get("object_dice", {})
+                        cached = obj_dice.pop(target_key, [])
+                        if cached:
+                            dice_rolls.extend(cached)
+                            web_session["object_dice"] = obj_dice
+                            _persist_web_session(cookie_id)
 
                     _action_results[cookie_id] = {
                         "success": True,
