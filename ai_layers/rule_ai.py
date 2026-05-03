@@ -369,7 +369,7 @@ class RuleAI:
         history_summaries = self._build_history_summaries(game_state)
 
         prompt = prompt_template.replace("{player_input}", player_input)
-        prompt = prompt.replace("{player_identity_block}", build_identity_block(game_state.get("character_card")))
+        prompt = prompt.replace("{player_identity_block}", build_identity_block(game_state.get("character_card"), include_check_values=True))
         prompt = prompt.replace("{current_location}", current_location)
         prompt = prompt.replace("{history_summaries}", history_summaries)
         # Phase 3: 模组占位符在 dump 进 prompt 前展开 (需求 §3.5)

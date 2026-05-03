@@ -645,7 +645,9 @@ _PROMPT_SAFE_TEXT_LEN = 80
 _PROMPT_TOP_SKILL_COUNT = 12
 
 
-def build_identity_block(card: Optional[Dict[str, Any]], include_background: bool = True) -> str:
+def build_identity_block(card: Optional[Dict[str, Any]],
+                         include_background: bool = True,
+                         include_check_values: bool = False) -> str:
     """构造拼进 AI prompt 的玩家身份块。
 
     若 card 为 None 或缺关键字段，返回空字符串（让 prompt 模板该处不显示玩家身份）。
@@ -656,6 +658,12 @@ def build_identity_block(card: Optional[Dict[str, Any]], include_background: boo
       True (默认, 两层模式 + rule_ai / rhythm_ai 自身) — 拼入 6 项 background 叙述。
       False (Phase 4 三层模式 narrative_ai) — 砍掉 background 叙述, 仅保留结构化数值、
       姓名、职业、年代; 由 narrative_ai 另行调用 build_background_directive_block 拼按需块。
+
+    include_check_values:
+      False (默认, 节奏/文案 AI) — 不拼 8 大属性 + 全量技能, 只展示主要技能 (top 12)。
+      True (rule_ai 用) — 多拼一段 "# 检定数值" 含 8 大属性 + LUCK + 全量技能, 让规则AI
+      判断要不要骰、骰什么时有数据依据, 而不是凭场景文本直觉乱判。这是用户实测发现
+      "规则AI 让骰床的力量检定" 的根因 — 它根本看不到玩家有多少 STR。
     """
     if not isinstance(card, dict):
         return ""
@@ -707,6 +715,26 @@ def build_identity_block(card: Optional[Dict[str, Any]], include_background: boo
     if bg_lines:
         lines.append("- 背景：")
         lines.extend(f"  {line}" for line in bg_lines)
+
+    # 规则AI 专用: 8 大属性 + LUCK + 全量技能, 让裁定层有明确数据依据
+    if include_check_values:
+        attrs = card.get("attributes") or {}
+        attr_order = ["STR", "CON", "DEX", "APP", "POW", "SIZ", "INT", "EDU", "LUCK"]
+        attr_pairs = [f"{k}:{int(attrs[k])}" for k in attr_order if k in attrs and isinstance(attrs[k], (int, float))]
+        all_skills_pairs = sorted(
+            ((sk, int(v)) for sk, v in skills.items() if isinstance(v, int)),
+            key=lambda kv: kv[1],
+            reverse=True,
+        )
+        all_skills_str = ", ".join(f"{sk}:{val}" for sk, val in all_skills_pairs) or "无"
+        check_lines = [
+            "",
+            "# 检定数值（规则AI 决定要不要骰 / 骰什么 / 难度时参考；非检定层 AI 不必使用）",
+            f"- 8 大属性：{', '.join(attr_pairs) if attr_pairs else '未提供'}",
+            "- 派生检定别名：灵感=INT、幸运=LUCK、知识=EDU；中文属性别名：力量=STR、体质=CON、敏捷=DEX、外貌=APP、意志=POW、体型=SIZ、智力=INT、教育=EDU",
+            f"- 全部技能：{all_skills_str}",
+        ]
+        lines.extend(check_lines)
     return "\n".join(lines)
 
 
