@@ -1,6 +1,6 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
-from ..game_state.character_card import build_identity_block
+from ..game_state.character_card import BACKGROUND_FIELDS, build_identity_block
 from ..game_state.placeholder_resolver import resolve_in
 from ..game_state.location_context import (
     build_adjacent_locations_context,
@@ -485,6 +485,12 @@ class RhythmAI:
         cf = normalized.get("continuity_flag")
         normalized["continuity_flag"] = str(cf).strip() if cf else None
 
+        # Phase 4: 校验 background_directive (节奏AI -> 文案AI)
+        # use_keys 必须是 BACKGROUND_FIELDS 子集; 非法 key 丢弃 + warning, 不阻断
+        normalized["background_directive"] = self._sanitize_background_directive(
+            normalized.get("background_directive")
+        )
+
         npc_context = normalized.get("npc_context", {})
         base_npc_guide = base_result.get("npc_action_guide", {})
         normalized["npc_action_guide"] = self._sanitize_npc_action_guide(
@@ -776,6 +782,8 @@ class RhythmAI:
                 "ending_id": None,
                 "reason": None,
             },
+            # Phase 4: 三层模式背景路由默认空 (节奏AI 没输出时文案AI 不引用任何背景)
+            "background_directive": {"use_keys": [], "reason": None},
         }
 
     def _merge_world_changes(self, base_changes: dict, result_changes: dict) -> dict:
@@ -989,6 +997,32 @@ class RhythmAI:
         if bool(npc_guide.get("cross_wall_heard_only") or base_guide.get("cross_wall_heard_only")):
             sanitized["cross_wall_heard_only"] = True
         return sanitized
+
+    def _sanitize_background_directive(self, raw) -> dict:
+        """Phase 4: 校验节奏AI 输出的 background_directive (用于文案AI 拼背景段)。
+
+        合法 use_keys 元素必须是 BACKGROUND_FIELDS 中的英文 key (严格枚举);
+        中文 key / 自由命名 / 非字符串元素全部丢弃 + warning, 不阻断流程。
+        reason 仅接受 str | None; 空白字符串归一化为 None。
+
+        总是返回 {use_keys: [], reason: None} 形状, 即使 raw 缺失或非法。
+        """
+        directive = raw if isinstance(raw, dict) else {}
+        raw_keys = directive.get("use_keys")
+        use_keys: list = []
+        if isinstance(raw_keys, list):
+            for k in raw_keys:
+                if isinstance(k, str) and k in BACKGROUND_FIELDS:
+                    if k not in use_keys:  # 去重
+                        use_keys.append(k)
+                else:
+                    logger.warning(
+                        "[RhythmAI] background_directive.use_keys 含非法元素 %r, 已丢弃 "
+                        "(合法 key: %s)", k, "/".join(BACKGROUND_FIELDS),
+                    )
+        reason = directive.get("reason")
+        reason = reason.strip() if isinstance(reason, str) and reason.strip() else None
+        return {"use_keys": use_keys, "reason": reason}
 
     def _sanitize_string_list(self, values, fallback=None, limit: int = 3) -> list:
         source = values if isinstance(values, list) else fallback if isinstance(fallback, list) else []

@@ -1,6 +1,9 @@
 from astrbot.api import logger
 from astrbot.api.star import Context
-from ..game_state.character_card import build_identity_block
+from ..game_state.character_card import (
+    build_background_directive_block,
+    build_identity_block,
+)
 from ..game_state.location_context import (
     get_entity_first_appearance,
     get_entity_profile_text,
@@ -338,7 +341,21 @@ class NarrativeAI:
             return ""
 
         location_name = location_context.get("name", "unknown location")
-        prompt = prompt_template.replace("{player_identity_block}", build_identity_block(character_card))
+        # Phase 4: 三层模式 background 路由 — 砍掉 default identity_block 的 background 段,
+        # 改由节奏AI 的 background_directive 驱动文案AI 引用哪几项 (需求 §3.4.2)。
+        identity_block = build_identity_block(character_card, include_background=False)
+        directive = rhythm_result.get("background_directive") if isinstance(rhythm_result, dict) else None
+        if isinstance(directive, dict):
+            directive_block = build_background_directive_block(
+                character_card,
+                directive.get("use_keys"),
+                directive.get("reason"),
+            )
+        else:
+            directive_block = ""
+        if directive_block:
+            identity_block = (identity_block + "\n\n" + directive_block) if identity_block else directive_block
+        prompt = prompt_template.replace("{player_identity_block}", identity_block)
         prompt = prompt.replace("{rule_info}", f"{player_block}\n\n{rule_block}")
         prompt = prompt.replace(
             "{rhythm_info}",
