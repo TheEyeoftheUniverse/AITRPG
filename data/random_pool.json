@@ -1,5 +1,5 @@
 {
-  "_schema_note": "随机生成调查员卡时使用的内置池, 按年代分组 (by_era)。roll_random_card 会根据卡的 era 字段从对应分组取 names/locations/backgrounds; 取不到则回退到 by_era.modern。每个 era 内含等量的中国 + 国际 (英美/欧洲/日本等) 候选, 随机抽样自然得到混合国籍。顶层的 age_range / sex_options 跨年代共用。每项 ≤20 字 (sex/locations) 或 ≤80 字 (backgrounds)。",
+  "_schema_note": "随机生成调查员卡时使用的内置池, 按年代分组 (by_era)。roll_random_card 会根据卡的 era 字段从对应分组取 names/locations/backgrounds; 取不到则回退到 by_era.modern。每个 era 内含等量的中国 + 国际 (英美/欧洲/日本等) 候选, 随机抽样自然得到混合国籍。顶层的 age_range / sex_options 跨年代共用。每项字数: sex/locations ≤20; backgrounds.personal_description ≤400, backgrounds 其余 5 项 ≤40 (v3.2.0 起)。",
   "age_range": [22, 39],
   "sex_options": ["男", "女"],
   "by_era": {

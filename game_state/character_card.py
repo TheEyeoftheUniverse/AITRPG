@@ -50,11 +50,23 @@ CTHULHU_MYTHOS_INITIAL = 0
 CREDIT_RATING_KEY = "信用评级"
 
 MAX_NAME_LEN = 20
-MAX_BACKGROUND_FIELD_LEN = 80
+MAX_PROFESSION_DESC_LEN = 80  # profession_custom.description 用 (与 background 解耦, v3.2.0 起独立)
 MAX_INVENTORY_ITEM_LEN = 20
 MAX_INVENTORY_COUNT = 10
 MAX_CARD_BYTES = 16 * 1024
 MAX_LIFE_FIELD_LEN = 20  # 性别 / 居住地 / 出生地
+
+# v3.2.0: background 字段按字段独立 cap, personal_description 吸收剩余预算给玩家自由发挥;
+# 其他 5 项压缩到 40 字, 总预算 ≈600 字 (旧版本 480 字, 全 80)。详见
+# docs/requirements/2026-05-03-placeholder-and-background-routing.md §3.1。
+MAX_BACKGROUND_FIELD_LENS = {
+    "personal_description": 400,
+    "ideology_beliefs":      40,
+    "significant_people":    40,
+    "meaningful_locations":  40,
+    "treasured_possessions": 40,
+    "traits":                40,
+}
 
 # era (年代项): 可选字段, 不写视为未声明 (留给守秘人/AI 自由发挥)。
 # 内置预设 modern / 1920s; 选 custom 时再读 era_custom 文本字段 (≤20 字)。
@@ -302,7 +314,7 @@ def validate_card(
         profession = {
             "key": profession_key,
             "name": sanitize_text(custom.get("name") or profession_key, MAX_NAME_LEN),
-            "description": sanitize_text(custom.get("description") or "", MAX_BACKGROUND_FIELD_LEN),
+            "description": sanitize_text(custom.get("description") or "", MAX_PROFESSION_DESC_LEN),
             "credit_rating": [max(0, cr_min), min(99, cr_max)],
             "skill_choices": [s for s in skill_choices_custom if s],
             "occupation_skill_pool_formula": formula,
@@ -438,7 +450,7 @@ def validate_card(
         if unknown_bg:
             errors.append(f"unknown background keys: {sorted(unknown_bg)}")
         bg = {
-            k: sanitize_text(bg_in.get(k, ""), MAX_BACKGROUND_FIELD_LEN)
+            k: sanitize_text(bg_in.get(k, ""), MAX_BACKGROUND_FIELD_LENS[k])
             for k in BACKGROUND_FIELDS
         }
 
@@ -710,7 +722,7 @@ def _pick_random_background(rng: random.Random, random_pool: Dict[str, Any]) -> 
     for key in BACKGROUND_FIELDS:
         candidates = bg_pool.get(key) or []
         if isinstance(candidates, list) and candidates:
-            out[key] = sanitize_text(rng.choice(candidates), MAX_BACKGROUND_FIELD_LEN)
+            out[key] = sanitize_text(rng.choice(candidates), MAX_BACKGROUND_FIELD_LENS[key])
         else:
             out[key] = ""
     return out
@@ -869,7 +881,7 @@ def make_blank_template_with_hints(professions: Dict[str, dict], skills_base: Di
             "✅ 接受: 8 属性 + LUCK 都在合法范围 (见 _hint_attributes)",
             "✅ 接受: profession 任意字符串 (≤20 字); 命中内置 6 个 (见 _hint_profession) 则按其规则严格校验; 自定义则用 profession_custom 字段补描述",
             "✅ 接受: skills 任意 key (≤20 字, sanitize 后非空); 内置技能值 < 基础值时自动 clamp 到基础值; 自定义技能 (不在内置 25 项内) 按 base=0 一并计入双点池守恒",
-            "✅ 接受: background 6 项, 每项 ≤80 字; 不在 6 项之列的 key 会拒绝",
+            "✅ 接受: background 6 项 (personal_description ≤400 字, 其余 5 项 ≤40 字, sanitize 后); 不在 6 项之列的 key 会拒绝",
             "✅ 接受: inventory ≤10 项, 每项 ≤20 字",
             "❗强制: 必须把【职业点】用满到 occupation_total (可在 skill_choices 内技能 + 信用评级中分配, 总投入应 == EDU×primary_mult + max(secondary)×mult)。AI 不可偷懒, 必须算出该职业的 occupation_total 并在 skills 字典中分配相应数值",
             "❗强制: 必须把【兴趣点】用满到 interest_total (= INT × 2)。可分配到任意非克苏鲁神话技能, **包括内置 25 项之外的自定义技能** —— 所有不在 profession.skill_choices 内的技能投入(含自定义技能)都计入兴趣池, 总和必须 == INT × 2 (推荐分散给 5-10 项非本职技能让玩家更有趣)",
@@ -980,7 +992,7 @@ def make_blank_template_with_hints(professions: Dict[str, dict], skills_base: Di
         ),
         "background": {k: "" for k in BACKGROUND_FIELDS},
         "_hint_background": (
-            "六项 COC7 背景, 每项 ≤80 字 (sanitize 后)。可写人物动机/关系/特征。"
+            "六项 COC7 背景 (sanitize 后, personal_description ≤400 字, 其余 5 项 ≤40 字)。可写人物动机/关系/特征。"
             " key 必须是下列 6 个之一, 其它 key 会被拒绝: " + ", ".join(BACKGROUND_FIELDS) + "。"
             " 避免使用 <system-echo>/<inject-input>/<glitch>/<echo-text>/<paragraph>/<map-corrupt> 等模组演出标签——"
             "这些标签在导入时会被 strip 剥离, 内容文本保留, 但写了也无效。"

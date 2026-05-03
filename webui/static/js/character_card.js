@@ -30,7 +30,16 @@
     var SKILL_HARD_CAP = 90;
     var CTHULHU_MYTHOS = "克苏鲁神话";
     var CREDIT_RATING = "信用评级";
-    var BG_FIELD_CAP = 80;
+    // v3.2.0: background 字段按字段独立 cap (个人描述 400 字, 其他 5 项各 40 字, 共 ≈600 字)。
+    // 与后端 game_state/character_card.py 的 MAX_BACKGROUND_FIELD_LENS 对齐。
+    var BG_FIELD_CAPS = {
+        personal_description: 400,
+        ideology_beliefs:      40,
+        significant_people:    40,
+        meaningful_locations:  40,
+        treasured_possessions: 40,
+        traits:                40
+    };
     var NAME_CAP = 20;
     var INV_ITEM_CAP = 20;
     var INV_COUNT_CAP = 10;
@@ -472,20 +481,21 @@
         wrap.innerHTML = "";
         BACKGROUND_FIELDS.forEach(function (f) {
             var key = f[0], label = f[1];
+            var cap = BG_FIELD_CAPS[key] || 40;
             var div = document.createElement("div");
             div.className = "cc-bg-field";
             var lbl = document.createElement("label");
             lbl.textContent = label;
             div.appendChild(lbl);
             var ta = document.createElement("textarea");
-            ta.maxLength = BG_FIELD_CAP;
+            ta.maxLength = cap;
             ta.dataset.bgKey = key;
             ta.value = card.background[key] || "";
             ta.addEventListener("input", onBackgroundChange);
             div.appendChild(ta);
             var counter = document.createElement("span");
             counter.className = "cc-counter";
-            counter.textContent = (card.background[key] || "").length + "/" + BG_FIELD_CAP;
+            counter.textContent = (card.background[key] || "").length + "/" + cap;
             div.appendChild(counter);
             wrap.appendChild(div);
         });
@@ -637,7 +647,8 @@
         var key = e.target.dataset.bgKey;
         card.background[key] = e.target.value || "";
         var counter = e.target.parentElement.querySelector(".cc-counter");
-        if (counter) counter.textContent = card.background[key].length + "/" + BG_FIELD_CAP;
+        var cap = BG_FIELD_CAPS[key] || 40;
+        if (counter) counter.textContent = card.background[key].length + "/" + cap;
         validateAndUpdate();
     }
 
