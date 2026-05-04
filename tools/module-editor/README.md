@@ -1,80 +1,82 @@
 # 模组编辑器
 
-一个**完全本地、零依赖、不调 LLM** 的模组可视化工具。给模组作者用来：
+一个完全本地、不调 LLM 的模组可视化工具。当前入口策略是：
 
-- 可视化拖拽地图节点，画出符合空间直觉的房间布局
-- 不启动游戏服务器，"假装走入"任意房间，查看场景的硬文本（description / objects / exits / npc_present_description / first_entry_blocked.text 等）以核对模组内容
-- 把改动导出成 JSON，直接拷回 `modules/` 替换原模组
+- WebUI 首页按钮暂时关闭
+- 仍然可以直接访问 `/trpg/module-editor/`
+- 也可以直接打开 `tools/module-editor/index.html`
+
+它现在主要用来：
+
+- 导入/导出模组 JSON
+- 自由拖拽地图节点，调整 `map_position`
+- 预览地图分组、节点视觉样式、边样式和微场景入口
+- 走入任意场景，查看硬文本和结构字段
+- 编辑节点视觉字段与出口视觉字段，再导出新 JSON
 
 ## 怎么打开
 
-直接双击 `index.html`，浏览器会用 `file://` 协议打开。**不需要任何后端在跑**。Chrome / Edge / Firefox 都行。
+有两种方式：
 
-> 如果某些浏览器在 `file://` 下拒绝加载脚本，开 Chrome 时加 `--allow-file-access-from-files`，或者把 `tools/module-editor/` 目录起一个简单的 HTTP 服务器（如 `python -m http.server`）。一般情况下不需要。
+1. WebUI 服务器已启动时，直接访问 `/trpg/module-editor/`
+2. 直接双击 `index.html` 用 `file://` 打开
+
+Chrome / Edge / Firefox 都能用，单独打开时不需要后端。
+
+> 如果某些浏览器在 `file://` 下拒绝加载脚本，开 Chrome 时加 `--allow-file-access-from-files`，或者把 `tools/module-editor/` 目录起一个简单的 HTTP 服务器（如 `python -m http.server`）。
 
 ## 用法
 
-1. **导入模组**：点顶栏 "📂 导入" 选 `modules/default_module.json`，或直接把文件拖进页面
-2. **看地图**：所有 location 都会画出来（包括 hidden 的，会自动虚化），按 `floor` 分上下楼层带，已有 `map_position` 的会按你的坐标摆，没有的按 BFS 自动排
-3. **拖拽节点**：抓住任意房间拖到想要的位置，松手时坐标自动吸附到整数 `(col, row)`，同步更新内存里的模组副本
-4. **走入房间**：点击节点，中间下方会立刻显示该房间的所有硬文本，金色椭圆标记是"你刚走入"
-5. **导出**：点 "💾 导出" 下载新 JSON。文件名是 `<原名>_edited.json`
+1. **导入模组**：点顶栏“导入”，选择 `modules/*.json`，或直接把文件拖进页面
+2. **看地图**：所有 location 都会画出来，包含 hidden 和微场景；按 `map_group` 分组，未显式设置时会从 `floor` 自动派生
+3. **拖拽节点**：直接拖动房间节点，位置会写回 `map_position.col / row`；现在支持浮点，不吸附、不限楼层
+4. **走入房间**：点击节点，中间下方会显示该房间的硬文本和结构字段
+5. **改视觉字段**：右栏可以改 `icon`、`displayColor`、`displayAlpha`、`badges`，也能改每条 `exit` 的 `style` / `direction`
+6. **导出**：点“导出”下载新 JSON，文件名是 `<原名>_edited.json`
 
-## 楼层边界规则
-
-拖拽节点时，**Y 方向被 clamp 在所属楼层的 band 范围内**，不允许越过下层楼板。想给某个房间换楼层？目前还得手编 JSON 改 `floor` 字段（Phase 2 会在右栏加图形化的 floor 编辑器）。
-
-## map_position 是什么
+## `map_position` 是什么
 
 ```jsonc
 {
     "name": "次卧",
     "floor": 2,
-    "map_position": { "col": 2, "row": -1 }
+    "map_position": { "col": 2.5, "row": -1.25 }
 }
 ```
 
-- `col`：同楼层内的列号，0 起步，可负
-- `row`：选填默认 0，子行偏移，支持把 hub 房间分上下两边（如走廊上方一间、下方一间）
+- `col`：横向位置，支持浮点
+- `row`：纵向位置，支持浮点
+- 编辑器不会强制整数吸附，也不会把节点限制在某一层带内部
 
 完整说明见 `modules/README.md` 的 locations 字段表。
 
-## 已知限制（Phase 1）
+## 已知限制
 
-- **只能改 `map_position`**，其他字段（description / exits / npc 等）一字不动
-- 拖拽**不能跨楼层**（要换 floor，目前还得手编 JSON）
-- 没有撤销/重做（建议每改完几个房间就导出一次做版本快照）
-- 微场景节点目前不支持拖拽（它们的位置自动跟着 parent_location）
-- `file://` 下浏览器没法直接写文件，导出走的是浏览器下载流程，落到默认下载目录
+- 没有撤销/重做
+- 仍然以 JSON 导入/导出为主，不会直接写回 `modules/`
+- 运行时逻辑不会在这里完整模拟；它偏向结构校对和地图编辑
+- `file://` 下浏览器没法直接写文件，导出仍然走浏览器下载流程
+- 微场景节点位置仍然跟着 `parent_location` 走，不单独拖拽
 
-## 后续规划
+## 当前结构
 
-左栏和右栏的扩展位（HTML 里的 `data-extension-slot` 节点）已经预留，未来这些功能会陆续上：
-
-| 位置 | 功能 |
-| --- | --- |
-| 左栏 | 模组结构树（locations / objects / npcs），点击聚焦 |
-| 左栏 | 字段在线编辑（description / exits / floor 等） |
-| 右栏 | 给玩家加物品 / 加 flag（mock） |
-| 右栏 | 测试 reveal_conditions / first_entry_blocked / object.requires 是否能命中 |
-| 右栏 | 模拟门锁 / 守卫 / 管家激活 |
-| 右栏 | 切换调查员人设 |
-
-如果有别的需求，告诉我们。
+- 左栏：模组元信息、地图组只读列表、结构树导航
+- 中栏：Cytoscape 地图 + 场景硬文本预览
+- 右栏：当前节点信息、玩家视角预览卡、节点/边视觉字段编辑
 
 ## 文件结构
 
-```
+```text
 tools/module-editor/
 ├── index.html              单页入口
 ├── css/editor.css          样式
-├── lib/cytoscape.min.js    Cytoscape 本地副本 (跟 webui/static/lib/ 一致)
+├── lib/cytoscape.min.js    Cytoscape 本地副本
 └── js/
     ├── state.js            数据源 + pub-sub
     ├── module-io.js        导入导出
-    ├── map-canvas.js       地图 + 拖拽
-    ├── scene-panel.js      场景硬文本
-    ├── left-panel.js       左栏元信息
-    ├── right-panel.js      右栏占位 + 当前节点信息
+    ├── map-canvas.js       地图 + 拖拽 + overlay
+    ├── scene-panel.js      场景硬文本预览
+    ├── left-panel.js       左栏元信息 / 结构树
+    ├── right-panel.js      节点视觉编辑 / 出口样式编辑
     └── main.js             启动装配
 ```

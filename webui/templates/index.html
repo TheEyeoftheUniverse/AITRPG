@@ -14,9 +14,10 @@
         <!-- 顶部工具栏: 模组编辑器 / 源码 / 自定义API, 绝对定位贴 overlay 顶端居中,
              不被 overlay-content 的 padding 和装饰线挤下去, 安卓窄屏也始终在最顶部 -->
         <div class="overlay-toolbar">
-            <a href="/trpg/module-editor/" target="_blank" rel="noopener" class="btn-icon overlay-toolbar-btn" title="模组编辑器（本地工具，不调 LLM）">
+            <button type="button" class="btn-icon overlay-toolbar-btn is-disabled" disabled aria-disabled="true" title="模组编辑器开发中，主页入口暂不可用">
                 <span class="mdi mdi-pencil-ruler"></span>
-            </a>
+                <span class="btn-dev-badge">开发中</span>
+            </button>
             <a href="https://github.com/TheEyeoftheUniverse/AITRPG" target="_blank" rel="noopener" class="btn-icon overlay-toolbar-btn" title="让我康康你的源码！">
                 <span class="mdi mdi-source-branch"></span>
             </a>
@@ -55,9 +56,10 @@
                 </button>
             </div>
             <div class="top-bar-right">
-                <a href="/trpg/module-editor/" target="_blank" rel="noopener" class="btn-icon" title="模组编辑器（本地工具，不调 LLM）">
+                <button type="button" class="btn-icon is-disabled" disabled aria-disabled="true" title="模组编辑器开发中，主页入口暂不可用">
                     <span class="mdi mdi-pencil-ruler"></span>
-                </a>
+                    <span class="btn-dev-badge">开发中</span>
+                </button>
                 <a href="https://github.com/TheEyeoftheUniverse/AITRPG" target="_blank" rel="noopener" class="btn-icon" title="让我康康你的源码！">
                     <span class="mdi mdi-source-branch"></span>
                 </a>

@@ -463,6 +463,33 @@ html, body {
     background: var(--bg-hover);
     color: var(--text-primary);
 }
+.btn-icon.is-disabled,
+.btn-icon:disabled {
+    position: relative;
+    cursor: not-allowed;
+    color: var(--text-muted);
+    opacity: 0.62;
+    background: rgba(255, 255, 255, 0.03);
+}
+.btn-icon.is-disabled:hover,
+.btn-icon:disabled:hover {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted);
+}
+.btn-dev-badge {
+    position: absolute;
+    right: -10px;
+    bottom: -7px;
+    padding: 2px 5px;
+    border-radius: 999px;
+    border: 1px solid rgba(224, 92, 108, 0.32);
+    background: rgba(224, 92, 108, 0.14);
+    color: #f2a0aa;
+    font-size: 10px;
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+}
 
 .btn-retry {
     color: var(--accent, #6ea0ff);
