@@ -1791,13 +1791,7 @@ async function resetGame() {
         document.getElementById("ending-overlay").classList.add("hidden");
 
         // 重置地图样式
-        const svg = document.getElementById("map-svg");
-        if (svg) {
-            svg.style.pointerEvents = "";
-            svg.style.opacity = "";
-        }
-        // 新地图: 重新启用 + 清画布
-        if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+        if (window.MapView && window.MapView._getCy()) {
             window.MapView.enable();
             window.MapView.clear();
         }
@@ -1812,7 +1806,6 @@ async function resetGame() {
         // 重置地图
         selectedDestination = null;
         currentMapData = null;
-        document.getElementById("map-svg").innerHTML = "";
         document.getElementById("move-indicator").classList.add("hidden");
 
         // 回到模组选择
@@ -2012,26 +2005,8 @@ async function effectEchoText(inlineId, phases) {
 // 6. map-corrupt — 地图节点批量污染（一次闪烁，全部替换）
 async function effectMapCorruptBatch(batch) {
     if (!currentMapData || !currentMapData.locations) return;
-    // 新地图: 闪烁容器 + 改名后 MapView.render 重画
-    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
-        window.MapView.flashCorrupt();
-        await theatricalSleep(350);
-        for (const effect of batch) {
-            if (currentMapData.locations[effect.target]) {
-                currentMapData.locations[effect.target].display_name = effect.content;
-            }
-        }
-        renderMap(currentMapData);
-        await theatricalSleep(300);
-        return;
-    }
-    // 旧地图: 闪 #map-svg
-    const svg = document.getElementById("map-svg");
-    if (svg) {
-        svg.classList.add("map-corrupt-flash");
-        await theatricalSleep(350);
-        svg.classList.remove("map-corrupt-flash");
-    }
+    if (window.MapView && window.MapView._getCy()) window.MapView.flashCorrupt();
+    await theatricalSleep(350);
     for (const effect of batch) {
         if (currentMapData.locations[effect.target]) {
             currentMapData.locations[effect.target].display_name = effect.content;
@@ -2044,292 +2019,23 @@ async function effectMapCorruptBatch(batch) {
 // ─── 地图渲染与交互 ───
 
 function renderMap(mapData) {
-    // v3.1.0: feature flag 接入 Cytoscape.js 新地图; 失败/未启用回退到下方旧 SVG 逻辑
-    if (window.MapView && window.MapView.isEnabled()) {
-        try {
-            if (!window.MapView._getCy()) {
-                window.MapView.init();
-                // 把 cytoscape tap 事件桥接到现有的 onMapNodeClick (空白处 tap 会传 null)
-                window.MapView.setOnNodeTap((key) => {
-                    if (key) onMapNodeClick(key);
-                });
-            }
-            if (window.MapView.render(mapData)) {
-                renderSceneNpcs(mapData);
-                return;
-            }
-        } catch (e) {
-            console.error("[MapView] render failed, fall back to legacy:", e);
-        }
-    }
     try {
-        const svg = document.getElementById("map-svg");
-        if (!svg) return;
-
-        // 清空SVG（兼容所有浏览器）
-        while (svg.firstChild) svg.removeChild(svg.firstChild);
-
-        if (!mapData || !mapData.locations || typeof mapData.locations !== "object") {
-            console.warn("[Map] No map data or invalid locations:", mapData);
-            return;
+        if (!window.MapView) {
+            throw new Error("window.MapView is not available");
         }
-
-        const locations = mapData.locations;
-        const edges = Array.isArray(mapData.edges) ? mapData.edges : [];
-        const currentLoc = mapData.current_location;
-        const reachable = new Set(Array.isArray(mapData.reachable) ? mapData.reachable : []);
-        const dangerLocations = new Set(Array.isArray(mapData.danger_locations) ? mapData.danger_locations : []);
-        const npcLocations = new Set(Array.isArray(mapData.npc_locations) ? mapData.npc_locations : []);
-
-        const keys = Object.keys(locations);
-        if (keys.length === 0) {
-            console.warn("[Map] Empty locations");
-            return;
+        if (!window.MapView._getCy()) {
+            if (!window.MapView.init()) {
+                throw new Error("MapView.init() failed");
+            }
+            window.MapView.setOnNodeTap((key) => {
+                if (key) onMapNodeClick(key);
+            });
         }
-
-        // 按floor分组，高楼层在上
-        const floorGroups = {};
-        for (const key of keys) {
-            const loc = locations[key] || {};
-            const floor = loc.floor;
-            if (floor === undefined || floor === null) continue;
-            if (!floorGroups[floor]) floorGroups[floor] = [];
-            floorGroups[floor].push(key);
+        if (!window.MapView.render(mapData)) {
+            throw new Error("MapView.render() failed");
         }
-        const floors = Object.keys(floorGroups).map(Number).sort((a, b) => b - a);
-
-        // 构建邻接表（仅可见节点之间）
-        const adj = {};
-        for (const key of keys) adj[key] = [];
-        for (const edge of edges) {
-            if (edge && locations[edge.from] && locations[edge.to]) {
-                adj[edge.from].push(edge.to);
-                adj[edge.to].push(edge.from);
-            }
-        }
-
-        // 布局参数
-        const nodeW = 60;
-        const nodeH = 28;
-        const gapX = 16;
-        const gapY = 32;
-        const labelW = 28;
-        const padX = 8;
-        const padY = 10;
-        const ns = "http://www.w3.org/2000/svg";
-
-        // 每层内布局：
-        // 1. 常规房间先按既有拓扑粗排
-        // 2. 带可见微场景的父节点整体推到本层右侧
-        // 3. 微场景节点固定挂在父节点右边，避免挤乱原始地图结构
-        const nodePositions = {};
-        let yOffset = padY;
-
-        for (const floor of floors) {
-            const group = floorGroups[floor];
-            if (!group || group.length === 0) continue;
-
-            const primaryNodes = group.filter((key) => !locations[key]?.is_micro_scene);
-            const microNodes = group.filter((key) => Boolean(locations[key]?.is_micro_scene));
-            if (primaryNodes.length === 0) continue;
-
-            const microChildrenByParent = new Map();
-            for (const microKey of microNodes) {
-                const parentKey = String(locations[microKey]?.parent_location || "").trim();
-                if (!parentKey || !primaryNodes.includes(parentKey)) continue;
-                if (!microChildrenByParent.has(parentKey)) {
-                    microChildrenByParent.set(parentKey, []);
-                }
-                microChildrenByParent.get(parentKey).push(microKey);
-            }
-
-            const parentsWithMicroScenes = new Set(microChildrenByParent.keys());
-
-            // 找连接数最多的节点作为hub
-            let hubKey = primaryNodes[0];
-            let maxConn = 0;
-            for (const key of primaryNodes) {
-                const conn = (adj[key] || []).filter((neighbor) => !locations[neighbor]?.is_micro_scene).length;
-                if (conn > maxConn) {
-                    maxConn = conn;
-                    hubKey = key;
-                }
-            }
-
-            // 排列：hub居中，其他按连接关系左右交替
-            const ordered = [hubKey];
-            const remaining = primaryNodes.filter(k => k !== hubKey);
-            const connected = remaining.filter(k => (adj[hubKey] || []).includes(k));
-            const unconnected = remaining.filter(k => !(adj[hubKey] || []).includes(k));
-
-            let left = true;
-            for (const k of [...connected, ...unconnected]) {
-                if (left) {
-                    ordered.unshift(k);
-                } else {
-                    ordered.push(k);
-                }
-                left = !left;
-            }
-
-            // 带微场景的父节点在本层优先排到右边，给右侧扩展留槽位。
-            const regularNodes = ordered.filter((key) => !parentsWithMicroScenes.has(key));
-            const expandableParents = ordered.filter((key) => parentsWithMicroScenes.has(key));
-            const orderedPrimary = [...regularNodes, ...expandableParents];
-
-            let cursorX = labelW + padX;
-            for (const key of orderedPrimary) {
-                nodePositions[key] = {
-                    x: cursorX,
-                    y: yOffset
-                };
-                cursorX += nodeW + gapX;
-
-                const childNodes = microChildrenByParent.get(key) || [];
-                for (const childKey of childNodes) {
-                    nodePositions[childKey] = {
-                        x: cursorX,
-                        y: yOffset
-                    };
-                    cursorX += nodeW + gapX;
-                }
-            }
-
-            yOffset += nodeH + gapY;
-        }
-
-        // 计算SVG尺寸
-        let maxX = 0;
-        for (const pos of Object.values(nodePositions)) {
-            const right = pos.x + nodeW + padX;
-            if (right > maxX) maxX = right;
-        }
-        const svgW = Math.max(maxX, 200);
-        const svgH = yOffset - gapY + nodeH + padY;
-
-        // 设置SVG尺寸
-        svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
-        svg.removeAttribute("width");
-        svg.removeAttribute("height");
-
-        // 绘制楼层标签
-        for (const floor of floors) {
-            const group = floorGroups[floor];
-            const firstKey = group.find((key) => nodePositions[key]) || group[0];
-            const pos = nodePositions[firstKey];
-            if (!pos) continue;
-
-            const label = document.createElementNS(ns, "text");
-            label.setAttribute("x", "4");
-            label.setAttribute("y", String(pos.y + nodeH / 2));
-            label.setAttribute("class", "map-floor-label");
-            label.textContent = floor >= 1 ? `${floor}F` : `B${Math.abs(floor)}`;
-            svg.appendChild(label);
-        }
-
-        // 绘制边
-        for (const edge of edges) {
-            if (!edge) continue;
-            const fromPos = nodePositions[edge.from];
-            const toPos = nodePositions[edge.to];
-            if (!fromPos || !toPos) continue;
-
-            const line = document.createElementNS(ns, "line");
-            line.setAttribute("x1", String(fromPos.x + nodeW / 2));
-            line.setAttribute("y1", String(fromPos.y + nodeH / 2));
-            line.setAttribute("x2", String(toPos.x + nodeW / 2));
-            line.setAttribute("y2", String(toPos.y + nodeH / 2));
-            line.setAttribute("class", edge.locked ? "map-edge map-edge--locked" : "map-edge");
-            svg.appendChild(line);
-        }
-
-        // 绘制节点
-        for (const key of keys) {
-            const loc = locations[key] || {};
-            const pos = nodePositions[key];
-            if (!pos) continue;
-
-            const isCurrent = key === currentLoc;
-            const isReachable = reachable.has(key);
-            const isVisited = Boolean(loc.visited);
-            const isSelected = key === selectedDestination;
-            const isDanger = dangerLocations.has(key);
-            const isNpc = npcLocations.has(key);
-
-            let nodeClass = "map-node";
-            if (isCurrent) {
-                nodeClass += " map-node--current";
-            } else if (!isReachable) {
-                nodeClass += " map-node--locked";
-            } else if (!isVisited) {
-                nodeClass += " map-node--fog";
-            } else {
-                nodeClass += " map-node--visited";
-            }
-            if (isSelected) {
-                nodeClass += " map-node--selected";
-            }
-            if (isDanger) {
-                nodeClass += " map-node--danger";
-            }
-            if (isNpc) {
-                nodeClass += " map-node--npc";
-            }
-
-            const g = document.createElementNS(ns, "g");
-            g.setAttribute("class", nodeClass);
-
-            const rect = document.createElementNS(ns, "rect");
-            rect.setAttribute("x", String(pos.x));
-            rect.setAttribute("y", String(pos.y));
-            rect.setAttribute("width", String(nodeW));
-            rect.setAttribute("height", String(nodeH));
-            rect.setAttribute("rx", "6");
-            rect.setAttribute("ry", "6");
-            g.appendChild(rect);
-
-            const text = document.createElementNS(ns, "text");
-            text.setAttribute("x", String(pos.x + nodeW / 2));
-            text.setAttribute("y", String(pos.y + nodeH / 2));
-
-            let displayName = typeof loc.display_name === "string" ? loc.display_name : "?";
-            if (displayName.length > 5) {
-                displayName = displayName.substring(0, 4) + "…";
-            }
-            text.textContent = displayName;
-            g.appendChild(text);
-
-            if (isCurrent || (!isCurrent && isReachable)) {
-                g.style.cursor = "pointer";
-                g.addEventListener("click", () => onMapNodeClick(key));
-            }
-
-            svg.appendChild(g);
-        }
-
-        // 计算 fit-contain：SVG 默认缩放到既不超过容器宽也不超过容器高 (取小者)
-        // 让玩家进场就能一眼看到全部地图节点而无需滚动条；玩家可用 +/- 主动放大缩小
-        const container = document.getElementById("game-map");
-        if (container) {
-            const cw = Math.max(0, container.clientWidth - 16);
-            const ch = Math.max(0, container.clientHeight - 16);
-            if (cw > 0 && ch > 0 && svgW > 0 && svgH > 0) {
-                const fitScale = Math.min(cw / svgW, ch / svgH);
-                // 不主动放大超过 1:1；同时不允许低于 0.55 防止地图被压缩到看不清
-                window._mapBaseScale = Math.max(0.55, Math.min(fitScale, 1));
-            } else {
-                window._mapBaseScale = 1;
-            }
-        } else {
-            window._mapBaseScale = 1;
-        }
-        if (typeof window._mapZoom !== "number") window._mapZoom = 1.0;
-        applyMapZoom(window._mapZoom);
-        attachMapPanHandlers();
-
-        console.log(`[Map] Rendered ${keys.length} nodes, ${edges.length} edges`);
-    } catch (err) {
-        console.error("[Map] Render failed:", err, mapData);
+    } catch (e) {
+        console.error("[MapView] render failed:", e, mapData);
     }
 
     renderSceneNpcs(mapData);
@@ -2393,10 +2099,8 @@ function onMapNodeClick(locationKey) {
         return;
     }
 
-    // 点击不可达 → W4: 给玩家解释原因, 不再静默.
-    // v3.2.1: 新地图 (Cytoscape) 已经在 map_view.js::_bindInteractions 的 tap 监听里源头拦截了
-    // 不可达节点的选中流程 (改成显示 tooltip), 这里这一段实际只服务旧 SVG fallback. 但保留它
-    // 作为 SVG 模式下的"看清不可达原因"提示, 不重复给新地图弹 move-indicator.
+    // 点击不可达 → 给玩家解释原因, 不再静默.
+    // 新地图会在 map_view.js 里优先拦截；这里保留一层兜底，避免异常状态下直接进入选中流程。
     if (!reachable.has(locationKey)) {
         const loc = currentMapData.locations[locationKey] || {};
         const reasonMap = {
@@ -2433,11 +2137,9 @@ function onMapNodeClick(locationKey) {
     indicatorText.textContent = `已选：${locName} · 在聊天框输入任意行动并发送即可移动`;
     indicator.classList.remove("hidden");
 
-    // 新地图: setSelectedTarget 会触发路径高亮; 旧地图: 重渲染
-    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+    // 选中目标时同步路径高亮
+    if (window.MapView && window.MapView._getCy()) {
         window.MapView.setSelectedTarget(locationKey);
-    } else {
-        renderMap(currentMapData);
     }
 }
 
@@ -2446,11 +2148,9 @@ function cancelMoveSelection() {
     const indicator = document.getElementById("move-indicator");
     indicator.classList.add("hidden");
 
-    // 新地图: 清选中 (会自动清路径); 旧地图: 重渲染
-    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+    // 清选中时同步清路径
+    if (window.MapView && window.MapView._getCy()) {
         window.MapView.setSelectedTarget(null);
-    } else if (currentMapData) {
-        renderMap(currentMapData);
     }
 }
 
@@ -2510,116 +2210,28 @@ function hideEndingIndicator() {
 }
 
 function disableMapInteraction() {
-    // 新地图分支
-    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+    if (window.MapView && window.MapView._getCy()) {
         window.MapView.disable();
-        return;
-    }
-    const svg = document.getElementById("map-svg");
-    if (svg) {
-        svg.style.pointerEvents = "none";
-        svg.style.opacity = "0.5";
     }
 }
 
 // ─── 地图缩放控件 ───
-function applyMapZoom(zoom) {
-    const svg = document.getElementById("map-svg");
-    if (!svg || !svg.viewBox || !svg.viewBox.baseVal) return;
-    const base = window._mapBaseScale || 1;
-    const total = Math.max(0.1, base * zoom);
-    const w = parseFloat(svg.viewBox.baseVal.width) || 200;
-    const h = parseFloat(svg.viewBox.baseVal.height) || 120;
-    svg.style.width = (w * total) + "px";
-    svg.style.height = (h * total) + "px";
-    window._mapZoom = zoom;
-}
-
 function mapZoomIn() {
-    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+    if (window.MapView && window.MapView._getCy()) {
         return window.MapView.zoomIn();
     }
-    const next = Math.min((window._mapZoom || 1) * 1.2, 3);
-    applyMapZoom(next);
 }
 
 function mapZoomOut() {
-    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+    if (window.MapView && window.MapView._getCy()) {
         return window.MapView.zoomOut();
     }
-    const next = Math.max((window._mapZoom || 1) / 1.2, 0.4);
-    applyMapZoom(next);
 }
 
 function mapZoomReset() {
-    if (window.MapView && window.MapView.isEnabled() && window.MapView._getCy()) {
+    if (window.MapView && window.MapView._getCy()) {
         return window.MapView.zoomReset();
     }
-    applyMapZoom(1);
-}
-
-// ─── 地图拖拽（按住空白处拖动 .map-container scrollLeft/Top） ───
-let _mapPanState = null;
-let _mapPanInstalled = false;
-let _mapJustDragged = false;
-
-function attachMapPanHandlers() {
-    if (_mapPanInstalled) return;
-    const container = document.getElementById("game-map");
-    if (!container) return;
-    _mapPanInstalled = true;
-
-    container.addEventListener("mousedown", (e) => {
-        // 左键 + 起点不在节点交互元素上时才进入 pan 模式
-        if (e.button !== 0) return;
-        // 起点在节点(rect/text/g)上时让节点点击优先处理
-        const path = e.composedPath ? e.composedPath() : [];
-        const onNode = path.some(el =>
-            el.classList && (el.classList.contains("map-node") || el.tagName === "g"
-                && el.parentNode && el.parentNode.id === "map-svg" && el.classList.contains("map-node"))
-        );
-        if (onNode) return;
-        _mapPanState = {
-            startX: e.clientX,
-            startY: e.clientY,
-            scrollLeft: container.scrollLeft,
-            scrollTop: container.scrollTop,
-            moved: false,
-        };
-        container.classList.add("map-panning");
-        e.preventDefault();
-    });
-
-    container.addEventListener("mousemove", (e) => {
-        if (!_mapPanState) return;
-        const dx = e.clientX - _mapPanState.startX;
-        const dy = e.clientY - _mapPanState.startY;
-        if (Math.abs(dx) + Math.abs(dy) > 4) _mapPanState.moved = true;
-        container.scrollLeft = _mapPanState.scrollLeft - dx;
-        container.scrollTop = _mapPanState.scrollTop - dy;
-    });
-
-    const endPan = () => {
-        if (!_mapPanState) return;
-        _mapJustDragged = _mapPanState.moved;
-        _mapPanState = null;
-        container.classList.remove("map-panning");
-        if (_mapJustDragged) {
-            // 吞掉本次 mouseup 后冒泡到 svg/node 的 click
-            setTimeout(() => { _mapJustDragged = false; }, 80);
-        }
-    };
-    container.addEventListener("mouseup", endPan);
-    container.addEventListener("mouseleave", endPan);
-
-    // 拖动后立刻发生的 click 吞掉，防止误触发节点跳转
-    container.addEventListener("click", (e) => {
-        if (_mapJustDragged) {
-            e.stopPropagation();
-            e.preventDefault();
-            _mapJustDragged = false;
-        }
-    }, true);
 }
 
 function disableAllGameInput() {

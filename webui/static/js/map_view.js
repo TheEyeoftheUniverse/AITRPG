@@ -37,9 +37,7 @@
 (function () {
     "use strict";
 
-    const FLAG_KEY = "aitrpg_new_map";
     const CONTAINER_ID = "map-canvas";
-    const LEGACY_SVG_ID = "map-svg";
     const OVERLAY_ID = "map-node-overlay";
 
     let _cy = null;
@@ -69,30 +67,16 @@
     const _BADGE_POSITIONS = ["tr", "tl", "br", "bl"];
 
     function isEnabled() {
-        // v3.1.0 默认启用新地图 (Cytoscape.js); 若用户显式设 "0" 则切回旧 SVG 渲染。
-        // 这样升级后开箱即用; 万一新版异常, 玩家可在 console 里 localStorage.setItem('aitrpg_new_map','0') 应急回退。
-        try {
-            const v = localStorage.getItem(FLAG_KEY);
-            if (v === "0") return false;
-            return true;
-        } catch (e) {
-            return false;
-        }
+        return true;
     }
 
     function _swapContainerMode(useNewMap) {
         const wrap = document.getElementById("game-map");
-        const canvas = document.getElementById(CONTAINER_ID);
-        const legacySvg = document.getElementById(LEGACY_SVG_ID);
-        if (!wrap || !canvas) return;
+        if (!wrap) return;
         if (useNewMap) {
             wrap.classList.add("map-container--cy");
-            canvas.classList.remove("hidden");
-            if (legacySvg) legacySvg.style.display = "none";
         } else {
             wrap.classList.remove("map-container--cy");
-            canvas.classList.add("hidden");
-            if (legacySvg) legacySvg.style.display = "";
         }
     }
 
@@ -705,12 +689,8 @@
     }
 
     function init() {
-        if (!isEnabled()) {
-            _enabled = false;
-            return false;
-        }
         if (typeof cytoscape !== "function") {
-            console.error("[MapView] cytoscape lib not loaded; falling back to legacy renderMap");
+            console.error("[MapView] cytoscape lib not loaded");
             _enabled = false;
             return false;
         }

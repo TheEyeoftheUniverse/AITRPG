@@ -1156,25 +1156,17 @@ html, body {
     cursor: grabbing;
 }
 
-/* v3.1.0 Cytoscape 容器: 与旧 #map-svg 共存; 由 feature flag 切换显示 */
 .map-canvas {
     width: 100%;
     height: 100%;
     min-height: 240px;
     position: relative;
 }
-.map-canvas.hidden {
-    display: none;
-}
-/* 当新地图启用时, 容器要让出 align/justify 居中 (cy 自己负责定位) */
 .map-container.map-container--cy {
     align-items: stretch;
     justify-content: stretch;
     overflow: hidden;
     cursor: auto;
-}
-.map-container.map-container--cy #map-svg {
-    display: none;
 }
 
 /* ============================================================
@@ -1420,13 +1412,6 @@ html, body {
 
 .map-help-list li + li {
     margin-top: 4px;
-}
-
-#map-svg {
-    display: block;
-    margin: 0 auto;
-    /* 宽高由 JS applyMapZoom 显式 px 设置；保留 flex-shrink:0 防止容器压缩 */
-    flex-shrink: 0;
 }
 
 .map-zoom-controls {
