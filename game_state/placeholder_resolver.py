@@ -198,8 +198,8 @@ def resolve_in(obj: Any,
 # 需求文档: docs/requirements/2026-05-03-placeholder-and-background-routing.md §3.2.2
 # ============================================================================
 
-# {检定:侦查}, {检定:侦查/困难}, {检定:STR/极难} — 允许中英文 skill/attribute 名
-_HARD_CHECK_RE = re.compile(r"\{检定:([^}/]+?)(?:/([^}/]+?))?\}")
+# {检定:侦查}, {检定:侦查/困难}, {检定:STR/极难/仅一次} — 允许中英文 skill/attribute 名
+_HARD_CHECK_RE = re.compile(r"\{检定:([^}/]+?)((?:/[^}/]+?)*)\}")
 
 # {自动:STR>=60} — 仅允许属性名 (中英文)
 _HARD_AUTO_RE = re.compile(r"\{自动:([A-Za-z一-鿿]+?)>=(\d+)\}")
@@ -254,6 +254,62 @@ def _normalize_hard_difficulty(raw: Optional[str]) -> str:
     return "普通"
 
 
+def _parse_modifiers(raw: Optional[str]) -> tuple:
+    """解析硬检定修饰符，返回 (difficulty, retry_policy)。"""
+    difficulty = "普通"
+    retry_policy = "default"
+    if not isinstance(raw, str) or not raw.strip():
+        return difficulty, retry_policy
+
+    for part in raw.strip("/").split("/"):
+        modifier = part.strip()
+        if modifier in ("普通", "困难", "极难"):
+            difficulty = modifier
+        elif modifier == "可重试":
+            retry_policy = "free"
+        elif modifier == "仅一次":
+            retry_policy = "once_only"
+        elif modifier == "默认":
+            retry_policy = "default"
+    return difficulty, retry_policy
+
+
+def _build_skill_check_payload(
+    *,
+    label: str,
+    skill_name: str,
+    difficulty: str,
+    player_value: int,
+    retry_policy: str = "default",
+    retry_count: int = 0,
+    idx: int = 0,
+) -> dict:
+    threshold = _compute_threshold(player_value, difficulty)
+    roll = random.randint(1, 100)
+    success = roll <= threshold
+    critical_success = roll <= 5
+    critical_failure = roll >= 96
+    desc = _describe_result(success, critical_success, critical_failure)
+    return {
+        "type": "skill_check",
+        "idx": int(idx or 0),
+        "label": label,
+        "skill": skill_name,
+        "difficulty": difficulty,
+        "player_skill": player_value,
+        "roll": roll,
+        "threshold": threshold,
+        "success": success,
+        "critical_success": critical_success,
+        "critical_failure": critical_failure,
+        "description": desc,
+        "pushed": int(retry_count or 0) > 0,
+        "pushable": retry_policy == "default" and not success,
+        "retry_count": max(0, int(retry_count or 0)),
+        "retry_policy": retry_policy,
+    }
+
+
 # ---- public API ----
 
 def get_and_clear_pending_checks() -> list:
@@ -292,9 +348,14 @@ def format_upcoming_checks(module_data: dict, current_location: str, resolved: d
             return
         for match in _HARD_CHECK_RE.finditer(text):
             skill = match.group(1).strip()
-            diff = _normalize_hard_difficulty(match.group(2))
+            diff, retry_policy = _parse_modifiers(match.group(2))
             label = f"{diff}{skill}" if diff != "普通" else skill
-            _append(f"- {label}检定 (skill_check, 来源: {source})")
+            retry_label = {
+                "default": "",
+                "free": ", 可重试",
+                "once_only": ", 仅一次",
+            }.get(retry_policy, "")
+            _append(f"- {label}检定 (skill_check{retry_label}, 来源: {source})")
         for match in _HARD_AUTO_RE.finditer(text):
             attr = match.group(1).strip()
             threshold = match.group(2)
@@ -380,13 +441,57 @@ def resolve_hard_in(
     return obj
 
 
+def reroll_pending_check(dice_roll: dict, retry_count: int = None) -> Optional[dict]:
+    """基于已生成的 pending_check 元数据重新骰一次，供孤注一掷使用。"""
+    if not isinstance(dice_roll, dict) or dice_roll.get("type") != "skill_check":
+        return None
+    if dice_roll.get("roll") is None:
+        return None
+
+    retry_policy = str(dice_roll.get("retry_policy") or "default")
+    if retry_policy != "default":
+        return None
+    if bool(dice_roll.get("success")):
+        return None
+
+    skill_name = str(dice_roll.get("skill") or "").strip()
+    if not skill_name:
+        return None
+    difficulty = _normalize_hard_difficulty(dice_roll.get("difficulty"))
+    try:
+        player_value = int(dice_roll.get("player_skill"))
+    except (TypeError, ValueError):
+        player_value = int(dice_roll.get("threshold") or 0)
+    next_retry_count = retry_count
+    if next_retry_count is None:
+        next_retry_count = int(dice_roll.get("retry_count") or 0) + 1
+
+    payload = _build_skill_check_payload(
+        label=str(dice_roll.get("label") or f"{skill_name}检定"),
+        skill_name=skill_name,
+        difficulty=difficulty,
+        player_value=player_value,
+        retry_policy=retry_policy,
+        retry_count=next_retry_count,
+        idx=int(dice_roll.get("idx") or 0),
+    )
+    for key in ("scene_kind", "scene_key"):
+        if dice_roll.get(key) is not None:
+            payload[key] = dice_roll.get(key)
+    payload["pushable"] = retry_policy == "default" and not payload["success"]
+    return payload
+
+
 def _resolve_hard_placeholders_impl(text: str, card, player_state) -> str:
     """内部实现: 在 resolve_hard_placeholders 的作用域内定义闭包。"""
+    check_idx = 0
+
     def _replace_check(match):
+        nonlocal check_idx
         original = match.group(0)
         skill_name = match.group(1).strip()
-        raw_diff = match.group(2)
-        difficulty = _normalize_hard_difficulty(raw_diff)
+        raw_modifiers = match.group(2)
+        difficulty, retry_policy = _parse_modifiers(raw_modifiers)
 
         if not skill_name:
             return original
@@ -394,33 +499,27 @@ def _resolve_hard_placeholders_impl(text: str, card, player_state) -> str:
         # card 有完整 attributes + skills; 优先用它, 降级到 player_state
         lookup = card if isinstance(card, dict) and (card.get("attributes") or card.get("skills")) else player_state
         player_value = get_check_value(skill_name, lookup)
-        threshold = _compute_threshold(player_value, difficulty)
-        roll = random.randint(1, 100)
-        success = roll <= threshold
-        critical_success = roll <= 5
-        critical_failure = roll >= 96
-        desc = _describe_result(success, critical_success, critical_failure)
+        current_idx = check_idx
+        check_idx += 1
+        payload = _build_skill_check_payload(
+            label=f"{skill_name}检定" + (f"（{difficulty}）" if difficulty != "普通" else ""),
+            skill_name=skill_name,
+            difficulty=difficulty,
+            player_value=player_value,
+            retry_policy=retry_policy,
+            retry_count=0,
+            idx=current_idx,
+        )
 
         # 人类可读的替换文本
         diff_label = f"（{difficulty}）" if difficulty != "普通" else ""
-        result_text = f"[检定: {skill_name}{diff_label} d100={roll}/{threshold} {desc}]"
+        result_text = f"[检定: {skill_name}{diff_label} d100={payload['roll']}/{payload['threshold']} {payload['description']}]"
 
-        _pending_checks.append({
-            "type": "skill_check",
-            "label": f"{skill_name}检定{diff_label}",
-            "skill": skill_name,
-            "difficulty": difficulty,
-            "player_skill": player_value,
-            "roll": roll,
-            "threshold": threshold,
-            "success": success,
-            "critical_success": critical_success,
-            "critical_failure": critical_failure,
-            "description": desc,
-        })
+        _pending_checks.append(payload)
         return result_text
 
     def _replace_auto(match):
+        nonlocal check_idx
         original = match.group(0)
         attr_name = match.group(1).strip()
         threshold_str = match.group(2)
@@ -434,11 +533,14 @@ def _resolve_hard_placeholders_impl(text: str, card, player_state) -> str:
 
         lookup = card if isinstance(card, dict) and (card.get("attributes") or card.get("skills")) else player_state
         player_value = get_check_value(attr_name, lookup)
+        current_idx = check_idx
+        check_idx += 1
 
         if player_value >= required:
             result_text = f"自动通过（{attr_name}={player_value}≥{required}）"
             _pending_checks.append({
                 "type": "skill_check",
+                "idx": current_idx,
                 "label": f"{attr_name}自动判定",
                 "skill": attr_name,
                 "difficulty": "自动",
@@ -449,36 +551,31 @@ def _resolve_hard_placeholders_impl(text: str, card, player_state) -> str:
                 "critical_success": False,
                 "critical_failure": False,
                 "description": f"自动通过（{attr_name}={player_value}≥{required}）",
+                "pushed": False,
+                "pushable": False,
+                "retry_count": 0,
+                "retry_policy": "once_only",
             })
             return result_text
 
         # 未达标 -> 退化为普通检定
         difficulty = "普通"
-        threshold = _compute_threshold(player_value, difficulty)
-        roll = random.randint(1, 100)
-        success = roll <= threshold
-        critical_success = roll <= 5
-        critical_failure = roll >= 96
-        desc = _describe_result(success, critical_success, critical_failure)
+        payload = _build_skill_check_payload(
+            label=f"{attr_name}检定（自动退化）",
+            skill_name=attr_name,
+            difficulty=difficulty,
+            player_value=player_value,
+            retry_policy="default",
+            retry_count=0,
+            idx=current_idx,
+        )
 
         result_text = (
             f"[未达标: {attr_name}={player_value}<{required}, "
-            f"退化为{attr_name}检定 d100={roll}/{threshold} {desc}]"
+            f"退化为{attr_name}检定 d100={payload['roll']}/{payload['threshold']} {payload['description']}]"
         )
 
-        _pending_checks.append({
-            "type": "skill_check",
-            "label": f"{attr_name}检定（自动退化）",
-            "skill": attr_name,
-            "difficulty": difficulty,
-            "player_skill": player_value,
-            "roll": roll,
-            "threshold": threshold,
-            "success": success,
-            "critical_success": critical_success,
-            "critical_failure": critical_failure,
-            "description": desc,
-        })
+        _pending_checks.append(payload)
         return result_text
 
     text = _HARD_CHECK_RE.sub(_replace_check, text)

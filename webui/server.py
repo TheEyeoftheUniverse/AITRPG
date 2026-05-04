@@ -18,6 +18,7 @@ from ..game_state.placeholder_resolver import (
     resolve_hard_in,
     resolve_hard_placeholders,
     get_and_clear_pending_checks,
+    reroll_pending_check,
 )
 from ..theatrical_parser import parse_theatrical_tags
 
@@ -292,6 +293,23 @@ def create_trpg_app(plugin):
             for key, value in resolved.items()
         }
 
+    def _annotate_dice_checks(checks, scene_kind: str, scene_key: str) -> list:
+        """给硬 placeholder 骰点补充前端 push API 所需的场景定位信息。"""
+        scene_kind = str(scene_kind or "").strip()
+        scene_key = str(scene_key or "").strip()
+        annotated = []
+        for idx, check in enumerate(checks or []):
+            if not isinstance(check, dict):
+                continue
+            item = dict(check)
+            item.setdefault("idx", idx)
+            if scene_kind:
+                item["scene_kind"] = scene_kind
+            if scene_key:
+                item["scene_key"] = scene_key
+            annotated.append(item)
+        return annotated
+
     def _lazy_resolve_location(loc_key, module_data, card, player, web_session):
         """解析指定 location 的硬 placeholder；返回本次产生的骰点。"""
         loc_key = str(loc_key or "").strip()
@@ -307,7 +325,7 @@ def create_trpg_app(plugin):
                 if loc_data.get(field):
                     loc_data[field] = resolve_hard_in(loc_data[field], card, player)
         resolved["locations"].add(loc_key)
-        return get_and_clear_pending_checks()
+        return _annotate_dice_checks(get_and_clear_pending_checks(), "loc", loc_key)
 
     def _lazy_resolve_object(obj_key, module_data, card, player, web_session):
         """解析指定 object 的硬 placeholder；返回本次产生的骰点。"""
@@ -324,7 +342,7 @@ def create_trpg_app(plugin):
                 if obj_data.get(field):
                     obj_data[field] = resolve_hard_in(obj_data[field], card, player)
         resolved["objects"].add(obj_key)
-        return get_and_clear_pending_checks()
+        return _annotate_dice_checks(get_and_clear_pending_checks(), "obj", obj_key)
 
     def _lazy_resolve_npc(npc_key, module_data, card, player, web_session):
         """解析指定 NPC 的硬 placeholder；返回本次产生的骰点。"""
@@ -341,7 +359,7 @@ def create_trpg_app(plugin):
                 if npc_data.get(field):
                     npc_data[field] = resolve_hard_in(npc_data[field], card, player)
         resolved["npcs"].add(npc_key)
-        return get_and_clear_pending_checks()
+        return _annotate_dice_checks(get_and_clear_pending_checks(), "npc", npc_key)
 
     def _persist_web_session(cookie_id: str):
         """将 Web 会话和游戏状态持久化到 JSON"""
@@ -654,7 +672,7 @@ def create_trpg_app(plugin):
                             loc_data["description"] = resolve_hard_in(loc_data["description"], card, player)
                         if isinstance(loc_data, dict) and loc_data.get("npc_present_description"):
                             loc_data["npc_present_description"] = resolve_hard_in(loc_data["npc_present_description"], card, player)
-                        opening_checks.extend(get_and_clear_pending_checks())
+                        opening_checks.extend(_annotate_dice_checks(get_and_clear_pending_checks(), "loc", loc_key))
                         resolved["locations"].add(loc_key)
                     for obj_key, obj_data in module_data.get("objects", {}).items():
                         if isinstance(obj_data, dict):
@@ -663,7 +681,7 @@ def create_trpg_app(plugin):
                                     obj_data[field] = resolve_hard_in(obj_data[field], card, player)
                             checks = get_and_clear_pending_checks()
                             if checks:
-                                object_dice[obj_key] = checks
+                                object_dice[obj_key] = _annotate_dice_checks(checks, "obj", obj_key)
                             resolved["objects"].add(obj_key)
                     for npc_key, npc_data in module_data.get("npcs", {}).items():
                         if isinstance(npc_data, dict):
@@ -679,7 +697,7 @@ def create_trpg_app(plugin):
                 # 硬 placeholder 也解析 opening 文本 (可能含 {检定:X} 等)
                 opening = resolve_hard_placeholders(opening, card, player)
                 opening_effects = parsed_opening["effects"]
-                opening_checks.extend(get_and_clear_pending_checks())
+                opening_checks.extend(_annotate_dice_checks(get_and_clear_pending_checks(), "opening", "opening"))
                 opening_user_message, opening_assistant_message = plugin._build_opening_history_pair(opening)
 
                 # 尝试在 AstrBot 中创建新对话并写入开场白；失败时降级为仅Web会话
@@ -757,14 +775,30 @@ def create_trpg_app(plugin):
             return jsonify({"error": "输入不能为空"}), 400
 
         session_id = web_session["session_id"]
+        pushed_failures = list(web_session.pop("pushed_roll_failures", []) or [])
         _action_results.pop(cookie_id, None)
 
         async def _run_action():
             async with lock:
                 try:
+                    effective_player_input = player_input
+                    if pushed_failures:
+                        lines = []
+                        for item in pushed_failures:
+                            if not isinstance(item, dict):
+                                continue
+                            label = str(item.get("label") or item.get("skill") or "检定").strip()
+                            scene = str(item.get("scene_key") or "").strip()
+                            retry_count = int(item.get("retry_count") or 1)
+                            lines.append(f"- {label}: pushed=true, success=false, retry_count={retry_count}, scene={scene}")
+                        if lines:
+                            effective_player_input = (
+                                f"{player_input}\n\n# dice_context\n" + "\n".join(lines)
+                            ).strip()
+
                     result = await plugin._process_action_core(
                         session_id=session_id,
-                        player_input=player_input,
+                        player_input=effective_player_input,
                         history=web_session["history"],
                         move_to=move_to,
                         custom_api=custom_api,
@@ -978,6 +1012,57 @@ def create_trpg_app(plugin):
         if result is None:
             return jsonify({"status": "pending"}), 202
         return jsonify(result)
+
+    @app.route("/trpg/api/push_roll", methods=["POST"])
+    async def api_push_roll():
+        """玩家选择孤注一掷时，基于已展示的骰点元数据重新骰一次。"""
+        cookie_id = _get_cookie_id()
+        if not cookie_id:
+            return jsonify({"error": "无有效会话"}), 400
+
+        web_session = _restore_web_session(cookie_id)
+        if not web_session["game_started"]:
+            return jsonify({"error": "游戏尚未开始"}), 400
+
+        lock = _session_locks[cookie_id]
+        if lock.locked():
+            return jsonify({"error": "正在处理上一个行动，请稍候"}), 429
+
+        data = await request.get_json() or {}
+        dice_roll = data.get("dice_roll") if isinstance(data.get("dice_roll"), dict) else data
+        if not isinstance(dice_roll, dict) or not dice_roll.get("pushable"):
+            return jsonify({"error": "这个检定不能孤注一掷"}), 400
+
+        scene_kind = str(dice_roll.get("scene_kind") or data.get("scene_kind") or "unknown").strip()
+        scene_key = str(dice_roll.get("scene_key") or data.get("scene_key") or "").strip()
+        try:
+            idx = int(dice_roll.get("idx") or data.get("idx") or 0)
+        except (TypeError, ValueError):
+            idx = 0
+        retry_key = f"{scene_kind}:{scene_key}:{idx}"
+
+        retry_state = web_session.setdefault("dice_retry_state", {})
+        retry_count = int(retry_state.get(retry_key) or 0) + 1
+        retry_state[retry_key] = retry_count
+
+        pushed_roll = reroll_pending_check(dice_roll, retry_count=retry_count)
+        if not pushed_roll:
+            return jsonify({"error": "无法重骰这个检定"}), 400
+        pushed_roll["scene_kind"] = scene_kind
+        pushed_roll["scene_key"] = scene_key
+        pushed_roll["idx"] = idx
+
+        if pushed_roll.get("pushed") and not pushed_roll.get("success"):
+            web_session.setdefault("pushed_roll_failures", []).append({
+                "label": pushed_roll.get("label"),
+                "skill": pushed_roll.get("skill"),
+                "scene_kind": scene_kind,
+                "scene_key": scene_key,
+                "idx": idx,
+                "retry_count": retry_count,
+            })
+
+        return jsonify({"success": True, "dice_roll": pushed_roll})
 
     @app.route("/trpg/api/retry", methods=["POST"])
     async def api_retry():

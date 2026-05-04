@@ -295,9 +295,14 @@ class RuleAI:
         if isinstance(hp_delta, (int, float)) and int(hp_delta) != 0:
             changes["hp_delta"] = int(hp_delta)
 
-        # SAN 变化由 sancheck 系统驱动
+        total_san_delta = 0
         if sancheck_result and sancheck_result.get("san_loss"):
-            changes["san_delta"] = sancheck_result["san_loss"]
+            total_san_delta += int(sancheck_result["san_loss"] or 0)
+        ai_san_delta = effect_plan.get("san_delta")
+        if isinstance(ai_san_delta, (int, float)):
+            total_san_delta += int(ai_san_delta)
+        if total_san_delta != 0:
+            changes["san_delta"] = total_san_delta
 
         if clues:
             changes["clues"] = clues
@@ -647,6 +652,8 @@ class RuleAI:
         effect_plan = effect_plan if isinstance(effect_plan, dict) else {}
         hp_raw = effect_plan.get("hp_delta")
         hp_delta = int(hp_raw) if isinstance(hp_raw, (int, float)) else 0
+        san_raw = effect_plan.get("san_delta")
+        san_delta = int(san_raw) if isinstance(san_raw, (int, float)) else 0
         return {
             "discover_clues": self._ensure_list(effect_plan.get("discover_clues")),
             "add_inventory": self._ensure_list(effect_plan.get("add_inventory")),
@@ -654,6 +661,7 @@ class RuleAI:
             "set_flags": effect_plan.get("set_flags") if isinstance(effect_plan.get("set_flags"), dict) else {},
             "npc_updates": effect_plan.get("npc_updates") if isinstance(effect_plan.get("npc_updates"), dict) else {},
             "hp_delta": hp_delta,
+            "san_delta": san_delta,
         }
 
     def _get_fallback_action_plan(

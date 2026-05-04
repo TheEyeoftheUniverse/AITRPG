@@ -1971,6 +1971,45 @@ html, body {
 }
 .dice-success { color: #4caf50; }
 .dice-failure { color: #e05c6c; }
+.dice-push-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 12px;
+}
+.dice-push-warning {
+    flex: 0 0 100%;
+    font-size: 12px;
+    color: #d19a66;
+}
+.dice-push-btn,
+.dice-push-skip-btn {
+    padding: 5px 16px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 12px;
+}
+.dice-push-btn {
+    border: 1px solid rgba(224, 92, 108, 0.75);
+    background: rgba(224, 92, 108, 0.16);
+    color: #ff8f9c;
+}
+.dice-push-skip-btn {
+    border: 1px solid rgba(139, 111, 78, 0.35);
+    background: transparent;
+    color: var(--text-secondary);
+}
+.dice-push-btn:disabled,
+.dice-push-skip-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+.dice-push-error {
+    flex: 0 0 100%;
+    font-size: 12px;
+    color: #e05c6c;
+}
 
 /* ═══════════════════════════════════════
    演出效果 (Theatrical Effects)

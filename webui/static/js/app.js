@@ -382,7 +382,7 @@ async function startGame(moduleIndex, forceNew = false) {
                 // Phase 5: 开局硬 placeholder 骰点动画 (与行动骰点同管线)
                 if (data.dice_rolls && data.dice_rolls.length > 0) {
                     for (const diceRoll of data.dice_rolls) {
-                        await showDiceRollPanel(diceRoll);
+                        await showDiceRollPanel(diceRoll, requestPushRoll);
                     }
                     await theatricalSleep(3000);
                 }
@@ -909,7 +909,7 @@ async function handleActionSuccessResponse(data) {
 
     if (data.dice_rolls && data.dice_rolls.length > 0) {
         for (const diceRoll of data.dice_rolls) {
-            await showDiceRollPanel(diceRoll);
+            await showDiceRollPanel(diceRoll, requestPushRoll);
         }
         await theatricalSleep(3000);
     }
@@ -1302,7 +1302,20 @@ function addMessage(role, content, animate = true) {
 
 // ─── 骰子演出面板 ───
 
-async function showDiceRollPanel(diceRoll) {
+async function requestPushRoll(diceRoll) {
+    const resp = await fetch("/trpg/api/push_roll", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dice_roll: diceRoll }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+        throw new Error(data.error || "孤注一掷失败");
+    }
+    return data.dice_roll;
+}
+
+async function showDiceRollPanel(diceRoll, onPushRequest = null) {
     return new Promise((resolve) => {
         const container = document.getElementById("chat-messages");
         const panel = document.createElement("div");
@@ -1324,15 +1337,16 @@ async function showDiceRollPanel(diceRoll) {
 
         const numberEl = panel.querySelector(".dice-roll-number");
         const btnEl = panel.querySelector(".dice-roll-btn");
+        const bodyEl = panel.querySelector(".dice-roll-body");
 
         // 闪烁动画：数字在 1-100 之间快速变化
         let flickerInterval = setInterval(() => {
             numberEl.textContent = Math.floor(Math.random() * 100) + 1;
         }, 80);
 
-        btnEl.addEventListener("click", () => {
+        btnEl.addEventListener("click", async () => {
             clearInterval(flickerInterval);
-            numberEl.textContent = diceRoll.roll;
+            numberEl.textContent = diceRoll.roll === null || diceRoll.roll === undefined ? "--" : diceRoll.roll;
             btnEl.disabled = true;
             btnEl.textContent = "已投掷";
 
@@ -1347,8 +1361,47 @@ async function showDiceRollPanel(diceRoll) {
                 resultText += ` (SAN ${diceRoll.san_loss})`;
             }
             resultEl.textContent = resultText;
-            panel.querySelector(".dice-roll-body").appendChild(resultEl);
+            bodyEl.appendChild(resultEl);
             scrollToBottom();
+
+            if (!diceRoll.success && diceRoll.pushable && typeof onPushRequest === "function") {
+                const pushActions = document.createElement("div");
+                pushActions.className = "dice-push-actions";
+                pushActions.innerHTML = `
+                    <div class="dice-push-warning">可以孤注一掷，但再次失败会带来额外代价。</div>
+                    <button class="dice-push-btn">孤注一掷</button>
+                    <button class="dice-push-skip-btn">放弃</button>
+                `;
+                bodyEl.appendChild(pushActions);
+                scrollToBottom();
+
+                const pushBtn = pushActions.querySelector(".dice-push-btn");
+                const skipBtn = pushActions.querySelector(".dice-push-skip-btn");
+
+                skipBtn.addEventListener("click", () => {
+                    pushBtn.disabled = true;
+                    skipBtn.disabled = true;
+                    resolve();
+                }, { once: true });
+
+                pushBtn.addEventListener("click", async () => {
+                    pushBtn.disabled = true;
+                    skipBtn.disabled = true;
+                    pushBtn.textContent = "重骰中...";
+                    try {
+                        const pushedRoll = await onPushRequest(diceRoll);
+                        pushActions.remove();
+                        await showDiceRollPanel(pushedRoll, onPushRequest);
+                    } catch (err) {
+                        const errorEl = document.createElement("div");
+                        errorEl.className = "dice-push-error";
+                        errorEl.textContent = err.message || "孤注一掷失败";
+                        pushActions.appendChild(errorEl);
+                    }
+                    resolve();
+                }, { once: true });
+                return;
+            }
 
             resolve();
         }, { once: true });
