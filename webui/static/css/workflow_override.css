@@ -479,4 +479,50 @@
         max-height: 84px;
         min-height: 48px;
     }
+
+    .chat-map-panel .map-container,
+    .scene-overview .map-container {
+        max-height: 84px;
+        min-height: 48px;
+        padding: 4px;
+    }
+
+    .chat-map-panel .map-canvas,
+    .scene-overview .map-canvas {
+        min-height: 76px;
+    }
+}
+
+@media (max-width: 820px) {
+    .chat-area {
+        padding-left: 42px;
+        padding-right: 42px;
+    }
+
+    .btn-expand {
+        top: 128px;
+    }
+
+    .left-expand {
+        left: 4px;
+    }
+
+    .right-expand {
+        right: 4px;
+    }
+}
+
+@media (max-width: 420px) {
+    .chat-area {
+        padding-left: 36px;
+        padding-right: 36px;
+    }
+
+    .left-expand {
+        left: 2px;
+    }
+
+    .right-expand {
+        right: 2px;
+    }
 }
