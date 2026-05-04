@@ -268,6 +268,81 @@ def create_trpg_app(plugin):
                 continue
         return str(max(mtimes) if mtimes else 1)
 
+    def _normalize_resolved_state(web_session: dict) -> dict:
+        """确保 resolved 三类集合存在；存档恢复时 list 会在这里转回 set。"""
+        raw = web_session.get("resolved")
+        if not isinstance(raw, dict):
+            raw = {}
+        resolved = {}
+        for key in ("locations", "objects", "npcs"):
+            value = raw.get(key)
+            if isinstance(value, set):
+                resolved[key] = value
+            elif isinstance(value, (list, tuple)):
+                resolved[key] = set(str(item) for item in value if str(item or "").strip())
+            else:
+                resolved[key] = set()
+        web_session["resolved"] = resolved
+        return resolved
+
+    def _serialize_resolved_state(web_session: dict) -> dict:
+        resolved = _normalize_resolved_state(web_session)
+        return {
+            key: sorted(str(item) for item in value)
+            for key, value in resolved.items()
+        }
+
+    def _lazy_resolve_location(loc_key, module_data, card, player, web_session):
+        """解析指定 location 的硬 placeholder；返回本次产生的骰点。"""
+        loc_key = str(loc_key or "").strip()
+        if not loc_key:
+            return []
+        resolved = _normalize_resolved_state(web_session)
+        if loc_key in resolved["locations"]:
+            return []
+        get_and_clear_pending_checks()
+        loc_data = module_data.get("locations", {}).get(loc_key, {})
+        if isinstance(loc_data, dict):
+            for field in ("description", "npc_present_description"):
+                if loc_data.get(field):
+                    loc_data[field] = resolve_hard_in(loc_data[field], card, player)
+        resolved["locations"].add(loc_key)
+        return get_and_clear_pending_checks()
+
+    def _lazy_resolve_object(obj_key, module_data, card, player, web_session):
+        """解析指定 object 的硬 placeholder；返回本次产生的骰点。"""
+        obj_key = str(obj_key or "").strip()
+        if not obj_key:
+            return []
+        resolved = _normalize_resolved_state(web_session)
+        if obj_key in resolved["objects"]:
+            return []
+        get_and_clear_pending_checks()
+        obj_data = module_data.get("objects", {}).get(obj_key, {})
+        if isinstance(obj_data, dict):
+            for field in ("description", "examine_text", "success_result", "failure_result"):
+                if obj_data.get(field):
+                    obj_data[field] = resolve_hard_in(obj_data[field], card, player)
+        resolved["objects"].add(obj_key)
+        return get_and_clear_pending_checks()
+
+    def _lazy_resolve_npc(npc_key, module_data, card, player, web_session):
+        """解析指定 NPC 的硬 placeholder；返回本次产生的骰点。"""
+        npc_key = str(npc_key or "").strip()
+        if not npc_key:
+            return []
+        resolved = _normalize_resolved_state(web_session)
+        if npc_key in resolved["npcs"]:
+            return []
+        get_and_clear_pending_checks()
+        npc_data = module_data.get("npcs", {}).get(npc_key, {})
+        if isinstance(npc_data, dict):
+            for field in ("description", "dialogue"):
+                if npc_data.get(field):
+                    npc_data[field] = resolve_hard_in(npc_data[field], card, player)
+        resolved["npcs"].add(npc_key)
+        return get_and_clear_pending_checks()
+
     def _persist_web_session(cookie_id: str):
         """将 Web 会话和游戏状态持久化到 JSON"""
         web_session = _web_sessions.get(cookie_id)
@@ -292,6 +367,12 @@ def create_trpg_app(plugin):
                 "last_workflow": web_session.get("last_workflow"),
                 "module_index": web_session.get("module_index"),
                 "conv_id": web_session.get("conv_id"),
+                "lazy_dice": web_session.get("lazy_dice", True),
+                "resolved": _serialize_resolved_state(web_session),
+                "object_dice": web_session.get("object_dice", {}),
+                "npc_dice": web_session.get("npc_dice", {}),
+                "location_theatrical": web_session.get("location_theatrical", {}),
+                "theatrical_played_locations": web_session.get("theatrical_played_locations", []),
             },
             "game_state": game_state,
         })
@@ -325,6 +406,12 @@ def create_trpg_app(plugin):
                 "last_workflow": web_session.get("last_workflow"),
                 "module_index": web_session.get("module_index"),
                 "conv_id": web_session.get("conv_id"),
+                "lazy_dice": web_session.get("lazy_dice", True),
+                "resolved": _serialize_resolved_state(web_session),
+                "object_dice": web_session.get("object_dice", {}),
+                "npc_dice": web_session.get("npc_dice", {}),
+                "location_theatrical": web_session.get("location_theatrical", {}),
+                "theatrical_played_locations": web_session.get("theatrical_played_locations", []),
             },
             "game_state": game_state,
         }
@@ -354,6 +441,13 @@ def create_trpg_app(plugin):
         restored_web["last_workflow"] = saved_web.get("last_workflow")
         restored_web["module_index"] = saved_web.get("module_index")
         restored_web["conv_id"] = saved_web.get("conv_id")
+        restored_web["lazy_dice"] = saved_web.get("lazy_dice", True)
+        restored_web["resolved"] = saved_web.get("resolved") or {}
+        _normalize_resolved_state(restored_web)
+        restored_web["object_dice"] = saved_web.get("object_dice") if isinstance(saved_web.get("object_dice"), dict) else {}
+        restored_web["npc_dice"] = saved_web.get("npc_dice") if isinstance(saved_web.get("npc_dice"), dict) else {}
+        restored_web["location_theatrical"] = saved_web.get("location_theatrical") if isinstance(saved_web.get("location_theatrical"), dict) else {}
+        restored_web["theatrical_played_locations"] = list(saved_web.get("theatrical_played_locations") or [])
         _web_sessions[cookie_id] = restored_web
 
         if restored_web["game_started"] and not plugin.session_manager.has_session(restored_web["session_id"]):
@@ -517,6 +611,8 @@ def create_trpg_app(plugin):
                 # 让后续 AI prompt + 前端展示都用已解析文本。模块数据在 session 内是
                 # 单例, 就地解析一次全局生效。
                 session_state = plugin.session_manager.get_session(session_id)
+                card = None
+                player = None
                 if session_state:
                     card = session_state.get("character_card")
                     player = session_state.get("player")
@@ -536,33 +632,46 @@ def create_trpg_app(plugin):
                                 if npc_data.get(field):
                                     npc_data[field] = resolve_in(npc_data[field], card, player)
 
-                # Phase 5: 硬 placeholder ({检定:X} / {自动:X>=N}) 分三类解析:
-                #   1. Location 描述 — 预掷, 结果加入开局 dice_rolls
-                #   2. Object 描述 — 预掷, 结果缓存到 web_session["object_dice"],
-                #      玩家 inspect 该物品时从缓存取出注入行动响应的 dice_rolls
-                #   3. NPC 描述 — 预掷, 暂不单独触发动画
+                # Phase 5 W1: 硬 placeholder 默认按需解析。开局只解析起始 location
+                # 与 opening；object/NPC 等首次互动时再解析并注入骰点动画。
                 opening_checks = []
-                object_dice = {}      # {obj_name: [dice_roll, ...]}
-                for loc_key, loc_data in module_data.get("locations", {}).items():
-                    if isinstance(loc_data, dict) and loc_data.get("description"):
-                        loc_data["description"] = resolve_hard_in(loc_data["description"], card, player)
-                    if isinstance(loc_data, dict) and loc_data.get("npc_present_description"):
-                        loc_data["npc_present_description"] = resolve_hard_in(loc_data["npc_present_description"], card, player)
-                    opening_checks.extend(get_and_clear_pending_checks())
-                for obj_key, obj_data in module_data.get("objects", {}).items():
-                    if isinstance(obj_data, dict):
-                        for field in ("description", "examine_text"):
-                            if obj_data.get(field):
-                                obj_data[field] = resolve_hard_in(obj_data[field], card, player)
-                        checks = get_and_clear_pending_checks()
-                        if checks:
-                            object_dice[obj_key] = checks
-                for npc_key, npc_data in module_data.get("npcs", {}).items():
-                    if isinstance(npc_data, dict):
-                        for field in ("description", "dialogue"):
-                            if npc_data.get(field):
-                                npc_data[field] = resolve_hard_in(npc_data[field], card, player)
-                    get_and_clear_pending_checks()  # NPC checks 暂不触发动画
+                object_dice = {}
+                npc_dice = {}
+                lazy_dice = bool(web_session.get("lazy_dice", True))
+                web_session["lazy_dice"] = lazy_dice
+                web_session["resolved"] = {"locations": set(), "objects": set(), "npcs": set()}
+                if lazy_dice:
+                    start_loc_key = ""
+                    if session_state:
+                        start_loc_key = str(session_state.get("current_location") or "").strip()
+                    if not start_loc_key:
+                        start_loc_key = str(module_data.get("module_info", {}).get("start_location") or "").strip()
+                    opening_checks.extend(_lazy_resolve_location(start_loc_key, module_data, card, player, web_session))
+                else:
+                    resolved = _normalize_resolved_state(web_session)
+                    for loc_key, loc_data in module_data.get("locations", {}).items():
+                        if isinstance(loc_data, dict) and loc_data.get("description"):
+                            loc_data["description"] = resolve_hard_in(loc_data["description"], card, player)
+                        if isinstance(loc_data, dict) and loc_data.get("npc_present_description"):
+                            loc_data["npc_present_description"] = resolve_hard_in(loc_data["npc_present_description"], card, player)
+                        opening_checks.extend(get_and_clear_pending_checks())
+                        resolved["locations"].add(loc_key)
+                    for obj_key, obj_data in module_data.get("objects", {}).items():
+                        if isinstance(obj_data, dict):
+                            for field in ("description", "examine_text"):
+                                if obj_data.get(field):
+                                    obj_data[field] = resolve_hard_in(obj_data[field], card, player)
+                            checks = get_and_clear_pending_checks()
+                            if checks:
+                                object_dice[obj_key] = checks
+                            resolved["objects"].add(obj_key)
+                    for npc_key, npc_data in module_data.get("npcs", {}).items():
+                        if isinstance(npc_data, dict):
+                            for field in ("description", "dialogue"):
+                                if npc_data.get(field):
+                                    npc_data[field] = resolve_hard_in(npc_data[field], card, player)
+                        get_and_clear_pending_checks()  # v3.2 回退行为: NPC checks 不触发动画
+                        resolved["npcs"].add(npc_key)
 
                 opening = selected["opening"]
                 parsed_opening = parse_theatrical_tags(opening)
@@ -594,6 +703,7 @@ def create_trpg_app(plugin):
                 web_session["location_theatrical"] = location_theatrical
                 web_session["theatrical_played_locations"] = []
                 web_session["object_dice"] = object_dice  # Phase 5: object→骰子缓存
+                web_session["npc_dice"] = npc_dice
                 web_session["history"] = [opening_user_message, opening_assistant_message]
                 web_session["chat_messages"] = [
                     {"role": "assistant", "content": opening}
@@ -705,6 +815,28 @@ def create_trpg_app(plugin):
                     plugin.session_manager.add_narrative_summary(session_id, display_input, narrative, summary)
 
                     state = plugin.session_manager.get_session(session_id)
+                    rule_plan = result.get("rule_plan", {})
+                    normalized_action = (rule_plan.get("normalized_action") or {}) if isinstance(rule_plan, dict) else {}
+                    target_kind = normalized_action.get("target_kind")
+                    target_key = normalized_action.get("target_key")
+                    location_dice = []
+
+                    if web_session.get("lazy_dice", True) and state:
+                        module_data = state.get("module_data", {}) if isinstance(state.get("module_data"), dict) else {}
+                        card = state.get("character_card")
+                        player = state.get("player")
+                        if move_to and state.get("current_location") == move_to:
+                            location_dice.extend(_lazy_resolve_location(move_to, module_data, card, player, web_session))
+                        if target_kind == "object" and target_key:
+                            checks = _lazy_resolve_object(target_key, module_data, card, player, web_session)
+                            if checks:
+                                obj_dice = web_session.setdefault("object_dice", {})
+                                obj_dice.setdefault(target_key, []).extend(checks)
+                        if target_kind == "npc" and target_key:
+                            checks = _lazy_resolve_npc(target_key, module_data, card, player, web_session)
+                            if checks:
+                                npc_dice = web_session.setdefault("npc_dice", {})
+                                npc_dice.setdefault(target_key, []).extend(checks)
 
                     # 持久化 map_corrupt 效果到会话状态
                     corrupt_entries = {e["target"]: e["content"] for e in theatrical_effects if e.get("type") == "map_corrupt"}
@@ -747,6 +879,8 @@ def create_trpg_app(plugin):
                             "critical_failure": move_check.get("critical_failure", False),
                             "description": move_check.get("result_description", ""),
                         })
+                    if location_dice:
+                        dice_rolls.extend(location_dice)
 
                     rule_result_data = result.get("rule_result", {})
                     if rule_result_data.get("check_type") == "skill_check":
@@ -772,16 +906,20 @@ def create_trpg_app(plugin):
                             "description": f"{'成功' if sancheck_data['success'] else '失败'}, SAN {'不变' if sancheck_data['san_loss'] == 0 else str(sancheck_data['san_loss'])}",
                         })
 
-                    # Phase 5: 注入交互对象预设的硬 placeholder 骰子 (开局预掷, 缓存于此)
-                    rule_plan = result.get("rule_plan", {})
-                    target_kind = (rule_plan.get("normalized_action") or {}).get("target_kind")
-                    target_key = (rule_plan.get("normalized_action") or {}).get("target_key")
+                    # Phase 5: 注入交互对象/NPC 的硬 placeholder 骰子。
                     if target_kind == "object" and target_key:
                         obj_dice = web_session.get("object_dice", {})
                         cached = obj_dice.pop(target_key, [])
                         if cached:
                             dice_rolls.extend(cached)
                             web_session["object_dice"] = obj_dice
+                            _persist_web_session(cookie_id)
+                    if target_kind == "npc" and target_key:
+                        npc_dice = web_session.get("npc_dice", {})
+                        cached = npc_dice.pop(target_key, [])
+                        if cached:
+                            dice_rolls.extend(cached)
+                            web_session["npc_dice"] = npc_dice
                             _persist_web_session(cookie_id)
 
                     _action_results[cookie_id] = {
