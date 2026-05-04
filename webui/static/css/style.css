@@ -1162,11 +1162,17 @@ html, body {
     min-height: 240px;
     position: relative;
 }
+.map-canvas.hidden {
+    display: none;
+}
 .map-container.map-container--cy {
     align-items: stretch;
     justify-content: stretch;
     overflow: hidden;
     cursor: auto;
+}
+.map-container.map-container--cy #map-svg {
+    display: none;
 }
 
 /* ============================================================

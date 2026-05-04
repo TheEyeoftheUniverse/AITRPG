@@ -72,11 +72,17 @@
 
     function _swapContainerMode(useNewMap) {
         const wrap = document.getElementById("game-map");
-        if (!wrap) return;
+        const canvas = document.getElementById(CONTAINER_ID);
+        const legacySvg = document.getElementById("map-svg");
+        if (!wrap || !canvas) return;
         if (useNewMap) {
             wrap.classList.add("map-container--cy");
+            canvas.classList.remove("hidden");
+            if (legacySvg) legacySvg.style.display = "none";
         } else {
             wrap.classList.remove("map-container--cy");
+            canvas.classList.add("hidden");
+            if (legacySvg) legacySvg.style.display = "";
         }
     }
 
