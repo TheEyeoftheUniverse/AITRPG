@@ -518,6 +518,13 @@ def create_trpg_app(plugin):
             resp.set_cookie("trpg_session", str(uuid.uuid4()), max_age=86400 * 7)
         return resp
 
+    # 显式兜底 lib 静态路由。
+    # 某些部署环境下 Quart 的隐式 static 行为对 /trpg/static/lib/*.js 不稳定，
+    # 会导致 Cytoscape 相关库 404，进而让主地图初始化失败。
+    @app.route("/trpg/static/lib/<path:filename>")
+    async def static_lib(filename):
+        return await send_from_directory(os.path.join(static_dir, "lib"), filename)
+
     # ─── 模组编辑器（纯静态）───
     # 把插件根的 tools/module-editor/ 作为静态文件托管, 主页有图标入口跳转过来。
     # 不走任何 API、不调 LLM、不持久化, 仅提供本地工具页面所需的 HTML/CSS/JS/lib 文件。
