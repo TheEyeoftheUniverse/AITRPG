@@ -15,6 +15,7 @@ from ..game_state.location_context import (
     get_primary_pursuer_name,
     get_primary_pursuer_settings,
     is_threat_entity,
+    normalize_exit_entry,
     should_enable_cross_wall_npc_context,
 )
 from .provider_failover import (
@@ -1235,8 +1236,9 @@ class RuleAI:
         graph = {}
         for location_key, location_data in locations.items():
             neighbors = []
-            for exit_name in location_data.get("exits", []):
-                neighbor_key = name_to_key.get(exit_name)
+            for raw_exit in location_data.get("exits", []):
+                normalized = normalize_exit_entry(raw_exit)
+                neighbor_key = name_to_key.get(normalized["to"])
                 if neighbor_key:
                     neighbors.append(neighbor_key)
             graph[location_key] = neighbors

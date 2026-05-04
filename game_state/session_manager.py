@@ -17,6 +17,7 @@ from .location_context import (
     get_present_threats_for_location,
     get_primary_pursuer_name,
     get_primary_pursuer_settings,
+    normalize_exit_entry,
     normalize_module_data,
 )
 
@@ -3017,8 +3018,9 @@ class SessionManager:
         for key, loc_data in locations.items():
             exits = loc_data.get("exits", [])
             neighbors = []
-            for exit_name in exits:
-                neighbor_key = name_to_key.get(exit_name)
+            for raw_exit in exits:
+                normalized = normalize_exit_entry(raw_exit)
+                neighbor_key = name_to_key.get(normalized["to"])
                 if neighbor_key:
                     neighbors.append(neighbor_key)
             graph[key] = neighbors
@@ -3479,6 +3481,41 @@ class SessionManager:
                         "row": float(row_val),
                     }
 
+            # 可选：模组作者声明的节点地图视觉属性 (2026-05-04 map-node-visual-style).
+            # 这四个字段都是可选的, 缺省时由前端 renderer 决定回退 (visited 节点 → mdi-door,
+            # 未 visited 节点 → "?"; displayAlpha 默认 0 即透明圆形; displayColor 默认空, 由 state class
+            # 决定; badges 默认空数组, 引擎仍会在前端注入 NPC/danger 自动徽章).
+            # 校验策略: 类型不对就忽略并跳过 (不写键), 不抛异常以免老模组打不开.
+            raw_icon = loc_data.get("icon")
+            if isinstance(raw_icon, str) and raw_icon.strip():
+                visible_locations[key]["icon"] = raw_icon.strip()
+            raw_display_color = loc_data.get("displayColor")
+            if isinstance(raw_display_color, str) and raw_display_color.strip():
+                visible_locations[key]["displayColor"] = raw_display_color.strip()
+            raw_display_alpha = loc_data.get("displayAlpha")
+            if isinstance(raw_display_alpha, (int, float)) and not isinstance(raw_display_alpha, bool):
+                clamped_alpha = max(0.0, min(1.0, float(raw_display_alpha)))
+                visible_locations[key]["displayAlpha"] = clamped_alpha
+            raw_badges = loc_data.get("badges")
+            if isinstance(raw_badges, list):
+                clean_badges: List[Dict[str, Any]] = []
+                for badge in raw_badges:
+                    if not isinstance(badge, dict):
+                        continue
+                    badge_icon = badge.get("icon")
+                    if not (isinstance(badge_icon, str) and badge_icon.strip()):
+                        continue
+                    cleaned: Dict[str, Any] = {"icon": badge_icon.strip()}
+                    badge_color = badge.get("color")
+                    if isinstance(badge_color, str) and badge_color.strip():
+                        cleaned["color"] = badge_color.strip()
+                    badge_pos = badge.get("position")
+                    if isinstance(badge_pos, str) and badge_pos.strip() in {"tr", "tl", "br", "bl"}:
+                        cleaned["position"] = badge_pos.strip()
+                    clean_badges.append(cleaned)
+                if clean_badges:
+                    visible_locations[key]["badges"] = clean_badges
+
             # 可选：作者自定义的地图组名 (map_group, 字符串, 比如 "1F" / "中央大街"). 不填的话
             # 前端会按 floor 数字自动派生 ("1F" / "B1" / "GF" / 等), 跟编辑器派生规则一致.
             raw_map_group = loc_data.get("map_group")
@@ -3511,32 +3548,77 @@ class SessionManager:
                 visible_locations[key]["display_name"] = corrupted_name
 
         # 构建可见边
-        edges = []
+        # 2026-05-04 (map-node-visual-style): 单条 exit 现在可能是字符串 (旧格式)
+        # 或 dict {to, style, directed, direction} (新格式). normalize_exit_entry 统一形状.
+        # 双向边样式合并规则:
+        #   - 若 A->B 与 B->A 都给, 且都是 directed=False 且 style 一致 → dedupe 成一条无向边.
+        #   - 若两端 style 不一致, 或任一端 directed=True → 不 dedupe, 各保留一条 directed edge,
+        #     让前端按方向独立渲染。
+        edges: List[Dict[str, Any]] = []
         visible_keys = set(visible_locations.keys())
-        seen_edges = set()
+        # 先把所有方向性 exit 收齐, 再决定 dedupe.
+        directional_exits: Dict[tuple, Dict[str, Any]] = {}
         for key in visible_keys:
             loc_data = locations.get(key, {})
-            for exit_name in loc_data.get("exits", []):
-                neighbor_key = name_to_key.get(exit_name)
-                if neighbor_key and neighbor_key in visible_keys:
-                    edge_pair = tuple(sorted([key, neighbor_key]))
-                    if edge_pair not in seen_edges:
-                        seen_edges.add(edge_pair)
-                        is_locked = (key, neighbor_key) in locked_exits or (neighbor_key, key) in locked_exits
-                        edges.append({
-                            "from": key,
-                            "to": neighbor_key,
-                            "locked": is_locked,
-                        })
+            for raw_exit in loc_data.get("exits", []):
+                normalized = normalize_exit_entry(raw_exit)
+                neighbor_key = name_to_key.get(normalized["to"])
+                if not neighbor_key or neighbor_key not in visible_keys:
+                    continue
+                # `direction == "from"` 表示这条 exit 实际是反向: 可达性是从 neighbor 到 key.
+                # 把它转成 (source, target) tuple.
+                if normalized["directed"] and normalized["direction"] == "from":
+                    src, dst = neighbor_key, key
+                else:
+                    src, dst = key, neighbor_key
+                directional_exits[(src, dst)] = normalized
 
+        seen_edges: Set[tuple] = set()
+        for (src, dst), forward in directional_exits.items():
+            unordered = tuple(sorted([src, dst]))
+            reverse = directional_exits.get((dst, src))
+            forward_directed = forward["directed"]
+            forward_style = forward["style"]
+            if reverse is not None:
+                rev_directed = reverse["directed"]
+                rev_style = reverse["style"]
+                same_style_both_undirected = (
+                    not forward_directed and not rev_directed and forward_style == rev_style
+                )
+                if same_style_both_undirected:
+                    # dedupe to single undirected edge
+                    if unordered in seen_edges:
+                        continue
+                    seen_edges.add(unordered)
+                    is_locked = (src, dst) in locked_exits or (dst, src) in locked_exits
+                    edge: Dict[str, Any] = {"from": src, "to": dst, "locked": is_locked}
+                    if forward_style != "solid":
+                        edge["style"] = forward_style
+                    edges.append(edge)
+                    continue
+                # mismatch -> keep both as directed edges
+            # emit forward-direction edge
+            edge_key = ("dir", src, dst)
+            if edge_key in seen_edges:
+                continue
+            seen_edges.add(edge_key)
+            is_locked = (src, dst) in locked_exits or (dst, src) in locked_exits
+            edge = {"from": src, "to": dst, "locked": is_locked}
+            if forward_style != "solid":
+                edge["style"] = forward_style
+            if forward_directed:
+                edge["directed"] = True
+            edges.append(edge)
+
+        # micro-scenes: virtual undirected edges parent <-> micro_scene
         for micro_scene_id, micro_scene_cfg in available_micro_scenes.items():
             parent_location = str(micro_scene_cfg.get("parent_location") or "").strip()
             if not parent_location or parent_location not in visible_keys:
                 continue
-            edge_pair = tuple(sorted([parent_location, micro_scene_id]))
-            if edge_pair in seen_edges:
+            unordered = tuple(sorted([parent_location, micro_scene_id]))
+            if unordered in seen_edges:
                 continue
-            seen_edges.add(edge_pair)
+            seen_edges.add(unordered)
             edges.append({
                 "from": parent_location,
                 "to": micro_scene_id,

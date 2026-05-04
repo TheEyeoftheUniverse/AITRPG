@@ -34,6 +34,51 @@ DEFAULT_CROSS_WALL_TRIGGER_KEYWORDS = (
 )
 
 
+VALID_EDGE_STYLES = ("solid", "dashed", "double", "single-arrow")
+VALID_EDGE_DIRECTIONS = ("to", "from")
+
+
+def normalize_exit_entry(entry: Any) -> Dict[str, Any]:
+    """规范化模组里的一项 exit, 返回 {to, style, directed, direction}.
+
+    向后兼容: 字符串 -> {to: <name>, style: "solid", directed: False, direction: "to"}.
+    新富格式: dict, 接受可选 style / directed / direction. 任何不识别的取值都退回默认.
+    无法解析为有效目标名时, 返回 {to: ""}, 调用方按"未知出口"丢弃即可.
+    """
+    if isinstance(entry, str):
+        return {
+            "to": entry,
+            "style": "solid",
+            "directed": False,
+            "direction": "to",
+        }
+    if isinstance(entry, dict):
+        target = entry.get("to") or entry.get("target") or entry.get("name") or ""
+        if not isinstance(target, str):
+            target = ""
+        style = entry.get("style", "solid")
+        if not (isinstance(style, str) and style in VALID_EDGE_STYLES):
+            style = "solid"
+        directed_raw = entry.get("directed", False)
+        directed = bool(directed_raw) if not isinstance(directed_raw, str) else directed_raw.strip().lower() in ("true", "1", "yes")
+        direction = entry.get("direction", "to")
+        if not (isinstance(direction, str) and direction in VALID_EDGE_DIRECTIONS):
+            direction = "to"
+        # single-arrow 必然 directed; directed 但不是 single-arrow 时把 style 升级到 single-arrow
+        # 让前端只用 style 一个开关就能拿到正确视觉.
+        if style == "single-arrow":
+            directed = True
+        elif directed:
+            style = "single-arrow"
+        return {
+            "to": target.strip(),
+            "style": style,
+            "directed": directed,
+            "direction": direction,
+        }
+    return {"to": "", "style": "solid", "directed": False, "direction": "to"}
+
+
 def is_threat_entity(npc_name: str, npc_data: dict = None) -> bool:
     npc_data = npc_data if isinstance(npc_data, dict) else {}
     return bool(
