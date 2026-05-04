@@ -291,6 +291,10 @@ class RuleAI:
             if can_take and object_name and action_verb in {"take", "pickup", "obtain", "loot"} and object_name not in inventory_add:
                 inventory_add.append(object_name)
 
+        hp_delta = effect_plan.get("hp_delta", 0)
+        if isinstance(hp_delta, (int, float)) and int(hp_delta) != 0:
+            changes["hp_delta"] = int(hp_delta)
+
         # SAN 变化由 sancheck 系统驱动
         if sancheck_result and sancheck_result.get("san_loss"):
             changes["san_delta"] = sancheck_result["san_loss"]
@@ -641,12 +645,15 @@ class RuleAI:
 
     def _normalize_effect_plan(self, effect_plan: Any) -> dict:
         effect_plan = effect_plan if isinstance(effect_plan, dict) else {}
+        hp_raw = effect_plan.get("hp_delta")
+        hp_delta = int(hp_raw) if isinstance(hp_raw, (int, float)) else 0
         return {
             "discover_clues": self._ensure_list(effect_plan.get("discover_clues")),
             "add_inventory": self._ensure_list(effect_plan.get("add_inventory")),
             "remove_inventory": self._ensure_list(effect_plan.get("remove_inventory")),
             "set_flags": effect_plan.get("set_flags") if isinstance(effect_plan.get("set_flags"), dict) else {},
             "npc_updates": effect_plan.get("npc_updates") if isinstance(effect_plan.get("npc_updates"), dict) else {},
+            "hp_delta": hp_delta,
         }
 
     def _get_fallback_action_plan(

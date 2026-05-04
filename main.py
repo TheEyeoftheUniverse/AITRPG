@@ -2302,6 +2302,10 @@ class AITRPGPlugin(Star):
             if merged_dict:
                 merged[dict_key] = merged_dict
 
+        hp_delta = int(hard_changes.get("hp_delta", 0) or 0) + int(soft_changes.get("hp_delta", 0) or 0)
+        if hp_delta:
+            merged["hp_delta"] = hp_delta
+
         san_delta = int(hard_changes.get("san_delta", 0) or 0) + int(soft_changes.get("san_delta", 0) or 0)
         if san_delta:
             merged["san_delta"] = san_delta
@@ -2386,6 +2390,12 @@ class AITRPGPlugin(Star):
         if "san_delta" in changes:
             san_delta = int(changes.get("san_delta", 0) or 0)
             player_state["san"] = max(0, player_state.get("san", 0) + san_delta)
+
+        if "hp_delta" in changes:
+            hp_delta = int(changes.get("hp_delta", 0) or 0)
+            hp = player_state.get("hp", 0)
+            hp_max = player_state.get("hp_max", 0) or 99
+            player_state["hp"] = max(0, min(hp_max, hp + hp_delta))
 
         if "inventory_add" in changes:
             inventory = player_state.setdefault("inventory", [])
