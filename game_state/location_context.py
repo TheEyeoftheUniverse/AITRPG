@@ -2,6 +2,8 @@ import copy
 import re
 from typing import Any, Dict, List
 
+from .placeholder_resolver import format_upcoming_checks, strip_check_results
+
 
 DEFAULT_RUNTIME_MEMORY_TEMPLATE: Dict[str, Any] = {
     "player_facts": {},
@@ -455,6 +457,7 @@ def build_runtime_location_context(
     game_state: Dict[str, Any],
     module_data: Dict[str, Any],
     location_key: str = None,
+    resolved_placeholders: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
     current_location = location_key or (game_state or {}).get("current_location", "master_bedroom")
     raw_location_context = (module_data or {}).get("locations", {}).get(current_location, {})
@@ -471,16 +474,17 @@ def build_runtime_location_context(
         or npc_present_description
         or ""
     ).strip()
-    active_npc_present_description = npc_present_description if present_npcs else ""
-    active_threat_present_description = threat_present_description if present_threats else ""
+    active_npc_present_description = strip_check_results(npc_present_description) if present_npcs else ""
+    active_threat_present_description = strip_check_results(threat_present_description) if present_threats else ""
     active_presence_description = _join_descriptions(
         active_npc_present_description,
         active_threat_present_description,
     )
 
     # Keep the original module field untouched. Runtime-only assembled text lives in a separate field.
+    raw_desc = str(raw_location_context.get("description", "") or "")
     location_context["runtime_description"] = _join_descriptions(
-        raw_location_context.get("description", ""),
+        strip_check_results(raw_desc),
         active_presence_description,
     )
     location_context["active_npc_present_description"] = active_npc_present_description
@@ -525,6 +529,12 @@ def build_runtime_location_context(
         }
         location_context["threat_chase"] = chase_context
         location_context["butler_chase"] = chase_context
+
+    location_context["upcoming_checks"] = format_upcoming_checks(
+        module_data,
+        current_location,
+        resolved=resolved_placeholders,
+    )
 
     return location_context
 

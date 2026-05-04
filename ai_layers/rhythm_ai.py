@@ -172,6 +172,7 @@ class RhythmAI:
         stages = module_data.get("module_info", {}).get("stages", "")
         history_summaries = self._build_history_summaries(game_state)
         scene_context = self._build_scene_context(game_state, module_data, rule_plan, player_input=player_input)
+        upcoming_checks = self._build_upcoming_checks(game_state, module_data)
 
         prompt = prompt_template.replace("{current_location}", current_location)
         prompt = prompt.replace("{player_identity_block}", build_identity_block(game_state.get("character_card")))
@@ -183,6 +184,7 @@ class RhythmAI:
         prompt = prompt.replace("{rule_plan}", json.dumps(rule_plan or {}, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{rule_result}", json.dumps(rule_result or {}, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{scene_context}", scene_context)
+        prompt = prompt.replace("{upcoming_checks}", upcoming_checks)
         prompt += (
             "\n\n# Additional tasks\n"
             "5. If the current scene has an interactable NPC, also output npc_action_guide for the narrative layer.\n"
@@ -527,6 +529,11 @@ class RhythmAI:
             normalized["ending_request"]["requested"] = False
 
         return normalized
+
+    def _build_upcoming_checks(self, game_state: dict, module_data: dict) -> str:
+        current_location = game_state.get("current_location", "master_bedroom")
+        location_context = build_runtime_location_context(game_state, module_data, current_location)
+        return str(location_context.get("upcoming_checks") or "（本场景无预定检定）")
 
     def _build_scene_context(self, game_state: dict, module_data: dict, rule_plan: dict, player_input: str = "") -> str:
         current_location = game_state.get("current_location", "master_bedroom")

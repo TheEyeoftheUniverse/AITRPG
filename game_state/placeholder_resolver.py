@@ -208,6 +208,19 @@ _HARD_AUTO_RE = re.compile(r"\{自动:([A-Za-z一-鿿]+?)>=(\d+)\}")
 # 调用方通过 get_and_clear_pending_checks() 消费。
 _pending_checks: List[dict] = []
 
+# AI-facing 视图会剥离已结算骰点的具体 d100 数字，避免模型偷看结果。
+_STRIP_RESULT_RE = re.compile(
+    r"\[(?:检定|未达标):\s*[^\]]*?\s+d100=\d+/\d+\s+(?:成功|失败|大成功|大失败)\]"
+)
+_STRIP_AUTO_RESULT_RE = re.compile(r"自动通过（[A-Za-z一-鿿]+=\d+≥\d+）")
+_RESOLVED_CHECK_RE = re.compile(
+    r"\[检定:\s*([^（\]\s]+)(?:（([^）]+)）)?\s+d100=\d+/\d+\s+(?:成功|失败|大成功|大失败)\]"
+)
+_RESOLVED_AUTO_RE = re.compile(
+    r"\[(?:未达标:\s*)?([A-Za-z一-鿿]+).*?d100=\d+/\d+\s+(?:成功|失败|大成功|大失败)\]"
+)
+_RESOLVED_AUTO_PASS_RE = re.compile(r"自动通过（([A-Za-z一-鿿]+)=\d+≥(\d+)）")
+
 
 # ---- 内联 d100 辅助 (公式与 rule_ai 完全一致, 仅 5 行) ----
 
@@ -248,6 +261,90 @@ def get_and_clear_pending_checks() -> list:
     result = list(_pending_checks)
     _pending_checks.clear()
     return result
+
+
+def strip_check_results(text: Any) -> str:
+    """剥离已结算检定字符串中的 d100 结果，返回 AI-facing 文本。"""
+    if not isinstance(text, str) or not text:
+        return text if isinstance(text, str) else ""
+    stripped = _STRIP_RESULT_RE.sub("[检定已完成]", text)
+    return _STRIP_AUTO_RESULT_RE.sub("[自动判定已完成]", stripped)
+
+
+def format_upcoming_checks(module_data: dict, current_location: str, resolved: dict = None) -> str:
+    """生成当前场景的检定元信息摘要，不包含具体骰点结果。"""
+    if not isinstance(module_data, dict):
+        return "（本场景无预定检定）"
+
+    current_location = str(current_location or "").strip()
+    resolved = resolved if isinstance(resolved, dict) else {}
+    resolved_npcs = set(resolved.get("npcs") or [])
+    lines: List[str] = []
+    seen = set()
+
+    def _append(line: str):
+        if line and line not in seen:
+            lines.append(line)
+            seen.add(line)
+
+    def _collect_from_text(text: Any, source: str):
+        if not isinstance(text, str) or not text:
+            return
+        for match in _HARD_CHECK_RE.finditer(text):
+            skill = match.group(1).strip()
+            diff = _normalize_hard_difficulty(match.group(2))
+            label = f"{diff}{skill}" if diff != "普通" else skill
+            _append(f"- {label}检定 (skill_check, 来源: {source})")
+        for match in _HARD_AUTO_RE.finditer(text):
+            attr = match.group(1).strip()
+            threshold = match.group(2)
+            _append(f"- {attr}自动检定 (auto_check, 阈值≥{threshold}, 来源: {source})")
+        for match in _RESOLVED_CHECK_RE.finditer(text):
+            skill = match.group(1).strip()
+            diff = _normalize_hard_difficulty(match.group(2))
+            label = f"{diff}{skill}" if diff != "普通" else skill
+            _append(f"- {label}检定 (skill_check, 来源: {source}, 已结算)")
+        for match in _RESOLVED_AUTO_RE.finditer(text):
+            attr = match.group(1).strip()
+            if attr and not text[match.start():match.end()].startswith("[检定:"):
+                _append(f"- {attr}自动检定 (auto_check, 来源: {source}, 已结算)")
+        for match in _RESOLVED_AUTO_PASS_RE.finditer(text):
+            attr = match.group(1).strip()
+            threshold = match.group(2)
+            _append(f"- {attr}自动检定 (auto_check, 阈值≥{threshold}, 来源: {source}, 已结算)")
+
+    locations = module_data.get("locations", {}) if isinstance(module_data.get("locations"), dict) else {}
+    loc_data = locations.get(current_location, {}) if isinstance(locations.get(current_location), dict) else {}
+    if loc_data:
+        for field in ("description", "npc_present_description"):
+            _collect_from_text(loc_data.get(field, ""), f"location.{field}")
+
+    object_keys = set()
+    for obj_key in loc_data.get("objects", []) if isinstance(loc_data.get("objects"), list) else []:
+        if str(obj_key or "").strip():
+            object_keys.add(str(obj_key).strip())
+    objects = module_data.get("objects", {}) if isinstance(module_data.get("objects"), dict) else {}
+    for obj_key, obj_data in objects.items():
+        if not isinstance(obj_data, dict):
+            continue
+        if obj_key not in object_keys and str(obj_data.get("location") or "").strip() != current_location:
+            continue
+        fields = ("description", "examine_text", "success_result", "failure_result")
+        for field in fields:
+            _collect_from_text(obj_data.get(field, ""), f"object.{obj_key}.{field}")
+
+    npcs = module_data.get("npcs", {}) if isinstance(module_data.get("npcs"), dict) else {}
+    for npc_key, npc_data in npcs.items():
+        if not isinstance(npc_data, dict):
+            continue
+        if str(npc_data.get("location") or "").strip() != current_location and npc_key not in resolved_npcs:
+            continue
+        for field in ("description", "dialogue"):
+            _collect_from_text(npc_data.get(field, ""), f"npc.{npc_key}.{field}")
+
+    if not lines:
+        return "（本场景无预定检定）"
+    return "本场景预定检定（仅元信息，不含结果）:\n" + "\n".join(lines)
 
 
 def resolve_hard_placeholders(

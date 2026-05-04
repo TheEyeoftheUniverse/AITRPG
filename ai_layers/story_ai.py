@@ -218,6 +218,7 @@ class StoryAI:
         stages = module_data.get("module_info", {}).get("stages", "")
         history_summaries = self.rhythm_ai._build_history_summaries(game_state)
         scene_context = self.rhythm_ai._build_scene_context(game_state, module_data, rule_plan, player_input=player_input)
+        upcoming_checks = self.rhythm_ai._build_upcoming_checks(game_state, module_data)
 
         # --- Build narrative context (from NarrativeAI methods) ---
         narrative_history = game_state.get("narrative_history", [])
@@ -243,6 +244,7 @@ class StoryAI:
         prompt = prompt.replace("{rule_plan}", json.dumps(rule_plan or {}, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{rule_result}", json.dumps(rule_result or {}, ensure_ascii=False, indent=2))
         prompt = prompt.replace("{scene_context}", scene_context)
+        prompt = prompt.replace("{upcoming_checks}", upcoming_checks)
         prompt = prompt.replace("{recent_dialogue}", recent_dialogue_text)
         prompt = prompt.replace("{history_text}", history_text)
         prompt = prompt.replace("{dialogue_memory}", json.dumps(dialogue_memory, ensure_ascii=False))
