@@ -1150,6 +1150,142 @@ html, body {
     display: none;
 }
 
+/* ============================================================
+ * v3.4.0 (map-node-visual-style, 2026-05-04)
+ *
+ * Cytoscape 节点本体在 v3.4.0 之后是完全透明的圆形 (background-opacity 默认 0).
+ * 真正的视觉细节 (大 MDI 图标 / 50% 透明 label / 角标徽章) 由这一层 DOM overlay 渲染,
+ * 跟 Cytoscape canvas 共用 .map-container 父级, 用绝对定位 + rAF 同步 pan/zoom 坐标.
+ *
+ * pointer-events: none 让点击事件穿透到 Cytoscape canvas (Cytoscape 自己处理 hit-test).
+ * ============================================================ */
+.map-node-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 5;     /* 高于 cytoscape canvas 的 webgl/canvas 层, 低于 .map-tooltip */
+}
+.map-node-card {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    border-radius: 50%;
+    --map-node-accent: var(--accent);
+    isolation: isolate;
+    opacity: 0.96;
+}
+.map-node-card::before,
+.map-node-card::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    opacity: 0;
+    box-sizing: border-box;
+}
+.map-node-card.is-current::before {
+    inset: -9px;
+    border: 2px solid var(--map-node-accent);
+    animation: mapNodePulse 1.65s ease-out infinite;
+}
+.map-node-card.is-current::after,
+.map-node-card.is-selected::after {
+    inset: -4px;
+    border: 1px solid var(--map-node-accent);
+    opacity: 0.72;
+}
+.map-node-card.is-path:not(.is-current):not(.is-selected)::after {
+    inset: -3px;
+    border: 1px dashed rgba(164, 160, 74, 0.62);
+    opacity: 0.62;
+}
+.map-node-card.is-locked {
+    opacity: 0.68;
+}
+@keyframes mapNodePulse {
+    0% { transform: scale(0.88); opacity: 0.78; }
+    72% { transform: scale(1.28); opacity: 0; }
+    100% { transform: scale(1.28); opacity: 0; }
+}
+.map-node-icon-wrap {
+    position: absolute;
+    inset: 4px 4px 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+}
+.map-node-icon,
+.map-node-q {
+    color: var(--text-secondary);
+    text-align: center;
+    line-height: 1;
+    opacity: 0.88;
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.32);
+}
+.map-node-icon.is-current,
+.map-node-q.is-current {
+    color: var(--map-node-accent);
+    opacity: 0.92;
+}
+.map-node-q {
+    font-family: Georgia, "Noto Serif SC", serif;
+    font-weight: 700;
+    color: var(--text-secondary);
+    opacity: 0.86;
+}
+.map-node-label {
+    position: absolute;
+    left: 3px;
+    right: 3px;
+    bottom: 6px;
+    display: block;
+    text-align: center;
+    color: var(--text-primary);
+    font-family: "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    font-weight: 700;
+    opacity: 0.92;
+    line-height: 1.05;
+    white-space: normal;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+    z-index: 2;
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.48);
+}
+.map-node-card.is-fog .map-node-icon-wrap {
+    inset: 0;
+}
+.map-node-card.is-fog .map-node-label {
+    display: none;
+}
+.map-node-card.is-fog .map-node-q {
+    opacity: 0.74;
+}
+.map-node-badges {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3;
+}
+.map-node-badge {
+    position: absolute;
+    line-height: 1;
+    color: var(--accent);
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+    box-sizing: border-box;
+    text-shadow: 0 1px 1px rgba(255, 255, 255, 0.38);
+}
+.map-node-badge.pos-tr { top: 5px; right: 5px; }
+.map-node-badge.pos-tl { top: 5px; left: 5px; }
+.map-node-badge.pos-br { bottom: 5px; right: 5px; }
+.map-node-badge.pos-bl { bottom: 5px; left: 5px; }
+
 /* v3.1.0 地图 tooltip (Cytoscape hover / long-press 用) */
 .map-tooltip {
     position: absolute;
@@ -1206,14 +1342,14 @@ html, body {
     color: #ffb8a0;
 }
 .map-tooltip-tag--npc {
-    background: rgba(122, 158, 192, 0.2);
-    border-color: rgba(122, 158, 192, 0.5);
-    color: #b8d4f0;
+    background: rgba(139, 111, 78, 0.25);
+    border-color: rgba(139, 111, 78, 0.6);
+    color: #d4c0a0;
 }
 .map-tooltip-tag--micro {
-    background: rgba(154, 122, 196, 0.22);
-    border-color: rgba(154, 122, 196, 0.55);
-    color: #d8c0f0;
+    background: rgba(154, 117, 48, 0.25);
+    border-color: rgba(154, 117, 48, 0.6);
+    color: #e0c888;
 }
 
 /* v3.1.0 新地图禁用 (结局 / 后日谈) */
@@ -1227,6 +1363,11 @@ html, body {
 /* v3.1.0 新地图 map_corrupt 闪烁 (套用 #map-canvas) */
 .map-canvas.map-corrupt-flash {
     animation: mapCorruptFlash 0.35s ease;
+}
+
+/* v3.4.0: 给 #map-canvas 一个 stacking context, 让 overlay 子元素的 position:absolute 能锚定它 */
+.map-canvas {
+    position: relative;
 }
 
 .map-help {

@@ -1,15 +1,32 @@
 /**
- * map_view.js — Cytoscape.js 接管的地图视图模块 (v3.2.0)
+ * map_view.js — Cytoscape.js 接管的地图视图模块 (v3.4.0)
  *
- * v3.2.0 同步编辑器:
- *   - 节点不再可拖拽 (autoungrabify) — 玩家只能 tap 走入, 不能改地图位置
+ * v3.4.0 视觉重构 (map-node-visual-style, 2026-05-04):
+ *   - 节点本体改为完全透明的 Cytoscape 圆形 (background-opacity 默认 0, border 默认 0).
+ *     连线两端永远落在圆心几何上, 不再因节点尺寸不一致出现脱节感.
+ *   - 大尺寸 MDI 图标水印 + 大号节点名 + 角标徽章, 全部由独立的 DOM overlay 层渲染,
+ *     与 Cytoscape canvas 同步 pan/zoom (rAF 节流). MDI 类名直接从 loc.icon 读取
+ *     (默认 mdi-door); 未探索节点只显示 "?", 不显示房间名.
+ *   - 玩家所在节点不再整圆染色, 改用 DOM/CSS 圆环呼吸; NPC / 危险 / 微场景
+ *     等其他语义全部移到右上 / 右下角标徽章.
+ *   - 模组作者可在 location 数据里写 icon (MDI 类名) / displayColor (hex) / displayAlpha
+ *     (0..1) / badges 数组 来覆盖默认; 模组作者写的 badges 与引擎自动注入的 NPC/danger
+ *     徽章一起 merge 进 4 个角.
+ *   - 连线支持 style 字段: solid (默认) / dashed / double / single-arrow; directed=true 加箭头.
+ *
+ * v3.3.0 视觉前置 (部分保留):
+ *   - hover 动画 & 不可达节点半透明
+ *
+ * v3.2.0 同步编辑器 (保留):
+ *   - 节点不再可拖拽 (autoungrabify)
  *   - map_position 支持浮点 (col, row), 不再强制整数网格
- *   - 按 map_group (字符串) 分带渲染, 没填 map_group 时按 floor 数字派生 ("1F"/"B1"/"GF")
+ *   - 按 map_group (字符串) 分带渲染
  *
  * 数据契约: render(mapData) 接收
  *   { locations: { key: { display_name, floor, visited, map_position?, map_group?,
- *                         is_micro_scene?, parent_location? } },
- *     edges: [{ from, to, locked }],
+ *                         is_micro_scene?, parent_location?,
+ *                         icon?, displayColor?, displayAlpha?, badges? } },
+ *     edges: [{ from, to, locked, style?, directed? }],
  *     current_location: str,
  *     reachable: [keys],
  *     danger_locations: [keys],
@@ -23,6 +40,7 @@
     const FLAG_KEY = "aitrpg_new_map";
     const CONTAINER_ID = "map-canvas";
     const LEGACY_SVG_ID = "map-svg";
+    const OVERLAY_ID = "map-node-overlay";
 
     let _cy = null;
     let _enabled = false;
@@ -33,6 +51,22 @@
     let _tooltipTimer = null;
     let _lastMapData = null;   // 缓存最近一次 mapData, tooltip 拼文案用
     let _anchorKey = null;     // 本会话首次见到的 current_location, 作为稳定 BFS 根; 玩家走动时房间不再左右乱跳
+    let _overlayEl = null;     // DOM overlay 容器 (v3.4.0)
+    let _overlayPending = false; // rAF 节流标记 (v3.4.0)
+
+    // ===== v3.4.0: 图标系统 (MDI 字体, 不再用 SVG dataURI) =====
+    // 节点未声明 icon 时的默认图标. 模组作者可在 loc.icon 写任意 mdi-* 类名覆盖.
+    // 未访问节点 (s-fog) 不调图标, 圆心位置渲染 "?" 字符替代, 不进入此 fallback.
+    const _ICON_DEFAULT_MDI = "mdi-door";
+
+    // 引擎自动注入的语义徽章 (NPC / 危险 / 微场景). 模组 badges 数组里的徽章会与它们 merge.
+    // 对应 CSS 变量: --success / --danger / --warning (见 webui/static/css/style.css).
+    const _AUTO_BADGE_NPC = { icon: "mdi-account", color: "var(--success)" };
+    const _AUTO_BADGE_DANGER = { icon: "mdi-skull", color: "var(--danger)" };
+    const _AUTO_BADGE_MICRO = { icon: "mdi-flash", color: "var(--warning)" };
+
+    // 角标位置分配顺序 (同时存在多个徽章时依次填入).
+    const _BADGE_POSITIONS = ["tr", "tl", "br", "bl"];
 
     function isEnabled() {
         // v3.1.0 默认启用新地图 (Cytoscape.js); 若用户显式设 "0" 则切回旧 SVG 渲染。
@@ -63,131 +97,82 @@
     }
 
     /**
-     * 七态视觉 + 楼层着色的 cytoscape style 表
-     * 设计原则: 每态既有颜色差异, 也有形状/边框/图标差异 (色弱友好, 不仅靠颜色)
+     * v3.4.0 cytoscape 样式表 — 节点外形完全透明的圆形, 视觉细节交给 DOM overlay.
+     *
+     * 设计要点:
+     *  - Cytoscape 节点只承担圆形点击区域和连线锚点职责, 不再画任何可见填充/边框/hover overlay.
+     *  - current / selected / fog / locked 等视觉态都交给 DOM overlay class + CSS.
+     *  - 边按 data("style") 决定虚线/双线/箭头.
      */
     function _buildStyle() {
         return [
-            // 节点基础
+            // ===== 节点基础: 完全透明圆形 =====
             {
                 selector: "node",
                 style: {
-                    "label": "data(label)",
-                    "color": "#f3ecd8",
-                    "font-size": "11px",
-                    "font-weight": 600,
-                    "text-valign": "center",
-                    "text-halign": "center",
-                    "text-wrap": "wrap",
-                    "text-max-width": "84px",
-                    "background-color": "#3a3530",
-                    "border-width": 1.5,
-                    "border-color": "#7a6a52",
-                    "shape": "round-rectangle",
-                    "width": 92,
-                    "height": 36,
-                    "transition-property": "background-color, border-color, border-width",
+                    "label": "",  // label 改由 DOM overlay 渲染
+                    "shape": "ellipse",
+                    "width": 104,
+                    "height": 104,
+                    "background-color": "#8b6f4e",
+                    "background-opacity": 0,
+                    "border-width": 0,
+                    "border-color": "#5a4e3e",
+                    "border-opacity": 0,
+                    "overlay-opacity": 0,
+                    "transition-property": "opacity",
                     "transition-duration": "180ms"
                 }
             },
-            // visited (已访问) — 偏绿: "去过, 安全". 跟金色 current 拉开色相, 一眼能区分
+            // visited (已访问) — 完全透明, 视觉全部交给 DOM overlay.
             {
                 selector: "node.s-visited",
-                style: {
-                    "background-color": "#324a36",
-                    "border-color": "#7aae6c",
-                    "border-width": 2,
-                    "color": "#dcefcc"
-                }
+                style: {}
             },
-            // fog (未探索, 邻居可见但未到过) — 冷蓝: "未知前线". 旧版偏红, 容易和 danger 混
+            // fog (未探索) — 透明圆, 只在 DOM overlay 显示问号.
             {
                 selector: "node.s-fog",
-                style: {
-                    "background-color": "#243440",
-                    "border-color": "#5e8aa6",
-                    "border-style": "dashed",
-                    "border-width": 2,
-                    "color": "#b8cee0"
-                }
+                style: {}
             },
-            // locked (无法到达, 但在视野中) — 中性灰: "门锁着 / 路被堵". 不再用红色, 把红色让给 danger
+            // locked (无法到达但有视野) — Cytoscape 层只降低 hitbox 透明度, 可见状态交给 DOM overlay.
             {
                 selector: "node.s-locked",
                 style: {
-                    "background-color": "#2a2724",
-                    "border-color": "#5a5448",
-                    "border-style": "dotted",
-                    "border-width": 2,
-                    "color": "#8a8478"
+                    "opacity": 0.7
                 }
             },
-            // current (当前所在位置) — 金色椭圆 + 大发光圈: 跟绿色 visited 在色相和形状两个维度上区分
+            // current (玩家所在位置) — 不再整圆染色; DOM overlay 画圆环呼吸.
             {
                 selector: "node.s-current",
-                style: {
-                    "background-color": "#6a4f2a",
-                    "border-color": "#ffd166",
-                    "border-width": 4,
-                    "shape": "ellipse",
-                    "color": "#fff8e0",
-                    "font-weight": 700,
-                    "font-size": "12px",
-                    "shadow-blur": 18,
-                    "shadow-color": "#ffd166",
-                    "shadow-opacity": 0.85
-                }
+                style: {}
             },
-            // selected (玩家点击选中的目标)
+            // selected (玩家点击选中的目标) — DOM overlay 画圆环, Cytoscape 层保持透明.
             {
                 selector: "node.s-selected",
-                style: {
-                    "border-color": "#ffe18a",
-                    "border-width": 4,
-                    "shadow-blur": 16,
-                    "shadow-color": "#ffe18a",
-                    "shadow-opacity": 0.7
-                }
+                style: {}
             },
-            // danger (管家/威胁存在) — 整个调色板里唯一使用强烈红色的状态, 不会和 locked / fog 混
-            {
-                selector: "node.s-danger",
-                style: {
-                    "border-color": "#ee5d3e",
-                    "border-width": 3,
-                    "background-color": "#4a1d18",
-                    "color": "#ffcab8"
-                }
-            },
-            // npc (有 NPC 在此) — 冷蓝叠加状态, 比 fog 略亮以便区分
-            {
-                selector: "node.s-npc",
-                style: {
-                    "background-color": "#2c4258",
-                    "border-color": "#88b3d6"
-                }
-            },
-            // micro_scene (微场景 / 硬导向入口) — 形状区分
+            // danger / npc — class 保留作 DOM overlay 角标 hook, 但 Cytoscape 层不再染色.
+            { selector: "node.s-danger", style: {} },
+            { selector: "node.s-npc", style: {} },
+            // micro_scene (微场景 / 硬导向入口) — 保持透明圆形 hitbox, 语义由角标表达.
             {
                 selector: "node.s-micro",
-                style: {
-                    "shape": "diamond",
-                    "background-color": "#3a304a",
-                    "border-color": "#9a7ac4",
-                    "width": 80,
-                    "height": 50
-                }
+                style: {}
             },
-            // 路径高亮 (W3 给路径节点加 .s-path)
+            // 路径高亮 (BFS 路径上的节点) — 节点本体不画边框, 路径主要靠边高亮.
             {
                 selector: "node.s-path",
+                style: {}
+            },
+            // ===== hover 动效 (PC 端鼠标悬停) — 禁用 Cytoscape 矩形 overlay =====
+            {
+                selector: "node:hover",
                 style: {
-                    "background-color": "#4a5a3a",
-                    "border-color": "#b8d484"
+                    "overlay-opacity": 0,
+                    "overlay-color": "#c49a3c"
                 }
             },
-
-            // 边基础
+            // ===== 边基础 =====
             {
                 selector: "edge",
                 style: {
@@ -200,7 +185,7 @@
                     "transition-duration": "180ms"
                 }
             },
-            // 锁住的边 (虚线 + 红)
+            // 锁住的边 (虚线 + 暖红)
             {
                 selector: "edge.s-locked",
                 style: {
@@ -214,9 +199,33 @@
             {
                 selector: "edge.s-path",
                 style: {
-                    "line-color": "#b8d484",
+                    "line-color": "#a4a04a",
                     "width": 3,
                     "opacity": 1
+                }
+            },
+            // v3.4.0: 模组作者声明的边样式
+            {
+                selector: "edge.s-edge-dashed",
+                style: { "line-style": "dashed" }
+            },
+            {
+                selector: "edge.s-edge-double",
+                // Cytoscape 没有原生 double 样式, 用 line-fill linear-gradient 做明暗双线视觉.
+                // 主线占两侧, 中央留一条颜色更浅的轨道, 看起来像两条平行线.
+                style: {
+                    "width": 5,
+                    "line-fill": "linear-gradient",
+                    "line-gradient-stop-colors": "#5a4e3e #d8c8a8 #5a4e3e",
+                    "line-gradient-stop-positions": "30 50 70"
+                }
+            },
+            {
+                selector: "edge.s-edge-arrow",
+                style: {
+                    "target-arrow-shape": "triangle",
+                    "target-arrow-color": "#a89070",
+                    "arrow-scale": 1.4
                 }
             }
         ];
@@ -278,6 +287,8 @@
             const isMicro = Boolean(loc.is_micro_scene);
             const isDanger = dangerLocs.has(key);
             const isNpc = npcLocs.has(key);
+            // 未访问节点无论是否当前可达, 都只显示问号; 不再显示默认门图标.
+            const isFog = !isCurrent && !isVisited;
 
             const classes = [];
             if (isCurrent) classes.push("s-current");
@@ -287,6 +298,64 @@
             if (isDanger) classes.push("s-danger");
             if (isNpc) classes.push("s-npc");
             if (isMicro) classes.push("s-micro");
+
+            // v3.4.0: MDI 类名 — 模组 loc.icon 优先, 缺省 mdi-door (visited) 或 "?" 字符 (fog).
+            // fog 节点的 iconMdi 留空, 让 overlay 渲染 "?" 字符替代图标.
+            let iconMdi = "";
+            let showQuestion = false;
+            if (isFog) {
+                showQuestion = true;
+            } else if (typeof loc.icon === "string" && loc.icon.trim()) {
+                iconMdi = loc.icon.trim();
+            } else {
+                iconMdi = _ICON_DEFAULT_MDI;
+            }
+
+            // v3.5.0: 节点本体永远完全透明. displayColor 只作为圆环/角标的 accent 颜色,
+            // displayAlpha 保留在数据里兼容旧模组, 但不再用于给节点整圆上色.
+            let bgColor = "#8b6f4e"; // --accent fallback
+            if (typeof loc.displayColor === "string" && loc.displayColor.trim()) {
+                bgColor = loc.displayColor.trim();
+            }
+            const bgAlpha = 0;
+
+            // v3.4.0: 角标徽章 — 引擎自动注入 (NPC/danger/micro) + 模组 badges 数组合并.
+            // 引擎注入的徽章先排在前面, 占据右上 → 左上 → 右下 → 左下 顺序; 模组 badges 接在后面.
+            // 模组徽章如果显式声明 position 字段就尊重, 否则按剩余角分配.
+            const autoBadges = [];
+            if (isDanger) autoBadges.push(_AUTO_BADGE_DANGER);
+            if (isNpc) autoBadges.push(_AUTO_BADGE_NPC);
+            if (isMicro) autoBadges.push(_AUTO_BADGE_MICRO);
+            const modBadges = Array.isArray(loc.badges) ? loc.badges.filter(function (b) {
+                return b && typeof b === "object" && typeof b.icon === "string" && b.icon.trim();
+            }) : [];
+            // 合并并分配 position. 引擎徽章不指定 position, 走自动分配; 模组徽章自带 position 的优先用自带.
+            const usedPositions = new Set();
+            const finalBadges = [];
+            const allBadges = autoBadges.concat(modBadges);
+            // 第一遍: 把显式 position 的徽章放下
+            for (let i = 0; i < allBadges.length; i++) {
+                const b = allBadges[i];
+                if (typeof b.position === "string" && _BADGE_POSITIONS.indexOf(b.position) >= 0 && !usedPositions.has(b.position)) {
+                    finalBadges.push({ icon: b.icon, color: b.color || "", position: b.position });
+                    usedPositions.add(b.position);
+                }
+            }
+            // 第二遍: 没显式 position 的按剩余角顺序分配
+            for (let i = 0; i < allBadges.length; i++) {
+                const b = allBadges[i];
+                if (typeof b.position === "string" && _BADGE_POSITIONS.indexOf(b.position) >= 0) continue;
+                let assigned = null;
+                for (let p = 0; p < _BADGE_POSITIONS.length; p++) {
+                    const cand = _BADGE_POSITIONS[p];
+                    if (!usedPositions.has(cand)) { assigned = cand; break; }
+                }
+                if (assigned) {
+                    finalBadges.push({ icon: b.icon, color: b.color || "", position: assigned });
+                    usedPositions.add(assigned);
+                }
+                // 多于 4 个的徽章本轮先简单截断
+            }
 
             elements.push({
                 group: "nodes",
@@ -301,8 +370,14 @@
                     isMicro: isMicro,
                     isDanger: isDanger,
                     isNpc: isNpc,
+                    isFog: isFog,
                     parentLocation: loc.parent_location || null,
                     unreachableReason: loc.unreachable_reason || null,
+                    iconMdi: iconMdi,
+                    showQuestion: showQuestion,
+                    bgColor: bgColor,
+                    bgAlpha: bgAlpha,
+                    badges: finalBadges,
                     // 模组作者手画坐标; 后端透传为 float, 编辑器允许浮点拖拽 (不强制整数吸附).
                     mapPosition: (loc.map_position && typeof loc.map_position === "object" && typeof loc.map_position.col === "number")
                         ? { col: Number(loc.map_position.col), row: Number(loc.map_position.row || 0) }
@@ -314,19 +389,191 @@
 
         for (const e of edges) {
             if (!e || !locations[e.from] || !locations[e.to]) continue;
+            // v3.4.0: 边样式 class — locked 仍走 s-locked; mod 的 style 加 s-edge-* class
+            const edgeClasses = [];
+            if (e.locked) edgeClasses.push("s-locked");
+            const edgeStyle = (typeof e.style === "string") ? e.style : "solid";
+            if (edgeStyle === "dashed") edgeClasses.push("s-edge-dashed");
+            else if (edgeStyle === "double") edgeClasses.push("s-edge-double");
+            else if (edgeStyle === "single-arrow" || e.directed) edgeClasses.push("s-edge-arrow");
             elements.push({
                 group: "edges",
                 data: {
-                    id: e.from + "->" + e.to,
+                    id: e.from + "->" + e.to + (edgeStyle !== "solid" ? "::" + edgeStyle : ""),
                     source: e.from,
                     target: e.to,
-                    locked: Boolean(e.locked)
+                    locked: Boolean(e.locked),
+                    edgeStyle: edgeStyle,
+                    directed: Boolean(e.directed)
                 },
-                classes: e.locked ? "s-locked" : ""
+                classes: edgeClasses.join(" ")
             });
         }
         return elements;
     }
+
+    // ===== v3.4.0: DOM overlay 渲染 =====
+    //
+    // 节点本体在 Cytoscape 里只是一个透明圆形 (背景 + 边框 + shadow). 真正的"大图标 +
+    // 50% 透明 label + 角标徽章"通过一个绝对定位的兄弟 DOM 层渲染, 与 Cytoscape canvas
+    // 共用容器的 origin. 每次 render / pan / zoom / 节点增删 都会触发一次 _scheduleOverlayRender,
+    // 经 requestAnimationFrame 节流, 避免高频拖动时掉帧.
+
+    function _ensureOverlayEl() {
+        if (_overlayEl && document.body.contains(_overlayEl)) return _overlayEl;
+        const container = document.getElementById(CONTAINER_ID);
+        if (!container) return null;
+        // 把 overlay 作为 Cytoscape 容器 (#map-canvas) 的子节点, 这样 node.renderedPosition()
+        // 返回的 viewport 像素坐标可以直接用 (overlay 的 origin == cy container origin).
+        // pointer-events: none 让 click 仍打到 Cytoscape canvas.
+        let el = container.querySelector(":scope > #" + OVERLAY_ID);
+        if (!el) {
+            el = document.createElement("div");
+            el.id = OVERLAY_ID;
+            el.className = "map-node-overlay";
+            container.appendChild(el);
+        }
+        _overlayEl = el;
+        return el;
+    }
+
+    function _removeOverlayEl() {
+        if (_overlayEl && _overlayEl.parentNode) {
+            _overlayEl.parentNode.removeChild(_overlayEl);
+        }
+        _overlayEl = null;
+    }
+
+    function _scheduleOverlayRender() {
+        if (_overlayPending) return;
+        _overlayPending = true;
+        requestAnimationFrame(function () {
+            _overlayPending = false;
+            _renderOverlay();
+        });
+    }
+
+    function _renderOverlay() {
+        if (!_cy) return;
+        const overlay = _ensureOverlayEl();
+        if (!overlay) return;
+        // viewport zoom — overlay 内的图标/字号要跟着缩放.
+        const zoom = _cy.zoom();
+
+        const nodes = _cy.nodes();
+        // 维持一个 id -> existing-card 映射, 这次没出现的就移除.
+        const seen = new Set();
+        nodes.forEach(function (node) {
+            const id = node.id();
+            seen.add(id);
+            const data = node.data();
+            const pos = node.renderedPosition();
+            const w = node.renderedWidth();
+            const h = node.renderedHeight();
+
+            let card = overlay.querySelector('[data-node-id="' + _cssEscape(id) + '"]');
+            if (!card) {
+                card = document.createElement("div");
+                card.className = "map-node-card";
+                card.setAttribute("data-node-id", id);
+                card.innerHTML =
+                    '<div class="map-node-icon-wrap">' +
+                        '<span class="map-node-icon"></span>' +
+                        '<span class="map-node-q">?</span>' +
+                    '</div>' +
+                    '<div class="map-node-label"></div>' +
+                    '<div class="map-node-badges"></div>';
+                overlay.appendChild(card);
+            }
+            // Cytoscape hitbox 故意比可见 card 大: 边线锚在 hitbox 外缘, 与圆环/card 留出呼吸距离.
+            const visualW = Math.min(w, Math.max(54, Math.round((data.isMicro ? 68 : 76) * zoom)));
+            const visualH = Math.min(h, Math.max(54, Math.round((data.isMicro ? 68 : 76) * zoom)));
+            card.style.left = (pos.x - visualW / 2) + "px";
+            card.style.top = (pos.y - visualH / 2) + "px";
+            card.style.width = visualW + "px";
+            card.style.height = visualH + "px";
+            const cardClasses = ["map-node-card"];
+            if (data.isCurrent) cardClasses.push("is-current");
+            if (data.isFog) cardClasses.push("is-fog");
+            if (data.isReachable === false && !data.isCurrent) cardClasses.push("is-locked");
+            if (node.hasClass("s-selected")) cardClasses.push("is-selected");
+            if (node.hasClass("s-path")) cardClasses.push("is-path");
+            if (data.isMicro) cardClasses.push("is-micro");
+            card.className = cardClasses.join(" ");
+            card.style.setProperty("--map-node-accent", data.bgColor || "#8b6f4e");
+            // 字号 / 图标尺寸跟随 zoom: 图标是主视觉, label 按文本长度自动缩小.
+            const iconPx = Math.max(36, Math.round((data.isFog ? 68 : 60) * zoom));
+            const labelText = data.isFog ? "" : (data.label || "");
+            const labelLen = Array.from(labelText).length;
+            let labelBase = 12;
+            if (labelLen > 8) labelBase = 8.5;
+            else if (labelLen > 6) labelBase = 9.5;
+            else if (labelLen > 4) labelBase = 10.5;
+            const labelPx = Math.max(8, Math.round(labelBase * zoom));
+            const badgePx = Math.max(8, Math.round(12 * zoom));
+            card.style.fontSize = labelPx + "px";
+
+            // ----- icon / question -----
+            const iconEl = card.querySelector(".map-node-icon");
+            const qEl = card.querySelector(".map-node-q");
+            if (data.showQuestion) {
+                iconEl.className = "map-node-icon";
+                iconEl.style.fontSize = iconPx + "px";
+                iconEl.style.display = "none";
+                qEl.style.display = "";
+                qEl.style.fontSize = iconPx + "px";
+            } else {
+                iconEl.className = "map-node-icon mdi " + (data.iconMdi || _ICON_DEFAULT_MDI);
+                iconEl.style.fontSize = iconPx + "px";
+                iconEl.style.display = "";
+                qEl.style.display = "none";
+            }
+            // current 节点的 icon 在金色 tint 上要稍稍亮一些, 让玩家更明显.
+            if (data.isCurrent) {
+                iconEl.classList.add("is-current");
+                qEl.classList.add("is-current");
+            } else {
+                iconEl.classList.remove("is-current");
+                qEl.classList.remove("is-current");
+            }
+
+            // ----- label -----
+            const labelEl = card.querySelector(".map-node-label");
+            labelEl.textContent = labelText;
+            labelEl.style.fontSize = labelPx + "px";
+
+            // ----- badges -----
+            const badgesEl = card.querySelector(".map-node-badges");
+            const desiredBadges = Array.isArray(data.badges) ? data.badges : [];
+            // 简单做: 全清后重建. 角标数量 ≤ 4, 重绘开销可忽略.
+            badgesEl.innerHTML = "";
+            for (let i = 0; i < desiredBadges.length; i++) {
+                const b = desiredBadges[i];
+                if (!b || typeof b.icon !== "string") continue;
+                const span = document.createElement("span");
+                span.className = "map-node-badge mdi " + b.icon + " pos-" + (b.position || "tr");
+                span.style.fontSize = badgePx + "px";
+                if (b.color) span.style.color = b.color;
+                badgesEl.appendChild(span);
+            }
+        });
+
+        // 清理本帧未出现的节点 card (例如玩家走入场景导致旧节点被移除).
+        const cards = overlay.querySelectorAll(".map-node-card");
+        for (let i = 0; i < cards.length; i++) {
+            const id = cards[i].getAttribute("data-node-id");
+            if (!seen.has(id)) {
+                cards[i].parentNode.removeChild(cards[i]);
+            }
+        }
+    }
+
+    function _cssEscape(s) {
+        // 节点 id 可能含中文 / 特殊字符. 给 querySelector 的属性选择器值做最小化转义.
+        if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(s);
+        return String(s).replace(/(["\\\]\[])/g, "\\$1");
+    }
+
 
     function _runLayout(force) {
         if (!_cy) return;
@@ -496,7 +743,9 @@
         _bindInteractions();
         _enabled = true;
         _lastLayoutKey = "";
-        console.log("[MapView] initialized (W3)");
+        // v3.4.0: 创建 overlay 容器, 让 _renderOverlay 有地方挂.
+        _ensureOverlayEl();
+        console.log("[MapView] initialized (v3.4.0)");
         return true;
     }
 
@@ -505,6 +754,7 @@
             try { _cy.destroy(); } catch (e) {}
             _cy = null;
         }
+        _removeOverlayEl();
         _swapContainerMode(false);
         _enabled = false;
         _lastLayoutKey = "";
@@ -513,7 +763,7 @@
     }
 
     /**
-     * 渲染 mapData. W2 实现完整数据→图映射 + 七态视觉 + dagre 布局.
+     * 渲染 mapData. v3.3.0 增加四向箭头的生命周期管理.
      */
     function render(mapData) {
         if (!_enabled || !_cy) return false;
@@ -529,7 +779,7 @@
             _anchorKey = mapData.current_location;
         }
         const elements = _buildElements(mapData);
-        // 增量更新: 取出当前 cy 中的 ids, 跟新 elements 比对; 全量替换实现简单, 后续可优化
+        // 全量替换 (render 总是 remove+add)
         _cy.batch(function () {
             _cy.elements().remove();
             _cy.add(elements);
@@ -539,6 +789,9 @@
         if (_selectedTarget && _cy.getElementById(_selectedTarget).length > 0) {
             _cy.getElementById(_selectedTarget).addClass("s-selected");
         }
+        // v3.5.0: 当前所在位置由 DOM overlay 圆环呼吸提示, 不再创建 Cytoscape 三角节点.
+        // v3.4.0: 同步 DOM overlay (大图标 + label + 角标)
+        _scheduleOverlayRender();
         console.log("[MapView] rendered " + elements.filter(e => e.group === "nodes").length + " nodes, " +
             elements.filter(e => e.group === "edges").length + " edges");
         return true;
@@ -576,6 +829,8 @@
         _lastMapData = null;
         _anchorKey = null;
         _hideTooltip();
+        // v3.4.0: 清空 overlay (节点都没了, 角标也该撤)
+        if (_overlayEl) _overlayEl.innerHTML = "";
     }
 
     function setSelectedTarget(key) {
@@ -588,6 +843,7 @@
             if (node && node.length) node.addClass("s-selected");
             _highlightPath(key);
         }
+        _scheduleOverlayRender();
     }
 
     /**
@@ -730,6 +986,8 @@
         });
         // 拖动 / 缩放时关掉 tooltip
         _cy.on("pan zoom", _hideTooltip);
+        // v3.4.0: 拖动 / 缩放 / 节点变化时同步 DOM overlay 位置 (rAF 节流)
+        _cy.on("pan zoom render layoutstop add remove data", _scheduleOverlayRender);
     }
 
     function setOnNodeTap(fn) {
@@ -766,6 +1024,14 @@
         zoomOut: zoomOut,
         zoomReset: zoomReset,
         isEnabled: isEnabled,
+        // v3.4.0: 给模组编辑器复用同一套 overlay 渲染. (W3 用)
+        // 编辑器侧也用 Cytoscape 实例, 把它的 cy + container 元素喂给 _renderOverlayFor.
         _getCy: function () { return _cy; },
+        _scheduleOverlayRender: _scheduleOverlayRender,
+        _renderOverlay: _renderOverlay,
+        _ICON_DEFAULT_MDI: _ICON_DEFAULT_MDI,
+        _AUTO_BADGE_NPC: _AUTO_BADGE_NPC,
+        _AUTO_BADGE_DANGER: _AUTO_BADGE_DANGER,
+        _AUTO_BADGE_MICRO: _AUTO_BADGE_MICRO,
     };
 })();

@@ -112,6 +112,116 @@ window.Editor.State = (function () {
         emit("ui:selection-changed", { key: locationKey });
     }
 
+    /**
+     * 写一个 location 的视觉字段 (icon / displayColor / displayAlpha / badges).
+     * patch 里某键为 undefined 表示"清空, 让它走默认"; null 也按清空处理 (对应序列化时这个键不出现).
+     * 整数 / 浮点 alpha 自动 clamp 到 [0, 1]. badges 必须是数组, 否则忽略.
+     * 触发: location:visual-changed (供右栏 / 主画布 (将来) 监听)
+     */
+    function setLocationVisual(locationKey, patch) {
+        if (!state.module || !state.module.locations || !state.module.locations[locationKey]) return;
+        const loc = state.module.locations[locationKey];
+        if (!patch || typeof patch !== "object") return;
+        if ("icon" in patch) {
+            const v = patch.icon;
+            if (typeof v === "string" && v.trim()) loc.icon = v.trim();
+            else delete loc.icon;
+        }
+        if ("displayColor" in patch) {
+            const v = patch.displayColor;
+            if (typeof v === "string" && v.trim()) loc.displayColor = v.trim();
+            else delete loc.displayColor;
+        }
+        if ("displayAlpha" in patch) {
+            const v = patch.displayAlpha;
+            if (typeof v === "number" && isFinite(v)) {
+                loc.displayAlpha = Math.max(0, Math.min(1, v));
+            } else {
+                delete loc.displayAlpha;
+            }
+        }
+        if ("badges" in patch) {
+            const v = patch.badges;
+            if (Array.isArray(v) && v.length > 0) {
+                loc.badges = v.map(function (b) {
+                    if (!b || typeof b !== "object") return null;
+                    if (typeof b.icon !== "string" || !b.icon.trim()) return null;
+                    const out = { icon: b.icon.trim() };
+                    if (typeof b.color === "string" && b.color.trim()) out.color = b.color.trim();
+                    if (typeof b.position === "string" && ["tr", "tl", "br", "bl"].indexOf(b.position) >= 0) out.position = b.position;
+                    return out;
+                }).filter(Boolean);
+                if (!loc.badges.length) delete loc.badges;
+            } else {
+                delete loc.badges;
+            }
+        }
+        emit("location:visual-changed", { key: locationKey });
+    }
+
+    /**
+     * 写一条 exit 的连线视觉字段. 旧字符串形式按需自动升级为 dict.
+     *   patch: { style?, directed?, direction? }
+     *   如果 patch 把 style 设回 "solid" 且没有 directed/direction 覆盖, 这条 exit 会被
+     *   反向规整化回字符串形式 (保留 round-trip 的最小磁盘形态).
+     * 触发: location:visual-changed (复用同一个事件, payload.exitIndex 区分)
+     */
+    function setExitVisual(locationKey, exitIndex, patch) {
+        if (!state.module || !state.module.locations || !state.module.locations[locationKey]) return;
+        const loc = state.module.locations[locationKey];
+        if (!Array.isArray(loc.exits) || exitIndex < 0 || exitIndex >= loc.exits.length) return;
+        if (!patch || typeof patch !== "object") return;
+        let entry = loc.exits[exitIndex];
+        // 升级为 dict
+        if (typeof entry === "string") {
+            entry = { to: entry };
+        } else {
+            entry = Object.assign({}, entry);
+            if (typeof entry.to !== "string" || !entry.to) {
+                // 不完整的 exit 不动
+                return;
+            }
+        }
+        if ("style" in patch) {
+            const v = patch.style;
+            if (typeof v === "string" && ["solid", "dashed", "double", "single-arrow"].indexOf(v) >= 0) {
+                entry.style = v;
+            } else {
+                delete entry.style;
+            }
+        }
+        if ("directed" in patch) {
+            entry.directed = !!patch.directed;
+            if (!entry.directed) delete entry.directed;
+        }
+        if ("direction" in patch) {
+            const v = patch.direction;
+            if (typeof v === "string" && (v === "to" || v === "from")) entry.direction = v;
+            else delete entry.direction;
+        }
+        // 保持 semantic 一致性: single-arrow 总是 directed.
+        if (entry.style === "single-arrow") {
+            entry.directed = true;
+        }
+        // 清理: 非 single-arrow → 删 directed / direction 默认
+        if (entry.style !== "single-arrow") {
+            delete entry.directed;
+            delete entry.direction;
+        }
+        // 清理: style=solid 是默认值, 剥掉
+        if (entry.style === "solid") delete entry.style;
+        // 清理: direction=to 时剥掉(默认值)
+        if (entry.direction === "to") delete entry.direction;
+        // 简化: 只剩 to 时回退为字符串
+        const keys = Object.keys(entry).filter(function (k) { return k !== "to"; });
+        if (keys.length === 0) {
+            loc.exits[exitIndex] = entry.to;
+        } else {
+            loc.exits[exitIndex] = entry;
+        }
+        emit("location:visual-changed", { key: locationKey, exitIndex: exitIndex });
+    }
+
     /** 清空所有状态, 回到刚打开页面的形态. */
     function reset() {
         state.module = null;
@@ -131,6 +241,8 @@ window.Editor.State = (function () {
         moveTo: moveTo,
         setMapPosition: setMapPosition,
         selectNode: selectNode,
+        setLocationVisual: setLocationVisual,
+        setExitVisual: setExitVisual,
         reset: reset
     };
 })();

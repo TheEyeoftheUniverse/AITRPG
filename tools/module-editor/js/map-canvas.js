@@ -28,9 +28,14 @@ window.Editor.MapCanvas = (function () {
     const PAD_LEFT = 56;
     const PAD_TOP = 36;
     const GROUP_GAP = 32;   // 不同 map_group 之间额外的垂直留白
+    const OVERLAY_ID = "editor-map-node-overlay";
+    const ICON_DEFAULT_MDI = "mdi-door";
+    const BADGE_POSITIONS = ["tr", "tl", "br", "bl"];
 
     // === 模块状态 ===
     let _cy = null;
+    let _overlayEl = null;
+    let _overlayPending = false;
     // group (字符串) -> { yOffsetRef } — 仅用于 dragfree 时把视觉 (x, y) 反推回相对该组基线的 (col, row).
     // 不再保留 dragMinY/dragMaxY 之类的硬限制, 因为已经放开拖拽.
     let _groupBands = new Map();
@@ -69,98 +74,96 @@ window.Editor.MapCanvas = (function () {
         return String(ka.value).localeCompare(String(kb.value));
     }
 
+    function _locationAccent(loc) {
+        if (loc && typeof loc.displayColor === "string" && loc.displayColor.trim()) {
+            return loc.displayColor.trim();
+        }
+        return "#8b6f4e";
+    }
+
+    function _locationIcon(loc, fallback) {
+        if (loc && typeof loc.icon === "string" && loc.icon.trim()) return loc.icon.trim();
+        return fallback || ICON_DEFAULT_MDI;
+    }
+
+    function _normalizeBadges(badges, extraBadges) {
+        const raw = [];
+        if (Array.isArray(extraBadges)) raw.push.apply(raw, extraBadges);
+        if (Array.isArray(badges)) {
+            badges.forEach(function (b) {
+                if (b && typeof b === "object" && typeof b.icon === "string" && b.icon.trim()) raw.push(b);
+            });
+        }
+        const used = new Set();
+        const out = [];
+        raw.forEach(function (b) {
+            if (typeof b.position === "string" && BADGE_POSITIONS.indexOf(b.position) >= 0 && !used.has(b.position)) {
+                out.push({ icon: b.icon.trim(), color: b.color || "", position: b.position });
+                used.add(b.position);
+            }
+        });
+        raw.forEach(function (b) {
+            if (typeof b.position === "string" && BADGE_POSITIONS.indexOf(b.position) >= 0) return;
+            for (let i = 0; i < BADGE_POSITIONS.length; i++) {
+                const p = BADGE_POSITIONS[i];
+                if (!used.has(p)) {
+                    out.push({ icon: b.icon.trim(), color: b.color || "", position: p });
+                    used.add(p);
+                    break;
+                }
+            }
+        });
+        return out;
+    }
+
     function _buildStyle() {
         return [
             {
                 selector: "node",
                 style: {
-                    // multi-line label: 第一行房间名, 第二行用方括号包住的 map_group, 用作"分组提示"
-                    "label": function (ele) {
-                        const main = ele.data("label") || "";
-                        const grp = ele.data("mapGroup") || "";
-                        return grp ? main + "\n[" + grp + "]" : main;
-                    },
-                    "color": "#f3ecd8",
-                    "font-size": "11px",
-                    "font-weight": 600,
-                    "text-valign": "center",
-                    "text-halign": "center",
-                    "text-wrap": "wrap",
-                    "text-max-width": "84px",
-                    "background-color": "#3a3530",
-                    "border-width": 1.5,
-                    "border-color": "#7a6a52",
-                    "shape": "round-rectangle",
-                    "width": 96,
-                    "height": 48
+                    "label": "",
+                    "shape": "ellipse",
+                    "width": 104,
+                    "height": 104,
+                    "background-color": "#8b6f4e",
+                    "background-opacity": 0,
+                    "border-width": 0,
+                    "border-opacity": 0,
+                    "overlay-opacity": 0
                 }
             },
-            // 已访问 — 绿
+            // 已访问 — 视觉交给 DOM overlay
             {
                 selector: "node.s-visited",
-                style: {
-                    "background-color": "#324a36",
-                    "border-color": "#7aae6c",
-                    "border-width": 2,
-                    "color": "#dcefcc"
-                }
+                style: {}
             },
-            // 未访问 fog — 蓝
+            // 未访问 fog — 只显示问号 overlay
             {
                 selector: "node.s-fog",
-                style: {
-                    "background-color": "#243440",
-                    "border-color": "#5e8aa6",
-                    "border-style": "dashed",
-                    "border-width": 2,
-                    "color": "#b8cee0"
-                }
+                style: {}
             },
-            // 当前位置 — 金色椭圆
+            // 当前位置 — DOM overlay 圆环呼吸
             {
                 selector: "node.s-current",
-                style: {
-                    "background-color": "#6a4f2a",
-                    "border-color": "#ffd166",
-                    "border-width": 4,
-                    "shape": "ellipse",
-                    "color": "#fff8e0",
-                    "font-weight": 700,
-                    "font-size": "12px",
-                    "shadow-blur": 18,
-                    "shadow-color": "#ffd166",
-                    "shadow-opacity": 0.85
-                }
+                style: {}
             },
-            // 隐藏房间 — 整体虚化
+            // 隐藏房间 — 整体虚化, 可见提示由 overlay opacity 体现
             {
                 selector: "node.s-editor-hidden",
                 style: {
-                    "opacity": 0.45,
-                    "border-style": "dashed",
-                    "border-color": "#6a5a4a",
-                    "background-color": "#2a2724"
+                    "opacity": 0.45
                 }
             },
-            // 微场景 — 紫菱形
+            // 微场景 — 保持圆形 hitbox, 用角标表达
             {
                 selector: "node.s-micro",
-                style: {
-                    "shape": "diamond",
-                    "background-color": "#3a304a",
-                    "border-color": "#9a7ac4",
-                    "width": 80,
-                    "height": 56
-                }
+                style: {}
             },
             // 拖拽中
             {
                 selector: "node:grabbed",
                 style: {
-                    "border-width": 4,
-                    "shadow-blur": 12,
-                    "shadow-color": "#ffe18a",
-                    "shadow-opacity": 0.6
+                    "overlay-opacity": 0
                 }
             },
             // 边
@@ -202,12 +205,15 @@ window.Editor.MapCanvas = (function () {
             maxZoom: 3.0,
             boxSelectionEnabled: false
         });
+        _ensureOverlayEl(container);
         _bindInteractions();
+        _cy.on("pan zoom render layoutstop add remove data position", _scheduleOverlayRender);
 
         // 模组变 → 重建; 走入变 → 改高亮.
         // map:position-changed 故意不重排: 拖一个节点不应该让其他节点跟着动.
         State.on("module:loaded", function () { _rerenderAll(); });
         State.on("location:changed", function () { _refreshNodeStates(); });
+        State.on("location:visual-changed", function () { _rerenderAll(); });
     }
 
     function _rerenderAll() {
@@ -220,6 +226,7 @@ window.Editor.MapCanvas = (function () {
         });
         _runLayout();
         _cy.fit(_cy.elements(), 24);
+        _scheduleOverlayRender();
     }
 
     /** 从完整 module JSON 构造 cytoscape elements (所有 location, 含 hidden) */
@@ -256,6 +263,9 @@ window.Editor.MapCanvas = (function () {
                     mapGroup: deriveMapGroup(loc),
                     isHidden: Boolean(loc.hidden),
                     isMicro: false,
+                    iconMdi: _locationIcon(loc, ICON_DEFAULT_MDI),
+                    bgColor: _locationAccent(loc),
+                    badges: _normalizeBadges(loc.badges, []),
                     mapPosition: mp
                 }
             });
@@ -267,6 +277,7 @@ window.Editor.MapCanvas = (function () {
             const cfg = microScenes[microId] || {};
             const parentKey = String(cfg.parent_location || "").trim();
             if (!parentKey || !locations[parentKey]) continue;
+            const microBadges = [{ icon: "mdi-flash", color: "#b08a3e" }];
             elements.push({
                 group: "nodes",
                 data: {
@@ -276,6 +287,9 @@ window.Editor.MapCanvas = (function () {
                     isHidden: false,
                     isMicro: true,
                     parentLocation: parentKey,
+                    iconMdi: _locationIcon(cfg, "mdi-flash"),
+                    bgColor: _locationAccent(cfg),
+                    badges: _normalizeBadges(cfg.badges, microBadges),
                     mapPosition: null
                 }
             });
@@ -415,6 +429,139 @@ window.Editor.MapCanvas = (function () {
             animate: false
         });
         layout.run();
+        _scheduleOverlayRender();
+    }
+
+    function _ensureOverlayEl(container) {
+        const host = container || document.getElementById("map-canvas");
+        if (!host) return null;
+        if (_overlayEl && host.contains(_overlayEl)) return _overlayEl;
+        let el = host.querySelector(":scope > #" + OVERLAY_ID);
+        if (!el) {
+            el = document.createElement("div");
+            el.id = OVERLAY_ID;
+            el.className = "map-node-overlay editor-map-node-overlay";
+            host.appendChild(el);
+        }
+        _overlayEl = el;
+        return el;
+    }
+
+    function _scheduleOverlayRender() {
+        if (_overlayPending) return;
+        _overlayPending = true;
+        requestAnimationFrame(function () {
+            _overlayPending = false;
+            _renderOverlay();
+        });
+    }
+
+    function _renderOverlay() {
+        if (!_cy) return;
+        const overlay = _ensureOverlayEl();
+        if (!overlay) return;
+        const s = State.getState();
+        const currentKey = s.runtime.currentLocationKey;
+        const visited = s.runtime.visitedKeys;
+        const zoom = _cy.zoom();
+        const seen = new Set();
+        _cy.nodes().forEach(function (node) {
+            const id = node.id();
+            const data = node.data();
+            seen.add(id);
+            const isCurrent = id === currentKey;
+            const isVisited = visited.has(id);
+            const isFog = !isCurrent && !isVisited;
+            const pos = node.renderedPosition();
+            const w = node.renderedWidth();
+            const h = node.renderedHeight();
+
+            let card = overlay.querySelector('[data-node-id="' + _cssEscape(id) + '"]');
+            if (!card) {
+                card = document.createElement("div");
+                card.className = "map-node-card";
+                card.setAttribute("data-node-id", id);
+                card.innerHTML =
+                    '<div class="map-node-icon-wrap">' +
+                        '<span class="map-node-icon"></span>' +
+                        '<span class="map-node-q">?</span>' +
+                    '</div>' +
+                    '<div class="map-node-label"></div>' +
+                    '<div class="map-node-badges"></div>';
+                overlay.appendChild(card);
+            }
+
+            const cls = ["map-node-card"];
+            if (isCurrent) cls.push("is-current");
+            if (isFog) cls.push("is-fog");
+            if (node.hasClass("s-editor-hidden")) cls.push("is-locked");
+            if (node.hasClass("s-micro")) cls.push("is-micro");
+            card.className = cls.join(" ");
+            const visualW = Math.min(w, Math.max(54, Math.round((data.isMicro ? 68 : 76) * zoom)));
+            const visualH = Math.min(h, Math.max(54, Math.round((data.isMicro ? 68 : 76) * zoom)));
+            card.style.left = (pos.x - visualW / 2) + "px";
+            card.style.top = (pos.y - visualH / 2) + "px";
+            card.style.width = visualW + "px";
+            card.style.height = visualH + "px";
+            card.style.setProperty("--map-node-accent", data.bgColor || "#8b6f4e");
+
+            const iconPx = Math.max(36, Math.round((isFog ? 68 : 60) * zoom));
+            const labelText = isFog ? "" : (data.label || "");
+            const labelLen = Array.from(labelText).length;
+            let labelBase = 12;
+            if (labelLen > 8) labelBase = 8.5;
+            else if (labelLen > 6) labelBase = 9.5;
+            else if (labelLen > 4) labelBase = 10.5;
+            const labelPx = Math.max(8, Math.round(labelBase * zoom));
+            const badgePx = Math.max(8, Math.round(12 * zoom));
+            const iconEl = card.querySelector(".map-node-icon");
+            const qEl = card.querySelector(".map-node-q");
+            if (isFog) {
+                iconEl.className = "map-node-icon";
+                iconEl.style.display = "none";
+                qEl.style.display = "";
+                qEl.style.fontSize = iconPx + "px";
+            } else {
+                iconEl.className = "map-node-icon mdi " + (data.iconMdi || ICON_DEFAULT_MDI);
+                iconEl.style.display = "";
+                iconEl.style.fontSize = iconPx + "px";
+                qEl.style.display = "none";
+            }
+            if (isCurrent) {
+                iconEl.classList.add("is-current");
+                qEl.classList.add("is-current");
+            } else {
+                iconEl.classList.remove("is-current");
+                qEl.classList.remove("is-current");
+            }
+
+            const labelEl = card.querySelector(".map-node-label");
+            labelEl.textContent = labelText;
+            labelEl.style.fontSize = labelPx + "px";
+
+            const badgesEl = card.querySelector(".map-node-badges");
+            badgesEl.innerHTML = "";
+            const badges = Array.isArray(data.badges) ? data.badges : [];
+            badges.forEach(function (b) {
+                if (!b || typeof b.icon !== "string") return;
+                const span = document.createElement("span");
+                span.className = "map-node-badge mdi " + b.icon + " pos-" + (b.position || "tr");
+                span.style.fontSize = badgePx + "px";
+                if (b.color) span.style.color = b.color;
+                badgesEl.appendChild(span);
+            });
+        });
+
+        const cards = overlay.querySelectorAll(".map-node-card");
+        for (let i = 0; i < cards.length; i++) {
+            const id = cards[i].getAttribute("data-node-id");
+            if (!seen.has(id)) cards[i].parentNode.removeChild(cards[i]);
+        }
+    }
+
+    function _cssEscape(s) {
+        if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(s);
+        return String(s).replace(/(["\\\]\[])/g, "\\$1");
     }
 
     /** 仅根据当前 state 更新节点的视觉态 class, 不重新跑布局 */
@@ -434,6 +581,7 @@ window.Editor.MapCanvas = (function () {
             if (node.data("isHidden")) node.addClass("s-editor-hidden");
             if (node.data("isMicro")) node.addClass("s-micro");
         });
+        _scheduleOverlayRender();
     }
 
     function _bindInteractions() {
@@ -464,11 +612,15 @@ window.Editor.MapCanvas = (function () {
             } finally {
                 _suspendDragHandlers = false;
             }
+            _scheduleOverlayRender();
         });
     }
 
     function fit() {
-        if (_cy) _cy.fit(_cy.elements(), 24);
+        if (_cy) {
+            _cy.fit(_cy.elements(), 24);
+            _scheduleOverlayRender();
+        }
     }
 
     return {
