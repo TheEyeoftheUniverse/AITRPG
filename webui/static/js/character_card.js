@@ -5,8 +5,8 @@
 (function () {
     "use strict";
 
-    var LS_KEY = "aitrpg_player_card_v2";
-    var LS_KEY_LEGACY = "aitrpg_player_card_v1";
+    var LS_KEY = "the_call_of_ai_player_card_v2";
+    var LS_KEY_LEGACY = "the_call_of_ai_player_card_v1";
 
     var ATTRIBUTE_KEYS = ["STR", "CON", "SIZ", "DEX", "APP", "INT", "POW", "EDU", "LUCK"];
     var ATTRIBUTE_RANGES = {

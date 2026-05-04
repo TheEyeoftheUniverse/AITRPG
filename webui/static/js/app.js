@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════
-// AITRPG Web UI - Frontend Logic
+// The Call of AI Web UI - Frontend Logic
 // ═══════════════════════════════════════
 
 let isProcessing = false;
@@ -89,7 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // ─── 主题切换 ───
 
 function applyStoredTheme() {
-    const stored = localStorage.getItem("aitrpg_theme");
+    const stored = localStorage.getItem("the_call_of_ai_theme");
     if (stored) {
         document.documentElement.setAttribute("data-theme", stored);
     }
@@ -100,7 +100,7 @@ function toggleTheme() {
     const current = document.documentElement.getAttribute("data-theme");
     const next = current === "light" ? "dark" : "light";
     document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("aitrpg_theme", next);
+    localStorage.setItem("the_call_of_ai_theme", next);
     _updateThemeIcon();
 }
 
@@ -116,7 +116,7 @@ function _updateThemeIcon() {
 
 // ─── AI模式切换（三层 ↔ 合并双层） ───
 
-const MERGE_MODE_LS_KEY = "aitrpg_merge_mode";
+const MERGE_MODE_LS_KEY = "the_call_of_ai_merge_mode";
 
 function isMergeMode() {
     return localStorage.getItem(MERGE_MODE_LS_KEY) === "true";
@@ -360,7 +360,7 @@ async function startGame(moduleIndex, forceNew = false) {
 
         const titleEl = document.getElementById("game-title");
         if (titleEl) {
-            titleEl.textContent = data.module_name || "AI驱动TRPG";
+            titleEl.textContent = data.module_name || "The Call of AI";
         }
 
         currentSaveSummary = null;
@@ -446,7 +446,7 @@ async function resumeGame() {
                 : "";
             titleEl.textContent = resumedModuleName
                 || (currentSaveSummary && currentSaveSummary.module_name)
-                || "AI驱动TRPG";
+                || "The Call of AI";
         }
 
         if (Array.isArray(data.chat_messages)) {
@@ -2262,7 +2262,7 @@ function dismissEndingOverlay() {
 
 // ─── 自定义API配置弹窗 ───
 
-const API_CONFIG_LS_KEY = "aitrpg_custom_api";
+const API_CONFIG_LS_KEY = "the_call_of_ai_custom_api";
 const API_LAYERS = ["rule", "rhythm", "narrative"];
 
 // 当前编辑中的草稿（未保存），结构: { unified: bool, rule:{...}, rhythm:{...}, narrative:{...} }

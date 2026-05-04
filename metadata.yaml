@@ -1,6 +1,6 @@
-name: aitrpg
-display_name: AI驱动TRPG跑团系统
+name: the_call_of_ai
+display_name: The Call of AI
 desc: 基于三层AI架构的COC跑团系统，支持开放探索和动态剧情生成
 version: v3.1.0
 author: TheEyeoftheUniverse
-repo: https://github.com/TheEyeoftheUniverse/AITRPG
+repo: https://github.com/TheEyeoftheUniverse/The-Call-of-AI

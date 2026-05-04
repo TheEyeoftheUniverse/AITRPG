@@ -24,10 +24,10 @@ class JsonSaveStore:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except json.JSONDecodeError as e:
-            logger.warning(f"[AITRPG] 读取存档失败，JSON格式错误: {path}, error={e}")
+            logger.warning(f"[The Call of AI] 读取存档失败，JSON格式错误: {path}, error={e}")
             return None
         except OSError as e:
-            logger.warning(f"[AITRPG] 读取存档失败: {path}, error={e}")
+            logger.warning(f"[The Call of AI] 读取存档失败: {path}, error={e}")
             return None
 
     def save(self, key: str, data: Dict[str, Any]):
@@ -40,7 +40,7 @@ class JsonSaveStore:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             os.replace(temp_path, path)
         except OSError as e:
-            logger.warning(f"[AITRPG] 写入存档失败: {path}, error={e}")
+            logger.warning(f"[The Call of AI] 写入存档失败: {path}, error={e}")
             try:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
@@ -54,7 +54,7 @@ class JsonSaveStore:
             if os.path.exists(path):
                 os.remove(path)
         except OSError as e:
-            logger.warning(f"[AITRPG] 删除存档失败: {path}, error={e}")
+            logger.warning(f"[The Call of AI] 删除存档失败: {path}, error={e}")
 
     def _get_save_path(self, key: str) -> str:
         safe_key = re.sub(r"[^a-zA-Z0-9_.-]", "_", key)
@@ -83,4 +83,4 @@ class JsonSaveStore:
         except OSError:
             pass
         if removed:
-            logger.info(f"[AITRPG] 清理了 {removed} 个过期存档（>{max_age_seconds // 86400}天）")
+            logger.info(f"[The Call of AI] 清理了 {removed} 个过期存档（>{max_age_seconds // 86400}天）")

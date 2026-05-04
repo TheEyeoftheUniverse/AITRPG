@@ -19,8 +19,8 @@ import copy
 import time
 
 
-@register("aitrpg", "TheEyeoftheUniverse", "AI驱动TRPG跑团系统", "2.1.0")
-class AITRPGPlugin(Star):
+@register("the_call_of_ai", "TheEyeoftheUniverse", "The Call of AI", "2.1.0")
+class TheCallOfAIPlugin(Star):
     OPENING_USER_TEXT = "缓缓苏醒"
     OPENING_KIND = "opening"
     SUMMARY_PREFIX = "[摘要] "
@@ -54,7 +54,7 @@ class AITRPGPlugin(Star):
 
     async def initialize(self):
         """插件初始化"""
-        logger.info("[AITRPG] 正在初始化插件...")
+        logger.info("[The Call of AI] 正在初始化插件...")
 
         # 读取配置
         config = self.plugin_config or {}
@@ -66,7 +66,7 @@ class AITRPGPlugin(Star):
         narrative_ai_provider = config.get("narrative_ai_provider", "") or None
         narrative_ai_provider_fallbacks = list(config.get("narrative_ai_provider_fallbacks") or [])
         logger.info(
-            "[AITRPG] Effective plugin config: module=%s, rule_ai=%s, rule_fallbacks=%s, rhythm_ai=%s, rhythm_fallbacks=%s, narrative_ai=%s, narrative_fallbacks=%s",
+            "[The Call of AI] Effective plugin config: module=%s, rule_ai=%s, rule_fallbacks=%s, rhythm_ai=%s, rhythm_fallbacks=%s, narrative_ai=%s, narrative_fallbacks=%s",
             module_name,
             rule_ai_provider or "<unset>",
             rule_ai_provider_fallbacks,
@@ -77,7 +77,7 @@ class AITRPGPlugin(Star):
         )
 
         logger.info(
-            f"[AITRPG] 配置: 模组={module_name}, 规则AI={rule_ai_provider or '未配置'}, 节奏AI={rhythm_ai_provider or '未配置'}, 文案AI={narrative_ai_provider or '未配置'}"
+            f"[The Call of AI] 配置: 模组={module_name}, 规则AI={rule_ai_provider or '未配置'}, 节奏AI={rhythm_ai_provider or '未配置'}, 文案AI={narrative_ai_provider or '未配置'}"
         )
 
         # 初始化会话管理器（传入模组名称）
@@ -103,7 +103,7 @@ class AITRPGPlugin(Star):
             fallback_provider_names=narrative_ai_provider_fallbacks,
         )
 
-        logger.info("[AITRPG] 插件初始化完成！")
+        logger.info("[The Call of AI] 插件初始化完成！")
 
         # 初始化合并模式AI（始终初始化，因为模式可运行时切换）
         self.story_ai = StoryAI(
@@ -130,8 +130,8 @@ class AITRPGPlugin(Star):
     def _build_history_message(self, role: str, content: str, kind: str = None) -> dict:
         message = {"role": role, "content": content}
         if kind:
-            message["metadata"] = {"aitrpg_kind": kind}
-            message["aitrpg_kind"] = kind
+            message["metadata"] = {"the_call_of_ai_kind": kind}
+            message["the_call_of_ai_kind"] = kind
         return message
 
     def _build_opening_history_pair(self, opening: str):
@@ -145,10 +145,10 @@ class AITRPGPlugin(Star):
             return ""
         metadata = message.get("metadata")
         if isinstance(metadata, dict):
-            kind = str(metadata.get("aitrpg_kind") or "").strip()
+            kind = str(metadata.get("the_call_of_ai_kind") or "").strip()
             if kind:
                 return kind
-        return str(message.get("aitrpg_kind") or "").strip()
+        return str(message.get("the_call_of_ai_kind") or "").strip()
 
     def _get_history_message_content(self, message: dict) -> str:
         if not isinstance(message, dict):
@@ -232,7 +232,7 @@ class AITRPGPlugin(Star):
             conv_mgr = self.context.conversation_manager
             conv_id = await conv_mgr.new_conversation(session_id)
             await conv_mgr.switch_conversation(session_id, conv_id)
-            logger.info(f"[AITRPG] 为会话 {session_id} 新建对话 {conv_id}")
+            logger.info(f"[The Call of AI] 为会话 {session_id} 新建对话 {conv_id}")
 
             # 将开场白作为第一组固定对话写入history
             opening = selected["opening"]
@@ -256,7 +256,7 @@ class AITRPGPlugin(Star):
             yield event.plain_result("未找到任何模组文件。")
             return
 
-        lines = ["🎲 AI驱动TRPG跑团系统", "", "请选择模组："]
+        lines = ["🎲 The Call of AI", "", "请选择模组："]
         for i, m in enumerate(modules, 1):
             type_tag = f"（{m['module_type']}）" if m['module_type'] else ""
             lines.append(f"{i}. {m['name']} - {m['description']}{type_tag}")
@@ -290,20 +290,20 @@ class AITRPGPlugin(Star):
         """处理玩家输入"""
         session_id = event.session_id
 
-        logger.info(f"[AITRPG] on_message被调用: {event.message_str}")
+        logger.info(f"[The Call of AI] on_message被调用: {event.message_str}")
 
         # 检查是否有游戏进行中
         if not self.session_manager.has_session(session_id):
-            logger.info(f"[AITRPG] 会话{session_id}不存在，跳过")
+            logger.info(f"[The Call of AI] 会话{session_id}不存在，跳过")
             return
 
         # 检查是否是命令（命令由其他handler处理）
         if event.message_str.startswith("/"):
-            logger.info(f"[AITRPG] 是命令消息，跳过")
+            logger.info(f"[The Call of AI] 是命令消息，跳过")
             return
 
         player_input = event.message_str
-        logger.info(f"[AITRPG] 开始处理玩家输入: {player_input}")
+        logger.info(f"[The Call of AI] 开始处理玩家输入: {player_input}")
 
         try:
             # 显示处理中提示
@@ -316,7 +316,7 @@ class AITRPGPlugin(Star):
             yield event.plain_result(result)
 
         except Exception as e:
-            logger.error(f"[AITRPG] 处理玩家行动时出错: {e}")
+            logger.error(f"[The Call of AI] 处理玩家行动时出错: {e}")
             import traceback
             logger.error(traceback.format_exc())
             yield event.plain_result(f"❌ 处理出错: {str(e)}")
@@ -730,7 +730,7 @@ class AITRPGPlugin(Star):
         if merge_mode and retry_from in ("rhythm", "narrative"):
             retry_from = "story"
 
-        logger.info(f"[AITRPG] 开始处理玩家行动: {player_input}, move_to: {move_to}, retry_from: {retry_from}, merge_mode: {merge_mode}")
+        logger.info(f"[The Call of AI] 开始处理玩家行动: {player_input}, move_to: {move_to}, retry_from: {retry_from}, merge_mode: {merge_mode}")
         self._begin_action_progress(session_id, player_input, move_to, merge_mode=merge_mode)
 
         try:
@@ -779,7 +779,7 @@ class AITRPGPlugin(Star):
             else:
                 # === 规则AI - 裁定行为 ===
                 self._skip_progress_step(session_id, "rule_intent", "已合并到裁定步骤")
-                logger.info("[AITRPG] 调用规则AI进行行为裁定...")
+                logger.info("[The Call of AI] 调用规则AI进行行为裁定...")
                 self._start_progress_step(session_id, "rule_adjudication", "规则AI 正在裁定行为")
                 adjudication_trace_id = f"{session_id}:rule_adjudication"
                 rule_plan = await self.rule_ai.adjudicate_action(
@@ -801,10 +801,10 @@ class AITRPGPlugin(Star):
                         "check_result": move_check_result,
                         "movement_note": move_movement_note,
                     }
-                logger.info(f"[AITRPG] 动作裁定结果: {rule_plan}")
+                logger.info(f"[The Call of AI] 动作裁定结果: {rule_plan}")
 
                 # === 第三步：规则AI - 执行检定 ===
-                logger.info("[AITRPG] 调用规则AI进行规则判定...")
+                logger.info("[The Call of AI] 调用规则AI进行规则判定...")
                 self._start_progress_step(session_id, "rule_check", "正在执行规则判定")
                 rule_result = await self.rule_ai.resolve_check(
                     adjudication_result=rule_plan,
@@ -833,7 +833,7 @@ class AITRPGPlugin(Star):
                     rule_result["movement_check"] = move_check_result
                     if move_movement_note:
                         rule_result["movement_note"] = move_movement_note
-                logger.info(f"[AITRPG] 规则判定结果: {rule_result}")
+                logger.info(f"[The Call of AI] 规则判定结果: {rule_result}")
 
                 # === SAN检定 ===
                 sancheck_result = None
@@ -847,7 +847,7 @@ class AITRPGPlugin(Star):
                             session_id=session_id,
                         )
                         if sancheck_result:
-                            logger.info(f"[AITRPG] SAN检定: {sancheck_result}")
+                            logger.info(f"[The Call of AI] SAN检定: {sancheck_result}")
 
                 hard_changes = self.rule_ai.build_hard_changes(
                     player_input=player_input,
@@ -870,7 +870,7 @@ class AITRPGPlugin(Star):
                             "player_entered_living_room" if _butler_activated_by_move else "player_approached_butler_in_living_room",
                         ),
                     )
-                logger.info(f"[AITRPG] 规则层硬变化: {hard_changes}")
+                logger.info(f"[The Call of AI] 规则层硬变化: {hard_changes}")
 
                 # === 处理同伴指令 ===
                 companion_cmd = (rule_plan or {}).get("companion_command", {})
@@ -884,7 +884,7 @@ class AITRPGPlugin(Star):
                             cmd_action,
                             companion_cmd,
                         )
-                        logger.info(f"[AITRPG] 同伴指令: {cmd_target} -> {cmd_action}, 结果: {companion_result}")
+                        logger.info(f"[The Call of AI] 同伴指令: {cmd_target} -> {cmd_action}, 结果: {companion_result}")
                         if companion_result.get("success"):
                             npc_update = hard_changes.setdefault("npc_updates", {}).setdefault(cmd_target, {})
                             npc_update["companion_mode"] = cmd_action
@@ -898,7 +898,7 @@ class AITRPGPlugin(Star):
                         str(preset_task_request.get("target_npc") or "").strip(),
                         str(preset_task_request.get("task_id") or "").strip(),
                     )
-                    logger.info(f"[AITRPG] 预设任务请求: {preset_task_request}, 结果: {preset_result}")
+                    logger.info(f"[The Call of AI] 预设任务请求: {preset_task_request}, 结果: {preset_result}")
                     if preset_result.get("success"):
                         hard_changes = self._merge_world_changes(hard_changes, preset_result.get("changes", {}))
 
@@ -910,7 +910,7 @@ class AITRPGPlugin(Star):
                 if (verb == "talk" or self.rule_ai.is_dialogue_input(player_input)) and target_npc_for_dialogue:
                     pending_npc_report = self.session_manager.deliver_pending_npc_reports(session_id, target_npc_for_dialogue)
                     if isinstance(pending_npc_report, dict) and pending_npc_report.get("delivered"):
-                        logger.info(f"[AITRPG] 已交付NPC调查报告: {pending_npc_report}")
+                        logger.info(f"[The Call of AI] 已交付NPC调查报告: {pending_npc_report}")
                         rule_plan["pending_npc_report"] = copy.deepcopy(pending_npc_report)
 
                 # 缓存规则AI结果（用于重试）
@@ -944,7 +944,7 @@ class AITRPGPlugin(Star):
                 preview_state = self._preview_state_with_world_changes(state, hard_changes)
                 if merge_mode or retry_from == "story":
                     # === 合并模式：StoryAI 单次调用 ===
-                    logger.info("[AITRPG] 调用剧情AI（合并模式）...")
+                    logger.info("[The Call of AI] 调用剧情AI（合并模式）...")
                     self._start_progress_step(session_id, "story", "剧情AI 正在生成")
                     story_trace_id = f"{session_id}:story"
                     story_result = await self.story_ai.process(
@@ -960,10 +960,10 @@ class AITRPGPlugin(Star):
                     rhythm_result = story_result["rhythm_result"]
                     merged_narrative_result = story_result["narrative_result"]
                     self._finish_progress_step(session_id, "story", self.story_ai.pop_call_metric(story_trace_id), "剧情生成完成")
-                    logger.info(f"[AITRPG] 剧情AI结果: {rhythm_result}")
+                    logger.info(f"[The Call of AI] 剧情AI结果: {rhythm_result}")
                 else:
                     # === 三层模式：第四步 节奏AI - 节奏评估与软变化补充 ===
-                    logger.info("[AITRPG] 调用节奏AI进行节奏评估...")
+                    logger.info("[The Call of AI] 调用节奏AI进行节奏评估...")
                     self._start_progress_step(session_id, "rhythm", "节奏AI 正在评估剧情节奏")
                     rhythm_trace_id = f"{session_id}:rhythm"
                     rhythm_result = await self.rhythm_ai.process(
@@ -977,7 +977,7 @@ class AITRPGPlugin(Star):
                         custom_api=(custom_api or {}).get("rhythm"),
                     )
                     self._finish_progress_step(session_id, "rhythm", self.rhythm_ai.pop_call_metric(rhythm_trace_id), "节奏评估完成")
-                    logger.info(f"[AITRPG] 节奏AI结果: {rhythm_result}")
+                    logger.info(f"[The Call of AI] 节奏AI结果: {rhythm_result}")
 
                 soft_changes = rhythm_result.get("world_changes", {})
                 soft_changes = soft_changes if isinstance(soft_changes, dict) else {}
@@ -1046,7 +1046,7 @@ class AITRPGPlugin(Star):
                 ending_request_result = self.session_manager.process_ending_request(session_id, rhythm_result)
                 rhythm_result["ending_request_result"] = ending_request_result
                 if ending_request_result.get("requested") and not ending_request_result.get("triggered"):
-                    logger.info(f"[AITRPG] 结局请求未通过校验: {ending_request_result}")
+                    logger.info(f"[The Call of AI] 结局请求未通过校验: {ending_request_result}")
                 if ending_request_result.get("triggered"):
                     state = self.session_manager.get_session(session_id)
                     flags = state.get("world_state", {}).get("flags", {})
@@ -1134,9 +1134,9 @@ class AITRPGPlugin(Star):
             if merged_narrative_result is not None:
                 # 合并模式：文案已由 story_ai 一次性生成，直接复用，不再调用文案AI
                 narrative_result = merged_narrative_result
-                logger.info(f"[AITRPG] 合并模式：复用剧情AI生成的叙述")
+                logger.info(f"[The Call of AI] 合并模式：复用剧情AI生成的叙述")
             else:
-                logger.info("[AITRPG] 调用文案AI生成叙述...")
+                logger.info("[The Call of AI] 调用文案AI生成叙述...")
                 self._start_progress_step(session_id, "narrative", "文案AI 正在生成叙述")
                 narrative_trace_id = f"{session_id}:narrative"
                 narrative_result = await self.narrative_ai.generate(
@@ -1151,7 +1151,7 @@ class AITRPGPlugin(Star):
                     character_card=state.get("character_card"),
                 )
                 self._finish_progress_step(session_id, "narrative", self.narrative_ai.pop_call_metric(narrative_trace_id), "叙述生成完成")
-                logger.info(f"[AITRPG] 文案生成完成")
+                logger.info(f"[The Call of AI] 文案生成完成")
             cache["narrative_result"] = narrative_result
             cache["retry_from_hint"] = None
 
@@ -1201,12 +1201,12 @@ class AITRPGPlugin(Star):
         conv_id = await conv_mgr.get_curr_conversation_id(session_id)
         if not conv_id:
             conv_id = await conv_mgr.new_conversation(session_id)
-            logger.info(f"[AITRPG] 创建新对话: {conv_id}")
+            logger.info(f"[The Call of AI] 创建新对话: {conv_id}")
 
         # 获取对话历史
         conversation = await conv_mgr.get_conversation(session_id, conv_id)
         history = json.loads(conversation.history) if conversation and conversation.history else []
-        logger.info(f"[AITRPG] 当前对话历史长度: {len(history)}")
+        logger.info(f"[The Call of AI] 当前对话历史长度: {len(history)}")
 
         # 调用核心处理
         result = await self._process_action_core(session_id, player_input, history)
@@ -1238,7 +1238,7 @@ class AITRPGPlugin(Star):
             narrative_result["summary"]
         )
 
-        logger.info(f"[AITRPG] 已更新对话历史")
+        logger.info(f"[The Call of AI] 已更新对话历史")
 
         # 格式化输出
         output = self._format_output(
@@ -1252,7 +1252,7 @@ class AITRPGPlugin(Star):
 
     async def _process_epilogue(self, session_id: str, player_input: str, history: list) -> dict:
         """Post-ending free chat: skip Rule/RhythmAI, only call NarrativeAI for epilogue continuation."""
-        logger.info(f"[AITRPG] 后日谈阶段，玩家输入: {player_input}")
+        logger.info(f"[The Call of AI] 后日谈阶段，玩家输入: {player_input}")
 
         self._skip_progress_step(session_id, "rule_intent", "后日谈，跳过规则AI")
         self._skip_progress_step(session_id, "rule_adjudication", "后日谈，跳过规则AI")
@@ -1325,7 +1325,7 @@ class AITRPGPlugin(Star):
 
     async def _process_ending_narrative(self, session_id: str, player_input: str, history: list) -> dict:
         """Phase 2 of ending: skip RuleAI, call NarrativeAI to generate ending narrative, then conclude."""
-        logger.info(f"[AITRPG] 进入结局叙述生成阶段，ending_id={self.session_manager.get_ending_id(session_id)}")
+        logger.info(f"[The Call of AI] 进入结局叙述生成阶段，ending_id={self.session_manager.get_ending_id(session_id)}")
 
         # Skip rule steps
         self._skip_progress_step(session_id, "rule_intent", "结局阶段，跳过规则AI")
@@ -1672,7 +1672,7 @@ class AITRPGPlugin(Star):
         conversation.history = json.dumps(history, ensure_ascii=False)
         await conv_mgr.update_conversation(conv_id, conversation)
         logger.info(
-            f"[AITRPG] compressed assistant turn={target_turn['formal_turn_index']} to summary, history_index={assistant_index}"
+            f"[The Call of AI] compressed assistant turn={target_turn['formal_turn_index']} to summary, history_index={assistant_index}"
         )
 
     def _begin_action_progress(self, session_id: str, player_input: str, move_to: str = None, merge_mode: bool = False):
@@ -2536,7 +2536,7 @@ class AITRPGPlugin(Star):
 
     async def terminate(self):
         """插件销毁"""
-        logger.info("[AITRPG] 插件正在卸载...")
+        logger.info("[The Call of AI] 插件正在卸载...")
         # 通知 Hypercorn 优雅关闭（释放端口），而不是强制 cancel
         if self._webui_shutdown_event:
             self._webui_shutdown_event.set()
@@ -2549,4 +2549,4 @@ class AITRPGPlugin(Star):
                     await self._webui_task
                 except asyncio.CancelledError:
                     pass
-            logger.info("[AITRPG] WebUI 已停止")
+            logger.info("[The Call of AI] WebUI 已停止")

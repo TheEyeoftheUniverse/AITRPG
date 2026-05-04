@@ -1,8 +1,8 @@
-# AITRPG 配置说明
+# The Call of AI 配置说明
 
 ## 重要结论
 
-AITRPG 不再内置任何默认模型配置。
+The Call of AI 不再内置任何默认模型配置。
 
 以下三项都需要你在 AstrBot 插件配置里显式填写，而且值必须是 AstrBot 里真实存在的 provider ID：
 
@@ -105,7 +105,7 @@ AITRPG 不再内置任何默认模型配置。
 如果你怀疑配置没生效，先看后端日志里的初始化行。修复后，插件会打印一条类似：
 
 ```text
-[AITRPG] Effective plugin config: module=default_module, rule_ai=openai/gpt-5.2, rhythm_ai=openai/gpt-5, narrative_ai=myproxy/deepseek-v3
+[The Call of AI] Effective plugin config: module=default_module, rule_ai=openai/gpt-5.2, rhythm_ai=openai/gpt-5, narrative_ai=myproxy/deepseek-v3
 ```
 
 如果这里还是 `<unset>`，说明插件实例没有拿到插件配置，或配置项为空。

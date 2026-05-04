@@ -52,7 +52,7 @@ def _build_save_summary(saved_data: dict) -> dict:
 
     save_payload = {
         "module_index": web_session.get("module_index"),
-        "module_name": str(module_info.get("name") or game_state.get("module_filename") or "AI驱动TRPG").strip(),
+        "module_name": str(module_info.get("name") or game_state.get("module_filename") or "The Call of AI").strip(),
         "round_count": int(game_state.get("round_count", 0) or 0),
         "current_location": current_location or None,
         "current_location_name": _extract_location_name_from_state(game_state) or current_location or None,
@@ -118,7 +118,7 @@ async def _get_pids_on_port(port: int) -> list:
             except FileNotFoundError:
                 continue
     except Exception as e:
-        logger.warning(f"[AITRPG] 获取端口 {port} 占用进程时出错: {e}")
+        logger.warning(f"[The Call of AI] 获取端口 {port} 占用进程时出错: {e}")
     current_pid = os.getpid()
     pids.discard(current_pid)
     return list(pids)
@@ -137,15 +137,15 @@ async def _free_port(port: int) -> bool:
                 stderr=asyncio.subprocess.PIPE
             )
             await proc.communicate()
-            logger.warning(f"[AITRPG] 已终止占用端口 {port} 的进程 PID={pid}")
+            logger.warning(f"[The Call of AI] 已终止占用端口 {port} 的进程 PID={pid}")
         except Exception as e:
-            logger.warning(f"[AITRPG] 终止进程 {pid} 失败: {e}")
+            logger.warning(f"[The Call of AI] 终止进程 {pid} 失败: {e}")
     await asyncio.sleep(1)
     return await _is_port_available(port)
 
 
 def create_trpg_app(plugin):
-    """创建 Quart 应用，绑定 AITRPG 插件实例"""
+    """创建 Quart 应用，绑定 The Call of AI 插件实例"""
     import os
     template_dir = os.path.join(os.path.dirname(__file__), "templates")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -162,7 +162,7 @@ def create_trpg_app(plugin):
         static_folder=static_dir,
         static_url_path="/trpg/static"
     )
-    app.secret_key = "aitrpg-webui-secret"
+    app.secret_key = "the-call-of-ai-webui-secret"
     app.plugin = plugin
 
     # Web 会话存储: cookie_id -> session_data
@@ -199,7 +199,7 @@ def create_trpg_app(plugin):
                     _session_last_active.pop(cid, None)
                     _action_results.pop(cid, None)
                 if expired:
-                    logger.info(f"[AITRPG] 已清理 {len(expired)} 个过期 Web 会话")
+                    logger.info(f"[The Call of AI] 已清理 {len(expired)} 个过期 Web 会话")
                 # 每约7天清理一次磁盘存档
                 _SAVE_CLEANUP_COUNTER += 1
                 if _SAVE_CLEANUP_COUNTER >= _SAVE_CLEANUP_EVERY:
@@ -207,7 +207,7 @@ def create_trpg_app(plugin):
                     active_keys = set(_web_sessions.keys())
                     save_store.cleanup_stale(max_age_seconds=86400 * 7, active_keys=active_keys)
             except Exception as e:
-                logger.warning(f"[AITRPG] 会话清理任务出错: {e}")
+                logger.warning(f"[The Call of AI] 会话清理任务出错: {e}")
 
     def _build_empty_web_session(cookie_id: str) -> dict:
         """创建空白 Web 会话结构"""
@@ -563,7 +563,7 @@ def create_trpg_app(plugin):
 
         async with lock:
             try:
-                logger.info(f"[AITRPG WebUI] 收到启动游戏请求，cookie={cookie_id[:8]}")
+                logger.info(f"[The Call of AI WebUI] 收到启动游戏请求，cookie={cookie_id[:8]}")
                 data = await request.get_json()
                 if not isinstance(data, dict):
                     return jsonify({"error": "请求格式错误"}), 400
@@ -578,13 +578,13 @@ def create_trpg_app(plugin):
                         profs = character_card_module.load_professions()
                         skills_base = character_card_module.load_skills_base()
                     except Exception as e:
-                        logger.warning(f"[AITRPG WebUI] character_card 数据加载失败: {e}")
+                        logger.warning(f"[The Call of AI WebUI] character_card 数据加载失败: {e}")
                         return jsonify({"error": "character_card data unavailable"}), 500
                     ok, errs, normalized = character_card_module.validate_card(
                         character_card_payload, profs, skills_base
                     )
                     if not ok:
-                        logger.info(f"[AITRPG WebUI] character_card 校验失败: {errs}")
+                        logger.info(f"[The Call of AI WebUI] character_card 校验失败: {errs}")
                         return jsonify({
                             "error": "character_card validation failed",
                             "errors": errs,
@@ -608,7 +608,7 @@ def create_trpg_app(plugin):
 
                 selected = modules[module_index]
                 session_id = web_session["session_id"]
-                logger.info(f"[AITRPG WebUI] 准备启动模组: session_id={session_id}, module={selected['filename']}")
+                logger.info(f"[The Call of AI WebUI] 准备启动模组: session_id={session_id}, module={selected['filename']}")
 
                 # 如果已有游戏，先清除
                 if plugin.session_manager.has_session(session_id):
@@ -719,7 +719,7 @@ def create_trpg_app(plugin):
                         assistant_message=opening_assistant_message
                     )
                 except Exception as e:
-                    logger.warning(f"[AITRPG WebUI] 初始化 AstrBot 对话失败，将继续使用仅 Web 会话模式: {e}")
+                    logger.warning(f"[The Call of AI WebUI] 初始化 AstrBot 对话失败，将继续使用仅 Web 会话模式: {e}")
 
                 # 初始化 web 会话
                 web_session["game_started"] = True
@@ -737,7 +737,7 @@ def create_trpg_app(plugin):
                 state = plugin.session_manager.get_session(session_id)
                 map_data = plugin.session_manager.get_map_data(session_id)
                 _persist_web_session(cookie_id)
-                logger.info(f"[AITRPG WebUI] 启动游戏成功: session_id={session_id}, module={selected['filename']}")
+                logger.info(f"[The Call of AI WebUI] 启动游戏成功: session_id={session_id}, module={selected['filename']}")
 
                 return jsonify({
                     "success": True,
@@ -749,7 +749,7 @@ def create_trpg_app(plugin):
                     "map_data": map_data
                 })
             except Exception as e:
-                logger.error(f"[AITRPG WebUI] 启动游戏失败: {e}", exc_info=True)
+                logger.error(f"[The Call of AI WebUI] 启动游戏失败: {e}", exc_info=True)
                 return jsonify({"error": f"启动游戏失败: {str(e)}"}), 500
 
     @app.route("/trpg/api/action", methods=["POST"])
@@ -837,7 +837,7 @@ def create_trpg_app(plugin):
                                 conv_id=conv_id,
                             )
                         except Exception as e:
-                            logger.warning(f"[AITRPG WebUI] 同步对话记录失败: {e}")
+                            logger.warning(f"[The Call of AI WebUI] 同步对话记录失败: {e}")
 
                     # 更新 web 会话历史
                     web_session["history"].append(plugin._build_history_message("user", display_input))
@@ -982,7 +982,7 @@ def create_trpg_app(plugin):
                     }
 
                 except Exception as e:
-                    logger.error(f"[AITRPG WebUI] 处理行动出错: {e}")
+                    logger.error(f"[The Call of AI WebUI] 处理行动出错: {e}")
                     import traceback
                     logger.error(traceback.format_exc())
                     progress_payload = plugin.get_action_progress_payload(session_id)
@@ -1142,7 +1142,7 @@ def create_trpg_app(plugin):
                                 conv_id=conv_id,
                             )
                         except Exception as e:
-                            logger.warning(f"[AITRPG WebUI] 重试时同步对话记录失败: {e}")
+                            logger.warning(f"[The Call of AI WebUI] 重试时同步对话记录失败: {e}")
 
                     # 更新 web 会话历史（重试时替换最后一组消息而非追加）
                     if web_session["chat_messages"] and web_session["chat_messages"][-1].get("role") == "assistant":
@@ -1228,7 +1228,7 @@ def create_trpg_app(plugin):
                     }
 
                 except Exception as e:
-                    logger.error(f"[AITRPG WebUI] 重试处理出错: {e}")
+                    logger.error(f"[The Call of AI WebUI] 重试处理出错: {e}")
                     import traceback
                     logger.error(traceback.format_exc())
                     progress_payload = plugin.get_action_progress_payload(session_id)
@@ -1303,7 +1303,7 @@ def create_trpg_app(plugin):
             data = character_card_module.load_professions()
             return jsonify({"professions": list(data.values())})
         except Exception as e:
-            logger.warning(f"[AITRPG] 加载职业失败: {e}")
+            logger.warning(f"[The Call of AI] 加载职业失败: {e}")
             return jsonify({"error": "professions data unavailable"}), 500
 
     @app.route("/trpg/api/character-card/skills-base", methods=["GET"])
@@ -1313,7 +1313,7 @@ def create_trpg_app(plugin):
             data = character_card_module.load_skills_base()
             return jsonify({"skills_base": data})
         except Exception as e:
-            logger.warning(f"[AITRPG] 加载技能基础值失败: {e}")
+            logger.warning(f"[The Call of AI] 加载技能基础值失败: {e}")
             return jsonify({"error": "skills base unavailable"}), 500
 
     @app.route("/trpg/api/character-card/roll-attributes", methods=["GET"])
@@ -1338,11 +1338,11 @@ def create_trpg_app(plugin):
             card = character_card_module.roll_random_card(profs, skills_base, random_pool, era=era)
             ok, errs, normalized = character_card_module.validate_card(card, profs, skills_base)
             if not ok:
-                logger.warning(f"[AITRPG] 随机卡未通过 validate_card 兜底: {errs}")
+                logger.warning(f"[The Call of AI] 随机卡未通过 validate_card 兜底: {errs}")
                 return jsonify({"error": "random card failed validation", "errors": errs}), 500
             return jsonify({"card": normalized})
         except Exception as e:
-            logger.warning(f"[AITRPG] 生成随机卡失败: {e}")
+            logger.warning(f"[The Call of AI] 生成随机卡失败: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route("/trpg/api/character-card/template", methods=["GET"])
@@ -1354,7 +1354,7 @@ def create_trpg_app(plugin):
             template = character_card_module.make_blank_template_with_hints(profs, skills_base)
             return jsonify({"template": template})
         except Exception as e:
-            logger.warning(f"[AITRPG] 生成模板失败: {e}")
+            logger.warning(f"[The Call of AI] 生成模板失败: {e}")
             return jsonify({"error": str(e)}), 500
 
     @app.route("/trpg/api/character-card/validate", methods=["POST"])
@@ -1369,7 +1369,7 @@ def create_trpg_app(plugin):
             ok, errs, normalized = character_card_module.validate_card(data, profs, skills_base)
             return jsonify({"ok": ok, "errors": errs, "normalized": normalized})
         except Exception as e:
-            logger.warning(f"[AITRPG] 校验卡失败: {e}")
+            logger.warning(f"[The Call of AI] 校验卡失败: {e}")
             return jsonify({"ok": False, "errors": [str(e)], "normalized": {}}), 500
 
     # 启动后台会话清理任务
@@ -1385,7 +1385,7 @@ async def start_webui_server(app, port: int, shutdown_event: asyncio.Event = Non
 
     # 检查端口占用，尝试释放
     if not await _is_port_available(port):
-        logger.warning(f"[AITRPG] 端口 {port} 被占用，尝试自动释放...")
+        logger.warning(f"[The Call of AI] 端口 {port} 被占用，尝试自动释放...")
         freed = await _free_port(port)
         if not freed:
             # 等待最多 10 秒
@@ -1395,7 +1395,7 @@ async def start_webui_server(app, port: int, shutdown_event: asyncio.Event = Non
                     freed = True
                     break
         if not freed:
-            logger.error(f"[AITRPG] 端口 {port} 无法释放，WebUI 启动失败")
+            logger.error(f"[The Call of AI] 端口 {port} 无法释放，WebUI 启动失败")
             return
 
     config = Config()
@@ -1405,11 +1405,11 @@ async def start_webui_server(app, port: int, shutdown_event: asyncio.Event = Non
     config.keep_alive_timeout = 120
 
     try:
-        logger.info(f"[AITRPG] WebUI starting on http://0.0.0.0:{port}/trpg/")
+        logger.info(f"[The Call of AI] WebUI starting on http://0.0.0.0:{port}/trpg/")
         await serve(app, config)
-        logger.info("[AITRPG] WebUI server stopped cleanly")
+        logger.info("[The Call of AI] WebUI server stopped cleanly")
     except asyncio.CancelledError:
-        logger.info("[AITRPG] WebUI 已停止")
+        logger.info("[The Call of AI] WebUI 已停止")
         raise
     except Exception as e:
-        logger.error(f"[AITRPG] WebUI server error: {e}", exc_info=True)
+        logger.error(f"[The Call of AI] WebUI server error: {e}", exc_info=True)

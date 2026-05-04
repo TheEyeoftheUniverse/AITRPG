@@ -588,10 +588,10 @@ class NarrativeAI:
             return ""
         metadata = message.get("metadata")
         if isinstance(metadata, dict):
-            kind = str(metadata.get("aitrpg_kind") or "").strip()
+            kind = str(metadata.get("the_call_of_ai_kind") or "").strip()
             if kind:
                 return kind
-        return str(message.get("aitrpg_kind") or message.get("kind") or "").strip()
+        return str(message.get("the_call_of_ai_kind") or message.get("kind") or "").strip()
 
     def _is_opening_turn(self, user_message: dict, assistant_message: dict) -> bool:
         if self._get_message_kind(user_message) == "opening":

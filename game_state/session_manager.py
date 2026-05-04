@@ -2983,7 +2983,7 @@ class SessionManager:
 你的目标是找到真相，并活着离开这里。"""
 
         # 获取模组名称
-        module_name = module_data.get("module_info", {}).get("name", "AI驱动TRPG")
+        module_name = module_data.get("module_info", {}).get("name", "The Call of AI")
 
         return f"""🎲 {module_name}
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI驱动TRPG跑团系统</title>
+    <title>The Call of AI</title>
     <link rel="stylesheet" href="/trpg/static/css/style.css?v={{ static_version }}">
     <link rel="stylesheet" href="/trpg/static/css/workflow_override.css?v={{ static_version }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
@@ -18,7 +18,7 @@
                 <span class="mdi mdi-pencil-ruler"></span>
                 <span class="btn-dev-badge">开发中</span>
             </button>
-            <a href="https://github.com/TheEyeoftheUniverse/AITRPG" target="_blank" rel="noopener" class="btn-icon overlay-toolbar-btn" title="让我康康你的源码！">
+            <a href="https://github.com/TheEyeoftheUniverse/The-Call-of-AI" target="_blank" rel="noopener" class="btn-icon overlay-toolbar-btn" title="让我康康你的源码！">
                 <span class="mdi mdi-source-branch"></span>
             </a>
             <button class="btn-icon overlay-toolbar-btn" onclick="openApiConfigModal()" title="换我的 API（这模型太磨叽了）">
@@ -28,8 +28,9 @@
         <div class="overlay-content">
             <h1 class="overlay-title">
                 <span class="mdi mdi-dice-d20"></span>
-                AI驱动TRPG跑团系统
+                <span class="brand-title-text">The Call of AI</span>
             </h1>
+            <p class="brand-subtitle">欸哎的呼唤</p>
             <p class="overlay-subtitle">选择一个模组开始冒险</p>
             <p class="overlay-hint">操作提示💡：【移动场景】点击地图进行移动；【对话】仅引号内的输入将被识别为对话。</p>
             <div class="character-card-banner">
@@ -50,7 +51,10 @@
         <header class="top-bar">
             <div class="top-bar-left">
                 <span class="mdi mdi-dice-d20"></span>
-                <span id="game-title">AI驱动TRPG</span>
+                <span class="top-bar-title-stack">
+                    <span id="game-title">The Call of AI</span>
+                    <span class="top-bar-subtitle">欸哎的呼唤</span>
+                </span>
                 <button id="btn-retry" class="btn-icon btn-retry hidden" onclick="abortAndRetry()" title="中断并重试本轮">
                     <span class="mdi mdi-refresh"></span>
                 </button>
@@ -60,7 +64,7 @@
                     <span class="mdi mdi-pencil-ruler"></span>
                     <span class="btn-dev-badge">开发中</span>
                 </button>
-                <a href="https://github.com/TheEyeoftheUniverse/AITRPG" target="_blank" rel="noopener" class="btn-icon" title="让我康康你的源码！">
+                <a href="https://github.com/TheEyeoftheUniverse/The-Call-of-AI" target="_blank" rel="noopener" class="btn-icon" title="让我康康你的源码！">
                     <span class="mdi mdi-source-branch"></span>
                 </a>
                 <button id="btn-theme" class="btn-icon" title="切换主题" onclick="toggleTheme()">
